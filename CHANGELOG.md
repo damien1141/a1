@@ -10,6 +10,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `/code <path>[:line]`: full-screen source viewer with syntax highlighting,
+  in-file search, a caret with CJK-aware column math, and language-server
+  navigation — `Enter`/`gd` definition, `gr` references, `K` hover, `o` outline.
+  Servers are discovered on PATH (`gopls`, `rust-analyzer`, `pyright`, …) and
+  spawned lazily; without one the pane stays a plain viewer.
+
 ### Changed
 
 ### Deprecated
@@ -17,6 +23,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Removed
 
 ### Fixed
+
+- Horizontal scrolling no longer drops characters from the middle of a
+  wide-glyph (CJK) line in the diff and file views.
 
 ### Security
 

@@ -99,6 +99,7 @@ func runTUI() error {
 		modelNames,
 	)
 	redraw.Bind(ui.RequestRedraw)
+	defer ui.Close() // stops language servers the code viewer started
 	ui.StartUpdateCheck(proj.Global().Root())
 	ui.StartBranchWatch()
 	if err := application.Run(ui); err != nil {

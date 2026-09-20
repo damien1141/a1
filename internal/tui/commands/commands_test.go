@@ -329,3 +329,22 @@ func drainToast(t *testing.T, bus *controller.Bus) string {
 	}
 	return msg
 }
+
+func TestCodeCommand_NeedsArgs(t *testing.T) {
+	r := NewCommandRegistry()
+	var opened [][]string
+	(&CodeCommands{
+		Open: func(args []string) { opened = append(opened, append([]string(nil), args...)) },
+	}).Register(r)
+
+	assert.Equal(t, "/code ", r.LookupInsert("code"))
+
+	insert, incomplete := r.IncompleteSlash("/code")
+	assert.True(t, incomplete, "a bare /code waits for the user to type a path")
+	assert.Equal(t, "/code ", insert)
+
+	ctx := NewContext(controller.NewBus(nil), nil)
+	assert.True(t, r.DispatchSlash("/code internal/lsp/client.go:42", ctx))
+	require.Len(t, opened, 1)
+	assert.Equal(t, []string{"internal/lsp/client.go:42"}, opened[0])
+}

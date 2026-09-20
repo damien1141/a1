@@ -44,6 +44,7 @@ func TestNewBuiltinRegistry_RegistersDomains(t *testing.T) {
 		[]string{"m1"},
 		t.TempDir(),
 		func(args []string) { opened = append([]string(nil), args...) },
+		nil,
 	)
 	require.NotNil(t, b)
 	require.NotNil(t, b.Registry)

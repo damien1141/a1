@@ -282,8 +282,16 @@ func skipCols(spans []components.Span, cols int, method xui.WidthMethod) []compo
 		return spans
 	}
 	skipped := 0
+	// Once the cut lands inside a cluster we keep that cluster whole and stop
+	// skipping; otherwise every later span loses its head and characters
+	// vanish from the middle of the line.
+	cut := false
 	out := make([]components.Span, 0, len(spans))
 	for _, sp := range spans {
+		if cut {
+			out = append(out, sp)
+			continue
+		}
 		rest := sp.Text
 		for rest != "" {
 			cluster, cw, next := xui.FirstGrapheme(rest, method)
@@ -297,6 +305,7 @@ func skipCols(spans []components.Span, cols int, method xui.WidthMethod) []compo
 			}
 			out = append(out, components.Span{Text: cluster + rest, Style: sp.Style})
 			rest = ""
+			cut = true
 		}
 	}
 	return out

@@ -2,6 +2,9 @@
 package editor
 
 import (
+	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/pulseaiclub/xui"
@@ -10,7 +13,9 @@ import (
 	"github.com/pulseaiclub/phi/internal/components/app"
 	"github.com/pulseaiclub/phi/internal/components/palette"
 	"github.com/pulseaiclub/phi/internal/components/toast"
+	"github.com/pulseaiclub/phi/internal/lsp"
 	"github.com/pulseaiclub/phi/internal/session"
+	"github.com/pulseaiclub/phi/internal/tui/codepane"
 	"github.com/pulseaiclub/phi/internal/tui/commands"
 	"github.com/pulseaiclub/phi/internal/tui/composer"
 	"github.com/pulseaiclub/phi/internal/tui/controller"
@@ -45,6 +50,8 @@ type Editor struct {
 	overlays   *overlays.Overlays
 	toast      toast.Toast
 	diff       *diffpane.Pane
+	code       *codepane.Pane
+	lsp        *lsp.Manager
 
 	ctrl *controller.EngineController
 
@@ -120,6 +127,27 @@ func NewEditor(
 		},
 	)
 
+	// One language-server manager for this cwd. Discovery is a background PATH
+	// scan and nothing is spawned until the viewer asks a question. The pane
+	// resolves relative paths against the same root the manager reports against.
+	e.lsp = lsp.New(cwd, true)
+	e.code = codepane.New(e.theme, cwd, e.lsp,
+		func(text string) {
+			e.Publish(controller.SubmitMsg{Text: text})
+		},
+		func(text string) bool {
+			return e.vx != nil && e.vx.CopyToClipboard(text) == nil
+		},
+		func(msg string) {
+			e.Publish(controller.ToastMsg{Message: msg, Kind: toast.ToastSuccess, Duration: 2 * time.Second})
+		},
+		func() {
+			// Language-server answers land on a query goroutine; publishing is
+			// the thread-safe way to ask for the repaint that shows them.
+			e.Publish(controller.RedrawMsg{})
+		},
+	)
+
 	builtins := commands.NewBuiltinRegistry(
 		e.bus,
 		e.ctrl,
@@ -129,6 +157,7 @@ func NewEditor(
 		modelNames,
 		skillPath,
 		e.openDiff,
+		e.openCode,
 	)
 	e.commands = builtins.Registry
 	e.sessions = builtins.Sessions
@@ -288,18 +317,49 @@ func (e *Editor) blocksComposer() bool {
 	if e.overlays != nil && e.overlays.BlocksComposer() {
 		return true
 	}
-	return e.diff != nil && e.diff.Active()
+	if e.diff != nil && e.diff.Active() {
+		return true
+	}
+	return e.code != nil && e.code.Active()
 }
 
+// openDiff and openCode each close the other: two full-screen overlays cannot
+// both own the frame, and the one underneath would come back on the next Esc.
 func (e *Editor) openDiff(args []string) {
 	if e.diff == nil {
 		return
 	}
+	if e.code != nil {
+		e.code.Close()
+	}
 	e.diff.OpenGit(e.cwd, args)
-	e.captureDiffFocus()
+	e.captureOverlayFocus()
 }
 
-func (e *Editor) captureDiffFocus() {
+// openCode shows a file in the viewer. A ":line" suffix puts the cursor there.
+func (e *Editor) openCode(args []string) {
+	if e.code == nil {
+		return
+	}
+	path := strings.TrimSpace(strings.Join(args, " "))
+	if path == "" {
+		e.toast.Show("usage: /code <path>[:line]", toast.ToastWarning, 2*time.Second)
+		return
+	}
+	line := 0
+	if base, tail, ok := strings.Cut(path, ":"); ok {
+		if n, err := strconv.Atoi(tail); err == nil && n > 0 {
+			path, line = base, n
+		}
+	}
+	if e.diff != nil {
+		e.diff.Close()
+	}
+	e.code.OpenAt(path, line)
+	e.captureOverlayFocus()
+}
+
+func (e *Editor) captureOverlayFocus() {
 	if e.App != nil {
 		e.App.RequestFocus(e)
 	}
@@ -315,9 +375,17 @@ func (e *Editor) Handle(ctx *components.EventContext, ev xui.Event) {
 		return
 	}
 	if e.diff != nil && e.diff.Active() {
-		e.captureDiffFocus()
+		e.captureOverlayFocus()
 		e.diff.Handle(ctx, ev)
 		if !e.diff.Active() && e.composer != nil {
+			e.composer.FocusChat()
+		}
+		return
+	}
+	if e.code != nil && e.code.Active() {
+		e.captureOverlayFocus()
+		e.code.Handle(ctx, ev)
+		if !e.code.Active() && e.composer != nil {
 			e.composer.FocusChat()
 		}
 		return
@@ -339,20 +407,10 @@ func (e *Editor) Draw(ctx components.DrawContext) components.Surface {
 	_ = e.toast.Visible()
 
 	if e.diff != nil && e.diff.Active() {
-		// Palette/slash leave keyboard focus on Chat; steal it back so keys
-		// don't land in the composer under the overlay.
-		e.captureDiffFocus()
-		root := e.diff.Draw(ctx)
-		root.Widget = e
-		if e.toast.Visible() {
-			toastSurf := e.toast.Draw(ctx)
-			root.Children = append(root.Children, components.SubSurface{
-				Origin:  components.Point{X: 0, Y: 0},
-				Surface: toastSurf,
-				Z:       40,
-			})
-		}
-		return root
+		return e.drawOverlay(ctx, e.diff.Draw(ctx))
+	}
+	if e.code != nil && e.code.Active() {
+		return e.drawOverlay(ctx, e.code.Draw(ctx))
 	}
 
 	maxSize := ctx.Max
@@ -427,6 +485,30 @@ func (e *Editor) Draw(ctx components.DrawContext) components.Surface {
 	return root
 }
 
+// drawOverlay finishes a full-screen overlay: it keeps keyboard focus on the
+// Editor (palette and slash leave it on Chat, where keys would land under the
+// overlay) and stacks the toast on top.
+func (e *Editor) drawOverlay(ctx components.DrawContext, root components.Surface) components.Surface {
+	e.captureOverlayFocus()
+	root.Widget = e
+	if e.toast.Visible() {
+		root.Children = append(root.Children, components.SubSurface{
+			Origin:  components.Point{X: 0, Y: 0},
+			Surface: e.toast.Draw(ctx),
+			Z:       40,
+		})
+	}
+	return root
+}
+
+// Close releases long-lived resources: today, the language servers the code
+// viewer started. Safe to call on a partially built Editor.
+func (e *Editor) Close() {
+	if e.lsp != nil {
+		e.lsp.Close()
+	}
+}
+
 func (e *Editor) requestRedraw() {
 	if e.App != nil {
 		e.App.RequestRedraw()
@@ -480,6 +562,9 @@ func (e *Editor) applyTheme(name string) {
 	e.overlays.SetTheme(th)
 	if e.diff != nil {
 		e.diff.SetTheme(th)
+	}
+	if e.code != nil {
+		e.code.SetTheme(th)
 	}
 	e.toast.Show("Theme: "+name, toast.ToastSuccess, 2*time.Second)
 	if e.vx != nil {

@@ -89,6 +89,11 @@ func InWorkspace(absPath, workspace string) bool {
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
+// SensitivePaths is the default deny prefix list for reads and writes. Exposed
+// so a UI that reads files itself (the code viewer) answers to the same list the
+// gate enforces, instead of quietly being the one hole in it.
+func SensitivePaths() []string { return defaultSensitivePaths() }
+
 // IsSensitivePath reports whether absPath matches a sensitive prefix.
 func IsSensitivePath(absPath string, prefixes []string) bool {
 	absPath = filepath.Clean(absPath)

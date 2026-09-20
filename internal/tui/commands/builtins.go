@@ -36,6 +36,7 @@ func NewBuiltinRegistry(
 	modelNames []string,
 	skillPath string,
 	openDiff func(args []string),
+	openCode func(args []string),
 ) *Builtin {
 	r := NewCommandRegistry()
 	ext := &ExtCommands{
@@ -58,6 +59,7 @@ func NewBuiltinRegistry(
 		Add:       composer,
 	}
 	diff := &DiffCommands{Open: openDiff}
+	code := &CodeCommands{Open: openCode}
 
 	sessions.Register(r)
 	branches.Register(r)
@@ -65,6 +67,7 @@ func NewBuiltinRegistry(
 	ext.Register(r)
 	skills.Register(r)
 	diff.Register(r)
+	code.Register(r)
 
 	return &Builtin{Registry: r, Sessions: sessions, Branches: branches, Ext: ext}
 }
