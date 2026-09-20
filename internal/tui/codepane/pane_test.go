@@ -18,12 +18,11 @@ import (
 
 // harness collects the pane's side effects so tests can assert on them.
 type harness struct {
-	pane    *Pane
-	toasts  []string
-	copies  []string
-	copyOK  bool
-	wakes   int
-	submits []string
+	pane   *Pane
+	toasts []string
+	copies []string
+	copyOK bool
+	wakes  int
 }
 
 func newHarness(t *testing.T, files map[string]string) *harness {
@@ -39,7 +38,7 @@ func newHarness(t *testing.T, files map[string]string) *harness {
 		components.DefaultTheme(),
 		cwd,
 		nil, // no language server: the whole LSP surface must degrade politely
-		func(text string) { h.submits = append(h.submits, text) },
+		nil, // onRef: tests that add refs will wire their own
 		func(text string) bool {
 			h.copies = append(h.copies, text)
 			return h.copyOK

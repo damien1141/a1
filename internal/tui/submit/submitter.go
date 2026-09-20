@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pulseaiclub/phi/internal/components/chat"
 	"github.com/pulseaiclub/phi/internal/llm"
 	"github.com/pulseaiclub/phi/internal/session"
 	"github.com/pulseaiclub/phi/internal/tui/commands"
@@ -105,8 +106,15 @@ func (s *Submitter) Submit(text string) {
 	s.handleUserInput(text)
 }
 
-func buildUserDisplay(text string, skills []string, images []imgutil.Attachment) string {
+func buildUserDisplay(text string, refs []chat.Ref, skills []string, images []imgutil.Attachment) string {
 	var parts []string
+	if len(refs) > 0 {
+		labels := make([]string, len(refs))
+		for i, r := range refs {
+			labels[i] = r.Label()
+		}
+		parts = append(parts, "Refs: "+strings.Join(labels, " "))
+	}
 	if len(skills) > 0 {
 		parts = append(parts, "Skills: "+strings.Join(skills, ", "))
 	}
@@ -124,10 +132,30 @@ func buildUserDisplay(text string, skills []string, images []imgutil.Attachment)
 	return strings.Join(parts, "\n")
 }
 
+// promptWithRefs expands attached references into fenced blocks ahead of the
+// typed prompt. The model gets the selected lines; the transcript keeps the
+// chip labels from buildUserDisplay.
+func promptWithRefs(text string, refs []chat.Ref) string {
+	if len(refs) == 0 {
+		return text
+	}
+	blocks := make([]string, len(refs))
+	for i, r := range refs {
+		blocks[i] = r.Block()
+	}
+	expanded := strings.Join(blocks, "\n\n")
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return expanded
+	}
+	return expanded + "\n\n" + text
+}
+
 func (s *Submitter) handleUserInput(text string) {
+	pendingRefs := s.composer.PendingRefs()
 	pendingSkills := s.composer.PendingSkills()
 	pendingImages := s.composer.PendingImages()
-	if (text == "" && len(pendingSkills) == 0 && len(pendingImages) == 0) || s.IsBusy() {
+	if (text == "" && len(pendingRefs) == 0 && len(pendingSkills) == 0 && len(pendingImages) == 0) || s.IsBusy() {
 		return
 	}
 
@@ -139,7 +167,7 @@ func (s *Submitter) handleUserInput(text string) {
 	}
 
 	s.activity.Apply(controller.ActivitySubmitting)
-	display := buildUserDisplay(text, pendingSkills, pendingImages)
+	display := buildUserDisplay(text, pendingRefs, pendingSkills, pendingImages)
 	s.transcript.ApplySession(session.UserAppend{Text: display, Images: llmImages})
 	s.transcript.Sync()
 	s.transcript.StickToBottom()
@@ -149,9 +177,10 @@ func (s *Submitter) handleUserInput(text string) {
 	s.composer.ClearInput()
 	s.composer.ClearPendingSkills()
 	s.composer.ClearPendingImages()
+	s.composer.ClearPendingRefs()
 
 	if s.ctrl != nil {
-		s.ctrl.StartPrompt(text, pendingSkills, llmImages)
+		s.ctrl.StartPrompt(promptWithRefs(text, pendingRefs), pendingSkills, llmImages)
 	}
 }
 

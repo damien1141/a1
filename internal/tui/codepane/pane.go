@@ -23,6 +23,7 @@ import (
 	"github.com/pulseaiclub/xui"
 
 	"github.com/pulseaiclub/phi/internal/components"
+	"github.com/pulseaiclub/phi/internal/components/chat"
 	"github.com/pulseaiclub/phi/internal/components/chrome"
 	"github.com/pulseaiclub/phi/internal/components/codeview"
 	"github.com/pulseaiclub/phi/internal/components/layout"
@@ -47,6 +48,10 @@ const (
 	cardMinW   = 24
 	// scrollStep is how far h/l jump horizontally.
 	scrollStep = 4
+	// selLineWide marks the moving end of a line-wise selection. It only has to
+	// exceed any real line, so the tint is clipped at the frame edge instead of
+	// stopping mid-line.
+	selLineWide = 1 << 20
 )
 
 // sensitivePaths is a snapshot of the gate's deny list. The viewer reads files
@@ -59,12 +64,12 @@ var sensitivePaths = permission.SensitivePaths()
 // by mu. Handle and Draw take it briefly; a query completes by taking it once
 // to land its result and then asking for a repaint.
 type Pane struct {
-	cwd      string
-	mgr      *lsp.Manager
-	onSubmit func(string)
-	onCopy   func(string) bool
-	onToast  func(string)
-	onWake   func()
+	cwd     string
+	mgr     *lsp.Manager
+	onRef   func(chat.Ref)
+	onCopy  func(string) bool
+	onToast func(string)
+	onWake  func()
 
 	mu       sync.Mutex
 	theme    components.Theme
@@ -86,6 +91,10 @@ type Pane struct {
 	req         uint64
 	pendingCopy string
 	pendingWake bool // set under mu; Handle calls wake() after unlocking
+	// pendingRef is staged by the key handler and delivered by Handle, because a
+	// callback must not run while mu is held.
+	pendingRef    *chat.Ref
+	pendingReload bool
 
 	line    int // 0-based cursor line
 	col     int // byte offset into lines[line], always on a rune boundary
@@ -96,6 +105,11 @@ type Pane struct {
 
 	pendingG bool
 	help     bool
+
+	// selecting is a line-wise visual selection anchored at selAnchor; the caret
+	// (line) is the moving end, so plain movement extends it.
+	selecting bool
+	selAnchor int
 
 	card *hoverCard
 
@@ -125,27 +139,29 @@ type hoverCard struct {
 }
 
 // New builds an inactive pane. mgr may be nil, in which case language-server
-// actions report that they are unavailable. onWake requests a repaint from any
-// goroutine and must be safe to call off the UI thread.
+// actions report that they are unavailable. onRef receives the line the user
+// picked for the chat input. onWake requests a repaint from any goroutine and
+// must be safe to call off the UI thread; both callbacks run outside the pane
+// mutex, on the UI goroutine.
 func New(
 	theme components.Theme,
 	cwd string,
 	mgr *lsp.Manager,
-	onSubmit func(string),
+	onRef func(chat.Ref),
 	onCopy func(string) bool,
 	onToast func(string),
 	onWake func(),
 ) *Pane {
 	p := &Pane{
-		cwd:      cwd,
-		mgr:      mgr,
-		onSubmit: onSubmit,
-		onCopy:   onCopy,
-		onToast:  onToast,
-		onWake:   onWake,
-		theme:    theme,
-		method:   xui.WidthUnicode,
-		picker:   listpicker.Picker{Theme: theme},
+		cwd:     cwd,
+		mgr:     mgr,
+		onRef:   onRef,
+		onCopy:  onCopy,
+		onToast: onToast,
+		onWake:  onWake,
+		theme:   theme,
+		method:  xui.WidthUnicode,
+		picker:  listpicker.Picker{Theme: theme},
 	}
 	p.picker.OnAccept = p.acceptPicker
 	return p
@@ -193,6 +209,7 @@ func (p *Pane) OpenAt(path string, line int) {
 	p.pendingG = false
 	p.card = nil
 	p.status = ""
+	p.selecting = false
 	p.navHits = nil
 	p.outline = nil
 	p.pushPicker = false
@@ -249,9 +266,21 @@ func (p *Pane) Handle(ctx *components.EventContext, ev xui.Event) {
 		p.pendingCopy = ""
 		wake := p.pendingWake
 		p.pendingWake = false
+		ref := p.pendingRef
+		p.pendingRef = nil
+		// A reload must run here, not in the key handler: load takes the mutex
+		// the handler already holds.
+		reload := p.pendingReload
+		p.pendingReload = false
 		p.mu.Unlock()
 		if text != "" {
 			msg = p.copy(text)
+		}
+		if reload {
+			msg = p.reload()
+		}
+		if ref != nil && p.onRef != nil {
+			p.onRef(*ref)
 		}
 		if wake {
 			p.wake()
@@ -276,6 +305,13 @@ func (p *Pane) handleKeyLocked(ctx *components.EventContext, e xui.KeyEvent) str
 			return ""
 		}
 	}
+	if e.Code == xui.KeyEscape && p.selecting {
+		// Cancel the selection first: losing a ten-line pick to a close that was
+		// meant to undo it is worse than one extra Esc.
+		p.selecting = false
+		ctx.ConsumeAndRedraw()
+		return ""
+	}
 	if e.Code == xui.KeyEscape && p.card != nil {
 		p.card = nil
 		ctx.ConsumeAndRedraw()
@@ -284,6 +320,7 @@ func (p *Pane) handleKeyLocked(ctx *components.EventContext, e xui.KeyEvent) str
 	if e.Code == xui.KeyEscape ||
 		(e.Code == xui.KeyRune && (e.Rune == 'q' || e.Rune == 'Q') && !e.Mods.Has(xui.ModCtrl)) {
 		p.active = false
+		p.selecting = false // a reopened pane starts clean
 		ctx.ConsumeAndRedraw()
 		return ""
 	}
@@ -389,8 +426,14 @@ func (p *Pane) handleRune(ctx *components.EventContext, r rune) string {
 		return p.copyLine()
 	case 'Y':
 		return p.copyLocation()
+	case 'v':
+		p.toggleSelect()
+	case 'a':
+		return p.addRef()
 	case 'r':
-		return p.reload()
+		p.pendingReload = true
+		ctx.ConsumeAndRedraw()
+		return ""
 	case '/':
 		p.searchMode = true
 		p.searchQuery = ""
@@ -656,6 +699,7 @@ func (p *Pane) load(path string, line int) error {
 	p.hl = hl
 	p.loadErr = ""
 	p.status = ""
+	p.selecting = false
 	if previous != "" && previous != abs {
 		// The old document would otherwise stay open in the server for the
 		// rest of the session. Off the UI goroutine: it is a pipe write.
@@ -697,11 +741,17 @@ func (p *Pane) highlightLines(abs string, lines []string) map[int][]components.S
 	}
 }
 
+// reload re-reads the open file. It runs with the mutex dropped because load
+// takes it, so it reads the target first and then loads outside the lock.
 func (p *Pane) reload() string {
-	if p.abs == "" {
+	p.mu.Lock()
+	abs, line := p.abs, p.line+1
+	p.mu.Unlock()
+
+	if abs == "" {
 		return "no file open"
 	}
-	if err := p.load(p.abs, p.line+1); err != nil {
+	if err := p.load(abs, line); err != nil {
 		return err.Error()
 	}
 	return "reloaded"
@@ -954,6 +1004,62 @@ func (p *Pane) moveMatch(dir int) string {
 	return ""
 }
 
+// ------------------------------------------------------------ selection
+
+// toggleSelect starts or drops a line-wise selection. The caret is the moving
+// end, so the ordinary movement keys extend it without any extra state.
+func (p *Pane) toggleSelect() {
+	p.selecting = !p.selecting
+	p.selAnchor = p.line
+}
+
+// selectionLines returns the inclusive, ordered line span of the selection.
+func (p *Pane) selectionLines() (lo, hi int) {
+	lo, hi = p.selAnchor, p.line
+	if lo > hi {
+		lo, hi = hi, lo
+	}
+	return clampLine(lo, len(p.lines)), clampLine(hi, len(p.lines))
+}
+
+// addRef stages the selected lines (or the caret line alone) for the chat input
+// and reports the outcome as a toast.
+func (p *Pane) addRef() string {
+	ref, ok := p.selectedRef()
+	if !ok {
+		return "no file open"
+	}
+	if p.onRef == nil {
+		return "chat input is unavailable"
+	}
+	p.selecting = false
+	p.pendingRef = &ref // delivered by Handle, outside the mutex
+	return fmt.Sprintf("added %s to chat", ref.Label())
+}
+
+// selectedRef cuts the current selection out of the open file.
+func (p *Pane) selectedRef() (chat.Ref, bool) {
+	if p.abs == "" || len(p.lines) == 0 {
+		return chat.Ref{}, false
+	}
+	lo, hi := p.line, p.line
+	if p.selecting {
+		lo, hi = p.selectionLines()
+	}
+	return chat.Ref{
+		Path:  p.rel,
+		Start: lo + 1,
+		End:   hi + 1,
+		Lang:  fenceLang(p.abs),
+		Text:  strings.Join(p.lines[lo:hi+1], "\n"),
+	}, true
+}
+
+// fenceLang is the markdown fence hint for a path: "main.go" -> "go".
+func fenceLang(path string) string {
+	return strings.TrimPrefix(filepath.Ext(path), ".")
+}
+
 // ------------------------------------------------------------ copy / picker
 
 // copyLine and copyLocation stage the text: the callback runs after Handle
@@ -1103,10 +1209,13 @@ func (p *Pane) snapshot(ctx components.DrawContext) codeview.Model {
 	case p.searchMode || p.searchQuery != "":
 		// The query has to be visible somewhere while it is being typed.
 		status = p.searchStatus()
+	case p.selecting:
+		lo, hi := p.selectionLines()
+		status = fmt.Sprintf("%d lines selected%s a to add", hi-lo+1, chrome.Sep)
 	case status == "":
 		status = p.location()
 	}
-	return codeview.Model{
+	m := codeview.Model{
 		Theme:      p.theme,
 		Title:      "code" + chrome.Sep + p.title(),
 		Status:     status,
@@ -1122,6 +1231,15 @@ func (p *Pane) snapshot(ctx components.DrawContext) codeview.Model {
 		Help:       p.help,
 		Empty:      p.emptyText(),
 	}
+	if p.selecting {
+		// Line-wise: the moving end is pinned past any real line so the
+		// tint is clipped at the frame edge rather than stopping mid-line.
+		lo, hi := p.selectionLines()
+		m.Selecting = true
+		m.SelStart = components.Point{X: 0, Y: lo}
+		m.SelEnd = components.Point{X: selLineWide, Y: hi}
+	}
+	return m
 }
 
 func (p *Pane) searchStatus() string {
@@ -1250,6 +1368,8 @@ var hintLine = strings.Join([]string{
 	"gr refs",
 	"K hover",
 	"o outline",
+	"v select",
+	"a add",
 	"y copy",
 	"r reload",
 	"? help",

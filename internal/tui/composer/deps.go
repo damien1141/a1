@@ -4,6 +4,7 @@ import (
 	"github.com/pulseaiclub/xui"
 
 	"github.com/pulseaiclub/phi/internal/components"
+	"github.com/pulseaiclub/phi/internal/components/chat"
 	"github.com/pulseaiclub/phi/internal/components/layout"
 	"github.com/pulseaiclub/phi/internal/components/palette"
 	imgutil "github.com/pulseaiclub/phi/internal/util/image"
@@ -16,8 +17,10 @@ type Input interface {
 	SetInput(text string)
 	PendingSkills() []string
 	PendingImages() []imgutil.Attachment
+	PendingRefs() []chat.Ref
 	ClearPendingSkills()
 	ClearPendingImages()
+	ClearPendingRefs()
 	SyncBashBorder(text string)
 	CloseMentionSlash()
 	SetBashBorderActive(active bool)

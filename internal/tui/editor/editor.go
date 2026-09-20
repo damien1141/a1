@@ -11,6 +11,7 @@ import (
 
 	"github.com/pulseaiclub/phi/internal/components"
 	"github.com/pulseaiclub/phi/internal/components/app"
+	"github.com/pulseaiclub/phi/internal/components/chat"
 	"github.com/pulseaiclub/phi/internal/components/palette"
 	"github.com/pulseaiclub/phi/internal/components/toast"
 	"github.com/pulseaiclub/phi/internal/lsp"
@@ -132,8 +133,16 @@ func NewEditor(
 	// resolves relative paths against the same root the manager reports against.
 	e.lsp = lsp.New(cwd, true)
 	e.code = codepane.New(e.theme, cwd, e.lsp,
-		func(text string) {
-			e.Publish(controller.SubmitMsg{Text: text})
+		func(ref chat.Ref) {
+			e.composer.AddPendingRef(ref)
+			e.composer.FocusChat()
+			e.Publish(
+				controller.ToastMsg{
+					Message:  "added " + ref.Label() + " to chat",
+					Kind:     toast.ToastSuccess,
+					Duration: 2 * time.Second,
+				},
+			)
 		},
 		func(text string) bool {
 			return e.vx != nil && e.vx.CopyToClipboard(text) == nil
