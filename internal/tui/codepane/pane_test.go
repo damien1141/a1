@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 	"unicode/utf16"
 
 	"github.com/pulseaiclub/xui"
@@ -574,4 +575,40 @@ func TestCopyCallbackRunsOutsideTheLock(t *testing.T) {
 	ctx := &components.EventContext{}
 	h.pane.Handle(ctx, xui.KeyEvent{Press: true, Code: xui.KeyRune, Rune: 'y'})
 	assert.Contains(t, h.toasts, "copied")
+}
+
+// wakeAsync used to take the mutex it already held (called from
+// handleKeyLocked), which deadlocked the UI thread on every LSP query.
+// Regression test: wake must fire outside the pane mutex.
+func TestHoverWakeRunsOutsideTheLock(t *testing.T) {
+	h := newHarness(t, map[string]string{"a.go": "package main\nfunc main() {}\n"})
+	h.pane.mgr = lsp.New(t.TempDir(), false) // non-nil but inert; hover returns errNoServer
+	t.Cleanup(h.pane.mgr.Close)
+
+	woke := make(chan struct{}, 4)
+	h.pane.onWake = func() {
+		// A repaint triggered from the key path must not fire while p.mu is held.
+		if h.pane.mu.TryLock() {
+			h.pane.mu.Unlock()
+			select {
+			case woke <- struct{}{}:
+			default:
+			}
+		}
+	}
+
+	h.pane.Open("a.go") // position() requires an open file
+
+	done := make(chan struct{})
+	go func() {
+		h.key(t, 'K')
+		close(done)
+	}()
+
+	select {
+	case <-woke:
+	case <-time.After(3 * time.Second):
+		t.Fatal("hover wake deadlocked: wakeAsync took the mutex handleKeyLocked already holds")
+	}
+	<-done
 }

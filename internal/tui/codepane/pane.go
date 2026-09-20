@@ -85,6 +85,7 @@ type Pane struct {
 	// file the user is reading now.
 	req         uint64
 	pendingCopy string
+	pendingWake bool // set under mu; Handle calls wake() after unlocking
 
 	line    int // 0-based cursor line
 	col     int // byte offset into lines[line], always on a rune boundary
@@ -246,9 +247,14 @@ func (p *Pane) Handle(ctx *components.EventContext, ev xui.Event) {
 		msg := p.handleKeyLocked(ctx, e)
 		text := p.pendingCopy
 		p.pendingCopy = ""
+		wake := p.pendingWake
+		p.pendingWake = false
 		p.mu.Unlock()
 		if text != "" {
 			msg = p.copy(text)
+		}
+		if wake {
+			p.wake()
 		}
 		p.notify(msg)
 	default:
@@ -547,14 +553,12 @@ func (p *Pane) outlineSymbols() string {
 	return ""
 }
 
-// wakeAsync asks for a repaint for a query goroutine, but skips it when the
-// pane has already moved on.
+// wakeAsync stages a repaint for a query goroutine: Handle runs wake() after
+// unlocking. It must not take p.mu itself — it is called from handleKeyLocked,
+// which already holds the lock, and Go's mutex is not reentrant.
 func (p *Pane) wakeAsync(id uint64) {
-	p.mu.Lock()
-	same := p.req == id
-	p.mu.Unlock()
-	if same {
-		p.wake()
+	if p.req == id {
+		p.pendingWake = true
 	}
 }
 
