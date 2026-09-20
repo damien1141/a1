@@ -353,7 +353,7 @@ func (e *Editor) openCode(args []string) {
 	}
 	path := strings.TrimSpace(strings.Join(args, " "))
 	if strings.HasPrefix(path, "@") {
-		path = "." + path
+		path = "./" + path[1:]
 	}
 	if path == "" {
 		e.toast.Show("usage: /code <path>[:line]", toast.ToastWarning, 2*time.Second)

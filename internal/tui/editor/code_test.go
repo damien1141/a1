@@ -74,6 +74,14 @@ func TestCodeCommandAcceptsLineSuffix(t *testing.T) {
 	assert.Contains(t, components.SurfaceText(frame(t, e)), "a.go:3:1")
 }
 
+// An @ prefix is expanded to ./ so the shell can complete the path.
+func TestCodeCommandExpandsAtPrefix(t *testing.T) {
+	e := newTestEditor(t)
+	require.True(t, e.commands.DispatchSlash("/code @a.go", commands.NewContext(e.bus, nil)))
+	require.True(t, e.code.Active())
+	assert.Contains(t, components.SurfaceText(frame(t, e)), "a.go")
+}
+
 // With no path the command explains itself instead of opening an empty pane.
 func TestCodeCommandWithoutPathToasts(t *testing.T) {
 	e := newTestEditor(t)
