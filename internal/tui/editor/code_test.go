@@ -28,7 +28,6 @@ func newTestEditor(t *testing.T) *Editor {
 		nil,
 		components.DefaultTheme(),
 		dir,
-		"m",
 		"",
 		"",
 		0,

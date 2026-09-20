@@ -2,7 +2,6 @@
 package editor
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
