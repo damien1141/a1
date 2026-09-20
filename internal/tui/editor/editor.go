@@ -346,11 +346,15 @@ func (e *Editor) openDiff(args []string) {
 }
 
 // openCode shows a file in the viewer. A ":line" suffix puts the cursor there.
+// An "@" prefix is expanded to "./" so the shell can complete the path.
 func (e *Editor) openCode(args []string) {
 	if e.code == nil {
 		return
 	}
 	path := strings.TrimSpace(strings.Join(args, " "))
+	if strings.HasPrefix(path, "@") {
+		path = "." + path
+	}
 	if path == "" {
 		e.toast.Show("usage: /code <path>[:line]", toast.ToastWarning, 2*time.Second)
 		return
