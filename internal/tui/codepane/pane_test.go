@@ -233,8 +233,6 @@ func TestJumpLandsOnFirstNonBlank(t *testing.T) {
 	assert.Equal(t, 2, h.pane.col)
 }
 
-// ------------------------------------------------------------ selection
-
 func TestSelectAndAddRef(t *testing.T) {
 	h := newHarness(t, map[string]string{"src/a.go": "one\ntwo\nthree\n"})
 	h.pane.OpenAt("src/a.go", 2)
@@ -316,8 +314,6 @@ func TestEscapeCancelsSelectionBeforeClosing(t *testing.T) {
 	assert.False(t, h.pane.Active())
 }
 
-// ------------------------------------------------------------ file guards
-
 // The viewer answers to the same deny list as the tool gate.
 func TestRefusesSensitivePath(t *testing.T) {
 	home, err := os.UserHomeDir()
@@ -327,8 +323,6 @@ func TestRefusesSensitivePath(t *testing.T) {
 	h.pane.Open(filepath.Join(home, ".ssh", "id_rsa"))
 	assert.Contains(t, h.pane.loadErr, "sensitive")
 }
-
-// ------------------------------------------------------------ helpers
 
 func TestDisplayColCountsWideGlyphs(t *testing.T) {
 	assert.Equal(t, 0, displayCol("日本", 0, xui.WidthUnicode))

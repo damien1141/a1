@@ -262,8 +262,6 @@ func (p *Pane) notify(msg string) {
 	}
 }
 
-// ------------------------------------------------------------ file loading
-
 // load reads path and moves the cursor to line (1-based, 0 = top).
 func (p *Pane) load(path string, line int) error {
 	abs := p.resolve(path)
@@ -377,8 +375,6 @@ func humanBytes(n int64) string {
 	}
 	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
 }
-
-// ------------------------------------------------------------ cursor
 
 func (p *Pane) lineText() string {
 	if p.line < 0 || p.line >= len(p.lines) {
@@ -499,8 +495,6 @@ func gutterWidth(lines int) int {
 	return len(strconv.Itoa(max(lines, 1))) + 3
 }
 
-// ------------------------------------------------------------ selection
-
 // toggleSelect starts or drops a line-wise selection. The caret is the moving
 // end, so the ordinary movement keys extend it without any extra state.
 func (p *Pane) toggleSelect() {
@@ -554,8 +548,6 @@ func (p *Pane) selectedRef() (chat.Ref, bool) {
 func fenceLang(path string) string {
 	return strings.TrimPrefix(filepath.Ext(path), ".")
 }
-
-// ------------------------------------------------------------ draw
 
 // Draw paints the overlay.
 func (p *Pane) Draw(ctx components.DrawContext) components.Surface {
