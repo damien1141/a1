@@ -10,6 +10,20 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [0.27.5] - 2026-09-22
+
+### Added
+
 - `/code <path>[:line]`: full-screen source viewer with syntax highlighting, a
   CJK-aware caret (`j`/`k`, `g`/`G`, `h`/`l`), and `v` to select lines then `a`
   to hand them to the chat input. The pane reads files itself, so it answers to
@@ -671,7 +685,8 @@ Earlier releases are available from GitHub tags only.
 
 <!-- Released section ended -->
 
-[Unreleased]: https://github.com/pulseaiclub/phi/compare/v0.27.4...HEAD
+[Unreleased]: https://github.com/pulseaiclub/phi/compare/v0.27.5...HEAD
+[0.27.5]: https://github.com/pulseaiclub/phi/compare/v0.27.4...v0.27.5
 [0.27.4]: https://github.com/pulseaiclub/phi/releases/tag/v0.27.4
 [0.27.3]: https://github.com/pulseaiclub/phi/releases/tag/v0.27.3
 [0.27.2]: https://github.com/pulseaiclub/phi/releases/tag/v0.27.2
