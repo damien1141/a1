@@ -21,7 +21,7 @@
 | `internal/tui/footer/`   | Activity spinner, token labels, update hint |
 | `internal/tui/overlays/` | Permission / continue-ask panels |
 | `internal/tui/diffpane/` | Git diff review overlay (`/diff`) |
-| `internal/tui/codepane/` | Source viewer overlay (`/code`) with LSP navigation |
+| `internal/tui/codepane/` | Source viewer overlay (`/code`) |
 | `internal/tui/submit/`   | Submit, cancel, slash dispatch, bash runner |
 | `internal/tui/commands/` | Slash/palette registry, session/extension commands |
 | `internal/tui/pathutil/` | Cwd + git branch path labels |
@@ -32,7 +32,6 @@
 | `internal/permission/`   | Permission policy and ask gate                 |
 | `internal/extension/`    | PXB extension discover/spawn/runner            |
 | `internal/mcp/`          | MCP config + stdio client + pool (meta-tool route) |
-| `internal/lsp/`          | LSP client: server discovery, lazy spawn, nav/hover |
 
 ## Design docs
 
@@ -42,5 +41,4 @@
 | [`mcp.md`](mcp.md) | MCP: zero schema pollution, meta-tools, config, CLI |
 | [`models.md`](models.md) | Supported models, presets, explicit `api`, thinking config |
 | [`tui.md`](tui.md) | TUI: package layout, aggregation, interaction flows |
-| [`lsp.md`](lsp.md) | Language servers: scope, lifecycle, exec surface |
 | [`session-context-building.md`](session-context-building.md) | Sessions: tree model, compaction, context building |
