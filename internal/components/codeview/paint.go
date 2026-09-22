@@ -2,7 +2,6 @@ package codeview
 
 import (
 	"strconv"
-	"strings"
 
 	"github.com/pulseaiclub/xui"
 
@@ -16,8 +15,8 @@ import (
 type Model struct {
 	Theme      components.Theme
 	Title      string                    // e.g. "src/app.go"
-	Status     string                    // left status text, e.g. "go · lsp ready · 214 lines"
-	Hint       string                    // key hint line, e.g. "esc close · j/k move · gd definition"
+	Status     string                    // left status text, e.g. "src/app.go:3:1 · 214 lines"
+	Hint       string                    // key hint line, e.g. "esc close · j/k move"
 	Path       string                    // file path used for syntax detection (lexers.Match)
 	Lines      []string                  // raw file lines without trailing newline
 	Highlight  map[int][]components.Span // by line index; nil = plain
@@ -29,20 +28,16 @@ type Model struct {
 	Selecting  bool
 	SelStart   components.Point // anchor (Y = line index, X = display col)
 	SelEnd     components.Point
-	Help       bool
 	Empty      string // shown when Lines is empty
 }
 
 const (
 	defaultTitle = "file"
-	defaultHint  = "esc close" + chrome.Sep + "j/k move" + chrome.Sep + "gg/G top/bottom" + chrome.Sep + "? help"
+	defaultHint  = "esc close" + chrome.Sep + "j/k move" + chrome.Sep + "gg/G top/bottom"
 	// gutterRule separates the right-aligned line number from the code. The
 	// width is a separate constant: len(gutterRule) counts bytes, not cells.
 	gutterRule      = " │ "
 	gutterRuleWidth = 3
-	helpZ           = 10
-	minHelpWidth    = 12
-	minHelpRows     = 5
 )
 
 // Paint draws the full-screen file view.
@@ -96,9 +91,6 @@ func Paint(ctx components.DrawContext, m Model) components.Surface {
 	if len(m.Lines) > 0 {
 		paintCursor(&s, m, w, scroll, gutterW, bodyH)
 	}
-	if m.Help {
-		paintHelp(&s, m, method)
-	}
 	return s
 }
 
@@ -124,9 +116,9 @@ func paintLine(s *components.Surface, y, w int, m Model, line, gutterW, numW int
 		}
 	}
 	if m.XScroll > 0 {
-		spans = SkipCols(spans, m.XScroll, method)
+		spans = skipCols(spans, m.XScroll, method)
 	}
-	components.PaintSpans(s, gutterW, y, ClipSpans(spans, codeW, method), method)
+	components.PaintSpans(s, gutterW, y, clipSpans(spans, codeW, method), method)
 }
 
 // paintGutter writes the right-aligned 1-based line number and the rule that
@@ -187,11 +179,11 @@ func paintSelection(s *components.Surface, m Model, scroll, gutterW, bodyH int) 
 }
 
 // paintCursor exposes the caret cell so the host can point the terminal cursor
-// at it. A caret that is scrolled away, past the body, past the last line, or
-// hidden behind the help modal is dropped: pointing the terminal cursor at a
-// cell the user cannot see is worse than showing no cursor at all.
+// at it. A caret that is scrolled away, past the body, or past the last line is
+// dropped: pointing the terminal cursor at a cell the user cannot see is worse
+// than showing no cursor at all.
 func paintCursor(s *components.Surface, m Model, w, scroll, gutterW, bodyH int) {
-	if m.Help || m.CursorLine < 0 || m.CursorLine >= len(m.Lines) {
+	if m.CursorLine < 0 || m.CursorLine >= len(m.Lines) {
 		return
 	}
 	y := 1 + m.CursorLine - scroll
@@ -234,7 +226,7 @@ func fillRange(s *components.Surface, x, y, w int, st xui.Style) {
 // the pane's left edge after a horizontal scroll. Wide glyphs count their real
 // width; the cluster straddling the cut is kept whole, because half a wide glyph
 // has nowhere to go.
-func SkipCols(spans []components.Span, cols int, method xui.WidthMethod) []components.Span {
+func skipCols(spans []components.Span, cols int, method xui.WidthMethod) []components.Span {
 	if cols <= 0 {
 		return spans
 	}
@@ -272,7 +264,7 @@ func SkipCols(spans []components.Span, cols int, method xui.WidthMethod) []compo
 // trailing wide glyph that does not fit is dropped rather than replaced by the
 // next span's text, so a clipping pane never shows a character that is not
 // where it claims to be.
-func ClipSpans(spans []components.Span, width int, method xui.WidthMethod) []components.Span {
+func clipSpans(spans []components.Span, width int, method xui.WidthMethod) []components.Span {
 	if width <= 0 {
 		return nil
 	}
@@ -293,86 +285,4 @@ func ClipSpans(spans []components.Span, width int, method xui.WidthMethod) []com
 		used += xui.StringWidth(text, method)
 	}
 	return out
-}
-
-// helpEntry is one "key  description" line in the help modal.
-type helpEntry struct {
-	key  string
-	desc string
-}
-
-// helpEntries splits the footer hint ("esc close · j/k move") into rows. The
-// modal lists exactly the keys the pane advertises, so the two cannot drift.
-func helpEntries(hint string) []helpEntry {
-	if hint == "" {
-		hint = defaultHint
-	}
-	parts := strings.Split(hint, chrome.Sep)
-	out := make([]helpEntry, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		keyName, desc, found := strings.Cut(part, " ")
-		if !found {
-			out = append(out, helpEntry{key: keyName})
-			continue
-		}
-		out = append(out, helpEntry{key: keyName, desc: strings.TrimSpace(desc)})
-	}
-	return out
-}
-
-func paintHelp(s *components.Surface, m Model, method xui.WidthMethod) {
-	th := m.Theme
-	if s.Size.Width < minHelpWidth || s.Size.Height < minHelpRows {
-		return
-	}
-	entries := helpEntries(m.Hint)
-	const gap = 2
-	keyW, descW := 0, 0
-	for _, e := range entries {
-		keyW = max(keyW, xui.StringWidth(e.key, method))
-		descW = max(descW, xui.StringWidth(e.desc, method))
-	}
-
-	boxW := min(s.Size.Width-4, keyW+gap+descW+4)
-	boxH := min(s.Size.Height-2, len(entries)+2)
-	ox := max((s.Size.Width-boxW)/2, 0)
-	oy := max((s.Size.Height-boxH)/2, 0)
-	panel := components.NewSurface(boxW, boxH, nil)
-	// Opaque fill: the panel must cover the code behind it.
-	fill := xui.Style{Fg: th.Foreground.Fg}
-	for y := range boxH {
-		fillRange(&panel, 0, y, boxW, fill)
-	}
-	layout.DrawRoundedBorder(
-		&panel,
-		layout.BorderRounded,
-		chrome.ModalBorder(th),
-		&layout.BorderLabel{Text: " keys ", Style: chrome.PanelTitle(th)},
-		nil,
-		nil,
-		nil,
-		method,
-	)
-	for i, e := range entries {
-		if i+1 >= boxH-1 {
-			break
-		}
-		panel.Print(2, i+1, layout.TruncateToWidth(e.key, boxW-4, method), th.Keybind, method)
-		panel.Print(
-			2+keyW+gap,
-			i+1,
-			layout.TruncateToWidth(e.desc, boxW-4-keyW-gap, method),
-			th.Foreground,
-			method,
-		)
-	}
-	s.Children = append(s.Children, components.SubSurface{
-		Origin:  components.Point{X: ox, Y: oy},
-		Z:       helpZ,
-		Surface: panel,
-	})
 }

@@ -34,7 +34,6 @@ func newTestEditor(t *testing.T) *Editor {
 		nil,
 	)
 	require.NotNil(t, e)
-	t.Cleanup(e.Close)
 	return e
 }
 
@@ -51,7 +50,6 @@ func frame(t *testing.T, e *Editor) components.Surface {
 func TestCodeCommandOpensPane(t *testing.T) {
 	e := newTestEditor(t)
 	require.NotNil(t, e.code, "NewEditor must construct the code pane")
-	require.NotNil(t, e.lsp, "NewEditor must construct the language-server manager")
 
 	require.True(t, e.commands.DispatchSlash("/code a.go", commands.NewContext(e.bus, nil)))
 

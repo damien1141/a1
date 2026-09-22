@@ -10,11 +10,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
-- `/code <path>[:line]`: full-screen source viewer with syntax highlighting,
-  in-file search, a caret with CJK-aware column math, and language-server
-  navigation — `Enter`/`gd` definition, `gr` references, `K` hover, `o` outline.
-  Servers are discovered on PATH (`gopls`, `rust-analyzer`, `pyright`, …) and
-  spawned lazily; without one the pane stays a plain viewer.
+- `/code <path>[:line]`: full-screen source viewer with syntax highlighting, a
+  CJK-aware caret (`j`/`k`, `g`/`G`, `h`/`l`), and `v` to select lines then `a`
+  to hand them to the chat input. The pane reads files itself, so it answers to
+  the same deny list as the tool gate.
 
 ### Changed
 

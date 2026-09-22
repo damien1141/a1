@@ -13,7 +13,6 @@ import (
 	"github.com/pulseaiclub/phi/internal/components/chat"
 	"github.com/pulseaiclub/phi/internal/components/palette"
 	"github.com/pulseaiclub/phi/internal/components/toast"
-	"github.com/pulseaiclub/phi/internal/lsp"
 	"github.com/pulseaiclub/phi/internal/session"
 	"github.com/pulseaiclub/phi/internal/tui/codepane"
 	"github.com/pulseaiclub/phi/internal/tui/commands"
@@ -51,7 +50,6 @@ type Editor struct {
 	toast      toast.Toast
 	diff       *diffpane.Pane
 	code       *codepane.Pane
-	lsp        *lsp.Manager
 
 	ctrl *controller.EngineController
 
@@ -127,32 +125,14 @@ func NewEditor(
 		},
 	)
 
-	// One language-server manager for this cwd. Discovery is a background PATH
-	// scan and nothing is spawned until the viewer asks a question. The pane
-	// resolves relative paths against the same root the manager reports against.
-	e.lsp = lsp.New(cwd, true)
-	e.code = codepane.New(e.theme, cwd, e.lsp,
+	e.code = codepane.New(e.theme, cwd,
 		func(ref chat.Ref) {
+			// The pane's own toast reports the add; this only fills the composer.
 			e.composer.AddPendingRef(ref)
 			e.composer.FocusChat()
-			e.Publish(
-				controller.ToastMsg{
-					Message:  "added " + ref.Label() + " to chat",
-					Kind:     toast.ToastSuccess,
-					Duration: 2 * time.Second,
-				},
-			)
-		},
-		func(text string) bool {
-			return e.vx != nil && e.vx.CopyToClipboard(text) == nil
 		},
 		func(msg string) {
 			e.Publish(controller.ToastMsg{Message: msg, Kind: toast.ToastSuccess, Duration: 2 * time.Second})
-		},
-		func() {
-			// Language-server answers land on a query goroutine; publishing is
-			// the thread-safe way to ask for the repaint that shows them.
-			e.Publish(controller.RedrawMsg{})
 		},
 	)
 
@@ -287,8 +267,6 @@ func (e *Editor) Update(m controller.Msg) {
 		}
 	case controller.JobProgressMsg:
 		// Applied in drainBus so we can skip Sync when the tree is unchanged.
-	case controller.RedrawMsg:
-		// no state change; drain already requested redraw
 	}
 }
 
@@ -511,14 +489,6 @@ func (e *Editor) drawOverlay(ctx components.DrawContext, root components.Surface
 		})
 	}
 	return root
-}
-
-// Close releases long-lived resources: today, the language servers the code
-// viewer started. Safe to call on a partially built Editor.
-func (e *Editor) Close() {
-	if e.lsp != nil {
-		e.lsp.Close()
-	}
 }
 
 func (e *Editor) requestRedraw() {

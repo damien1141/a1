@@ -32,7 +32,6 @@ type Theme struct {
 	ToolName    xui.Style
 	SelectionBg xui.Style
 	SelectionFg xui.Style
-	Keybind     xui.Style // equals ToolName; kept for call-site clarity
 	Command     xui.Style // palette command verbs; equals Title
 }
 
@@ -61,7 +60,6 @@ func DarkTheme() Theme {
 		ToolName:    info,
 		SelectionBg: xui.Style{Bg: xui.RGBColor(0x2a, 0x3f, 0x5f)},
 		SelectionFg: xui.Style{Fg: xui.RGBColor(0xf0, 0xf3, 0xf8), Bold: true},
-		Keybind:     info,
 		Command:     title,
 	}
 }
@@ -83,7 +81,6 @@ func DarculaTheme() Theme {
 		ToolName:    info,
 		SelectionBg: xui.Style{Bg: xui.RGBColor(0x21, 0x42, 0x83)},
 		SelectionFg: xui.Style{Fg: xui.RGBColor(0xff, 0xff, 0xff), Bold: true},
-		Keybind:     info,
 		Command:     title,
 	}
 }
@@ -105,7 +102,6 @@ func PinkTheme() Theme {
 		ToolName:    info,
 		SelectionBg: xui.Style{Bg: xui.RGBColor(0xff, 0x9e, 0xc0)},
 		SelectionFg: xui.Style{Fg: xui.RGBColor(0x2a, 0x10, 0x1c), Bold: true},
-		Keybind:     info,
 		Command:     title,
 	}
 }
@@ -127,7 +123,6 @@ func TerminalTheme() Theme {
 		ToolName:    info,
 		SelectionBg: xui.Style{Bg: xui.IndexedColor(4)},
 		SelectionFg: xui.Style{Fg: xui.IndexedColor(0), Bold: true},
-		Keybind:     info,
 		Command:     title,
 	}
 }

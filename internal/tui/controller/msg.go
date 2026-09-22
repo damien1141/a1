@@ -52,11 +52,6 @@ type FooterMsg struct {
 
 func (FooterMsg) isMsg() {}
 
-// RedrawMsg only asks for a frame (e.g. delayed activity clear).
-type RedrawMsg struct{}
-
-func (RedrawMsg) isMsg() {}
-
 // ToastMsg asks the Editor to show a transient overlay notification.
 // Producers Publish this instead of holding a toast callback.
 type ToastMsg struct {

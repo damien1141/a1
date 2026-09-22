@@ -344,7 +344,7 @@ func TestCodeCommand_NeedsArgs(t *testing.T) {
 	assert.Equal(t, "/code ", insert)
 
 	ctx := NewContext(controller.NewBus(nil), nil)
-	assert.True(t, r.DispatchSlash("/code internal/lsp/client.go:42", ctx))
+	assert.True(t, r.DispatchSlash("/code internal/tui/editor/editor.go:42", ctx))
 	require.Len(t, opened, 1)
-	assert.Equal(t, []string{"internal/lsp/client.go:42"}, opened[0])
+	assert.Equal(t, []string{"internal/tui/editor/editor.go:42"}, opened[0])
 }

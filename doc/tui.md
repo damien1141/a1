@@ -12,7 +12,7 @@ cmd/main.go
        ├─ FooterChrome     status slot (activity↔tokens), bottom row for ext/jobs/hints
        ├─ Overlays         permission ask, continue ask
        ├─ DiffPane         full-screen git diff review (`/diff`)
-       ├─ CodePane         full-screen source viewer + LSP nav (`/code`)
+       ├─ CodePane         full-screen source viewer (`/code`)
        └─ Submitter        submit / cancel / slash / bash → Controller
 ```
 
@@ -26,7 +26,7 @@ cmd/main.go
 | `FooterChrome` | `ActivityHandler`, `Spinner` | `labelContext()`, `liveJobs()` closures |
 | `Overlays` | `permAskState`, `continueAskState` | `activity` ref, reply callbacks |
 | `DiffPane` | review overlay (rows, notes, search) | `cwd`, submit/copy/toast callbacks |
-| `CodePane` | source overlay (lines, caret, find, hover, results) | `cwd`, `lsp.Manager`, copy/toast/wake callbacks |
+| `CodePane` | source overlay (lines, caret, selection) | `cwd`, add-to-chat/toast callbacks |
 | `Submitter` | `BashRunner` | `Controller`, `Bus`, `CommandRegistry`, pane refs |
 
 **Hard rule:** no `*Editor` back-pointers on handlers. Cross-domain work uses injected refs, callbacks, or `Bus.Publish`. Toast feedback uses `ToastMsg` (Editor owns the overlay); do not inject toast callbacks.
@@ -59,7 +59,7 @@ internal/tui/
 | `footer` | Composer status slot (activity ↔ tokens), bottom footer row (ext status, jobs, update hint) |
 | `overlays` | Modal permission / continue-ask panels; replaces composer when active |
 | `diffpane` | Full-screen git diff review; comments persist under `.phi/review.json` |
-| `codepane` | Full-screen source viewer: syntax highlight, find, caret, LSP queries |
+| `codepane` | Full-screen source viewer: syntax highlight, caret, line selection |
 | `submit` | User submit path: agent prompt, slash commands, `!bash`, cancel |
 | `commands` | Slash/palette registry; session load/clear; extension command bridge |
 | `pathutil` | Cwd shortening and git branch labels for composer chrome |
@@ -114,9 +114,9 @@ app frame
        └─ toast overlay (if visible)
 ```
 
-`CodePane` queries language servers off the UI goroutine and comes back through
-`Bus.Publish(RedrawMsg)`; its state is mutex-guarded so a late answer cannot race
-the frame that draws it.
+Both full-screen overlays (`DiffPane`, `CodePane`) are UI-goroutine objects: they
+load, handle keys and paint in one place, and their callbacks (add-to-chat, copy,
+toast) run inline — no pane state needs a lock.
 
 `RequestRedraw` → `vx.QueueRefresh()`. The bus coalesces high-frequency stream events; one armed wake can cover many publishes until the next `Drain`.
 
@@ -145,7 +145,6 @@ the frame that draws it.
 | `MentionResultsMsg`, `BranchLabelMsg` | `ComposerPane` |
 | `ToastMsg` | `Editor` toast overlay |
 | `ExtCommandResultMsg` | `ExtCommands` |
-| `RedrawMsg` | no-op (redraw already scheduled) |
 
 ---
 

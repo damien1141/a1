@@ -11,11 +11,14 @@ import (
 	"github.com/pulseaiclub/phi/internal/components"
 )
 
-// testCtxWidth is the pane width used by most painter tests.
+// testCtxWidth is the pane width the painter tests draw into.
 const testCtxWidth = 80
 
-func testCtx(w, h int) components.DrawContext {
-	return components.DrawContext{Max: components.Size{Width: w, Height: h}, Method: xui.WidthUnicode}
+func testCtx(h int) components.DrawContext {
+	return components.DrawContext{
+		Max:    components.Size{Width: testCtxWidth, Height: h},
+		Method: xui.WidthUnicode,
+	}
 }
 
 // oneDigitGutter is the gutter width for a file with fewer than ten lines.
@@ -24,10 +27,10 @@ func oneDigitGutter() int { return 1 + gutterRuleWidth }
 func TestPaintRendersTitleGutterAndStatus(t *testing.T) {
 	th := components.DefaultTheme()
 	lines := []string{"package main", `func main() {`, "}"}
-	surf := Paint(testCtx(testCtxWidth, 10), Model{
+	surf := Paint(testCtx(10), Model{
 		Theme:  th,
 		Title:  "src/app.go",
-		Status: "go" + " · lsp ready",
+		Status: "go" + " · 214 lines",
 		Hint:   "esc close · j/k move",
 		Path:   "src/app.go",
 		Lines:  lines,
@@ -36,7 +39,7 @@ func TestPaintRendersTitleGutterAndStatus(t *testing.T) {
 	assert.Contains(t, text, "src/app.go")
 	assert.Contains(t, text, "1 │ package main")
 	assert.Contains(t, text, "2 │ func main() {")
-	assert.Contains(t, text, "go · lsp ready")
+	assert.Contains(t, text, "go · 214 lines")
 	assert.Contains(t, text, "esc close")
 
 	// Title row is background-filled with the title role.
@@ -51,7 +54,7 @@ func TestPaintGutterAlignsLineNumbers(t *testing.T) {
 	for i := range lines {
 		lines[i] = "line " + string(rune('a'+i))
 	}
-	surf := Paint(testCtx(testCtxWidth, 16), Model{Theme: components.DefaultTheme(), Lines: lines})
+	surf := Paint(testCtx(16), Model{Theme: components.DefaultTheme(), Lines: lines})
 	text := components.SurfaceText(surf)
 	// Two-digit width: " 1" is right-aligned, "10" fills the gutter.
 	assert.Contains(t, text, " 1 │ line a")
@@ -60,7 +63,7 @@ func TestPaintGutterAlignsLineNumbers(t *testing.T) {
 
 func TestPaintRespectsScroll(t *testing.T) {
 	lines := []string{"line one", "line two", "line three", "line four", "line five"}
-	surf := Paint(testCtx(testCtxWidth, 8), Model{
+	surf := Paint(testCtx(8), Model{
 		Theme:  components.DefaultTheme(),
 		Lines:  lines,
 		Scroll: 3,
@@ -73,7 +76,7 @@ func TestPaintRespectsScroll(t *testing.T) {
 
 func TestPaintRespectsViewH(t *testing.T) {
 	lines := []string{"first", "second", "third", "fourth"}
-	surf := Paint(testCtx(testCtxWidth, 12), Model{
+	surf := Paint(testCtx(12), Model{
 		Theme: components.DefaultTheme(),
 		Lines: lines,
 		ViewH: 2,
@@ -85,7 +88,7 @@ func TestPaintRespectsViewH(t *testing.T) {
 }
 
 func TestPaintRespectsXScroll(t *testing.T) {
-	surf := Paint(testCtx(testCtxWidth, 8), Model{
+	surf := Paint(testCtx(8), Model{
 		Theme:   components.DefaultTheme(),
 		Lines:   []string{"0123456789"},
 		XScroll: 4,
@@ -96,7 +99,7 @@ func TestPaintRespectsXScroll(t *testing.T) {
 }
 
 func TestPaintScrollsWideGlyphsWhole(t *testing.T) {
-	surf := Paint(testCtx(testCtxWidth, 8), Model{
+	surf := Paint(testCtx(8), Model{
 		Theme:   components.DefaultTheme(),
 		Lines:   []string{"日本語テスト"},
 		XScroll: 2,
@@ -112,7 +115,7 @@ func TestPaintSetsCursorOnCursorLine(t *testing.T) {
 	for i := range lines {
 		lines[i] = "code line"
 	}
-	surf := Paint(testCtx(testCtxWidth, 12), Model{
+	surf := Paint(testCtx(12), Model{
 		Theme:      components.DefaultTheme(),
 		Lines:      lines,
 		Scroll:     5,
@@ -127,7 +130,7 @@ func TestPaintSetsCursorOnCursorLine(t *testing.T) {
 func TestPaintDropsCursorWhenScrolledOut(t *testing.T) {
 	th := components.DefaultTheme()
 	lines := []string{"alpha", "bravo", "charlie"}
-	surf := Paint(testCtx(testCtxWidth, 8), Model{
+	surf := Paint(testCtx(8), Model{
 		Theme:      th,
 		Lines:      lines,
 		Scroll:     2,
@@ -136,7 +139,7 @@ func TestPaintDropsCursorWhenScrolledOut(t *testing.T) {
 	})
 	assert.Nil(t, surf.Cursor, "caret above the viewport is not exposed")
 
-	off := Paint(testCtx(testCtxWidth, 8), Model{
+	off := Paint(testCtx(8), Model{
 		Theme:      th,
 		Lines:      lines,
 		CursorLine: 0,
@@ -148,7 +151,7 @@ func TestPaintDropsCursorWhenScrolledOut(t *testing.T) {
 
 func TestPaintCursorLineCarriesWash(t *testing.T) {
 	th := components.DefaultTheme()
-	surf := Paint(testCtx(testCtxWidth, 8), Model{
+	surf := Paint(testCtx(8), Model{
 		Theme:      th,
 		Lines:      []string{"alpha", "bravo", "charlie"},
 		CursorLine: 1,
@@ -159,7 +162,7 @@ func TestPaintCursorLineCarriesWash(t *testing.T) {
 
 func TestPaintSelectionHighlightsRange(t *testing.T) {
 	th := components.DefaultTheme()
-	surf := Paint(testCtx(testCtxWidth, 10), Model{
+	surf := Paint(testCtx(10), Model{
 		Theme:      th,
 		Lines:      []string{"alpha", "bravo", "charlie", "delta"},
 		CursorLine: 2,
@@ -185,7 +188,7 @@ func TestPaintSelectionHighlightsRange(t *testing.T) {
 
 func TestPaintSelectionSurvivesScroll(t *testing.T) {
 	th := components.DefaultTheme()
-	surf := Paint(testCtx(testCtxWidth, 8), Model{
+	surf := Paint(testCtx(8), Model{
 		Theme:     th,
 		Lines:     []string{"alpha", "bravo", "charlie", "delta", "echo"},
 		Selecting: true,
@@ -202,7 +205,7 @@ func TestPaintSelectionSurvivesScroll(t *testing.T) {
 }
 
 func TestPaintEmptyFileShowsPlaceholder(t *testing.T) {
-	surf := Paint(testCtx(testCtxWidth, 8), Model{
+	surf := Paint(testCtx(8), Model{
 		Theme: components.DefaultTheme(),
 		Lines: nil,
 		Empty: "empty file",
@@ -211,39 +214,8 @@ func TestPaintEmptyFileShowsPlaceholder(t *testing.T) {
 	assert.Nil(t, surf.Cursor)
 }
 
-func TestPaintHelpListsHintKeys(t *testing.T) {
-	th := components.DefaultTheme()
-	surf := Paint(testCtx(testCtxWidth, 16), Model{
-		Theme: th,
-		Hint:  "esc close · gd definition",
-		Lines: []string{"package main"},
-		Help:  true,
-	})
-	require.Len(t, surf.Children, 1)
-	modal := surf.Children[0]
-	assert.Equal(t, helpZ, modal.Z)
-	assert.Positive(t, modal.Origin.Y)
-
-	panel := strings.Split(components.SurfaceText(modal.Surface), "\n")
-	require.GreaterOrEqual(t, len(panel), 3)
-	assert.Contains(t, panel[0], "keys")
-	assert.Contains(t, panel[1], "esc")
-	assert.Contains(t, panel[2], "gd")
-	// Descriptions line up in one column whatever the key widths are.
-	assert.Equal(t, strings.Index(panel[1], "close"), strings.Index(panel[2], "definition"))
-}
-
-func TestPaintHelpSkippedOnTinySurface(t *testing.T) {
-	surf := Paint(testCtx(8, 4), Model{
-		Theme: components.DefaultTheme(),
-		Lines: []string{"package main"},
-		Help:  true,
-	})
-	assert.Empty(t, surf.Children)
-}
-
 func TestPaintFallsBackToDefaultHint(t *testing.T) {
-	surf := Paint(testCtx(testCtxWidth, 8), Model{
+	surf := Paint(testCtx(8), Model{
 		Theme: components.DefaultTheme(),
 		Lines: []string{"package main"},
 	})
@@ -252,22 +224,22 @@ func TestPaintFallsBackToDefaultHint(t *testing.T) {
 
 func TestSkipColsNoopOnZero(t *testing.T) {
 	spans := []components.Span{{Text: "abc"}}
-	assert.Equal(t, spans, SkipCols(spans, 0, xui.WidthUnicode))
+	assert.Equal(t, spans, skipCols(spans, 0, xui.WidthUnicode))
 }
 
 func TestClipSpansKeepsWideGlyphWhole(t *testing.T) {
 	spans := []components.Span{{Text: "日本語"}}
-	got := ClipSpans(spans, 3, xui.WidthUnicode)
+	got := clipSpans(spans, 3, xui.WidthUnicode)
 	require.Len(t, got, 1)
 	assert.Equal(t, "日", got[0].Text, "a wide glyph is never split")
 }
 
 func TestClipSpansZeroWidth(t *testing.T) {
-	assert.Nil(t, ClipSpans([]components.Span{{Text: "abc"}}, 0, xui.WidthUnicode))
+	assert.Nil(t, clipSpans([]components.Span{{Text: "abc"}}, 0, xui.WidthUnicode))
 }
 
 func TestPaintWideGlyphLineRendersContiguous(t *testing.T) {
-	surf := Paint(testCtx(testCtxWidth, 8), Model{
+	surf := Paint(testCtx(8), Model{
 		Theme: components.DefaultTheme(),
 		Lines: []string{"// 日本語テスト"},
 	})
@@ -286,7 +258,7 @@ func TestPaintDoesNotMutateCachedHighlightSpans(t *testing.T) {
 	cached := highlighted[0]
 	before := append([]components.Span(nil), cached...)
 
-	ctx := testCtx(testCtxWidth, 8)
+	ctx := testCtx(8)
 	_ = Paint(ctx, Model{Theme: th, Title: "main.go", Lines: lines, Highlight: highlighted, CursorLine: 0})
 	_ = Paint(ctx, Model{Theme: th, Title: "main.go", Lines: lines, Highlight: highlighted, CursorLine: 2})
 
@@ -303,7 +275,7 @@ func TestPaintUsesHighlightSpans(t *testing.T) {
 	th := components.DefaultTheme()
 	highlighted := Highlight("main.go", lines, th)
 	require.NotEmpty(t, highlighted)
-	surf := Paint(testCtx(testCtxWidth, 8), Model{
+	surf := Paint(testCtx(8), Model{
 		Theme:     th,
 		Lines:     lines,
 		Highlight: highlighted,
@@ -318,7 +290,7 @@ func TestPaintUsesHighlightSpans(t *testing.T) {
 // following spans: that used to delete characters from the middle of the line.
 func TestSkipColsKeepsFollowingSpansIntact(t *testing.T) {
 	spans := []components.Span{{Text: "日本"}, {Text: "abc"}}
-	got := SkipCols(spans, 1, xui.WidthUnicode)
+	got := skipCols(spans, 1, xui.WidthUnicode)
 	var b strings.Builder
 	for _, sp := range got {
 		b.WriteString(sp.Text)
@@ -328,7 +300,7 @@ func TestSkipColsKeepsFollowingSpansIntact(t *testing.T) {
 
 func TestSkipColsDropsWholeNarrowSpans(t *testing.T) {
 	spans := []components.Span{{Text: "ab"}, {Text: "cd"}}
-	got := SkipCols(spans, 3, xui.WidthUnicode)
+	got := skipCols(spans, 3, xui.WidthUnicode)
 	var b strings.Builder
 	for _, sp := range got {
 		b.WriteString(sp.Text)
@@ -336,19 +308,8 @@ func TestSkipColsDropsWholeNarrowSpans(t *testing.T) {
 	assert.Equal(t, "d", b.String())
 }
 
-// The caret must not survive the help modal that covers it.
-func TestCursorHiddenBehindHelp(t *testing.T) {
-	surf := Paint(testCtx(testCtxWidth, 12), Model{
-		Theme:      components.DefaultTheme(),
-		Lines:      []string{"package main"},
-		CursorLine: 0,
-		Help:       true,
-	})
-	assert.Nil(t, surf.Cursor)
-}
-
 func TestCursorDroppedPastLastLine(t *testing.T) {
-	surf := Paint(testCtx(testCtxWidth, 12), Model{
+	surf := Paint(testCtx(12), Model{
 		Theme:      components.DefaultTheme(),
 		Lines:      []string{"package main"},
 		CursorLine: 99,
@@ -359,7 +320,7 @@ func TestCursorDroppedPastLastLine(t *testing.T) {
 // A selection must not bleed below the body into rows that hold no line text.
 func TestSelectionClipsToBodyHeight(t *testing.T) {
 	th := components.DefaultTheme()
-	surf := Paint(testCtx(testCtxWidth, 12), Model{
+	surf := Paint(testCtx(12), Model{
 		Theme:      th,
 		Lines:      []string{"one", "two", "three", "four", "five"},
 		ViewH:      2,
