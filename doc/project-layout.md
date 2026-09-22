@@ -7,7 +7,7 @@
 | `internal/util/update/`  | Self-update check + GitHub Releases install    |
 | `internal/agent/`        | Agent engine, executor, jobs                     |
 | `internal/agent/prompt/` | System prompt templates + Skills/MCP catalogs    |
-| `internal/components/`   | TUI widgets (chat, input, palette, mention, diffview, …) |
+| `internal/components/`   | TUI widgets (chat, input, palette, mention, diffview, codeview, …) |
 | `internal/llm/`          | LLM clients (OpenAI-compatible + Anthropic + Gemini), streaming, skills |
 | `internal/project/`      | Workspace layout and config                    |
 | `internal/project/model/` | Built-in model presets + request interceptors |
@@ -21,6 +21,7 @@
 | `internal/tui/footer/`   | Activity spinner, token labels, update hint |
 | `internal/tui/overlays/` | Permission / continue-ask panels |
 | `internal/tui/diffpane/` | Git diff review overlay (`/diff`) |
+| `internal/tui/codepane/` | Source viewer overlay (`/code`) |
 | `internal/tui/submit/`   | Submit, cancel, slash dispatch, bash runner |
 | `internal/tui/commands/` | Slash/palette registry, session/extension commands |
 | `internal/tui/pathutil/` | Cwd + git branch path labels |

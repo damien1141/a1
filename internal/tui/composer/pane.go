@@ -295,6 +295,23 @@ func (c *ComposerPane) ClearPendingSkills() {
 	}
 }
 
+// PendingRefs returns attached code references awaiting submit.
+func (c *ComposerPane) PendingRefs() []chat.Ref {
+	if c == nil {
+		return nil
+	}
+	out := make([]chat.Ref, len(c.Chat.PendingRefs))
+	copy(out, c.Chat.PendingRefs)
+	return out
+}
+
+// ClearPendingRefs removes attached references from the composer.
+func (c *ComposerPane) ClearPendingRefs() {
+	if c != nil {
+		c.Chat.ClearPendingRefs()
+	}
+}
+
 // SyncBashBorder updates composer chrome for "!cmd" prefix.
 func (c *ComposerPane) SyncBashBorder(text string) {
 	if c != nil && c.submitter != nil {
@@ -349,6 +366,16 @@ func (c *ComposerPane) AddPendingSkill(name string) {
 func (c *ComposerPane) AddPendingImage(att imgutil.Attachment) {
 	if c != nil {
 		c.Chat.AddPendingImage(att)
+		if c.onRedraw != nil {
+			c.onRedraw()
+		}
+	}
+}
+
+// AddPendingRef attaches a code slice picked in the viewer to the composer.
+func (c *ComposerPane) AddPendingRef(r chat.Ref) {
+	if c != nil {
+		c.Chat.AddPendingRef(r)
 		if c.onRedraw != nil {
 			c.onRedraw()
 		}

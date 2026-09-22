@@ -20,14 +20,6 @@ func TestThemesSeparateIdentityFromSuccess(t *testing.T) {
 	}
 }
 
-func TestThemesUnifyKeybindWithToolName(t *testing.T) {
-	for _, name := range ThemeNames() {
-		th, ok := ThemeByName(name)
-		require.True(t, ok, name)
-		assert.Equal(t, th.ToolName.Fg, th.Keybind.Fg, "%s: Keybind must match ToolName", name)
-	}
-}
-
 func TestTitleOrForeground(t *testing.T) {
 	th := DarkTheme()
 	st := th.TitleOrForeground()

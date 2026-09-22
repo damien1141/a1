@@ -60,6 +60,10 @@ type ChatInput struct {
 	// "Images: name1 name2".
 	PendingImages []imgutil.Attachment
 
+	// PendingRefs are file slices picked in the code viewer, shown inside the
+	// bordered editor as "Refs: path:12-18".
+	PendingRefs []Ref
+
 	PaddingX int // horizontal inner padding; default 1
 
 	// OnSubmit is called when Enter is pressed (without modifiers).
@@ -70,6 +74,8 @@ type ChatInput struct {
 	OnPendingSkillsChange func(skills []string)
 	// OnPendingImagesChange is called after PendingImages mutates.
 	OnPendingImagesChange func(images []imgutil.Attachment)
+	// OnPendingRefsChange is called after PendingRefs mutates.
+	OnPendingRefsChange func(refs []Ref)
 
 	// OnMentionChange is called after Value or Cursor changes that may
 	// activate/deactivate an @-file mention. active is false when none.
@@ -128,6 +134,9 @@ func (c *ChatInput) PreferredHeight(width int, method xui.WidthMethod) int {
 
 func (c *ChatInput) pendingRowsHeight() int {
 	n := 0
+	if len(c.PendingRefs) > 0 {
+		n++
+	}
 	if len(c.PendingSkills) > 0 {
 		n++
 	}
@@ -162,6 +171,21 @@ func (c *ChatInput) AddPendingImage(att imgutil.Attachment) {
 	c.notifyPendingImages()
 }
 
+// AddPendingRef appends r to the pending references. A ref with no path or no
+// selected text carries nothing, so it is dropped.
+func (c *ChatInput) AddPendingRef(r Ref) {
+	if r.Path == "" || r.Text == "" {
+		return
+	}
+	if slices.ContainsFunc(c.PendingRefs, func(p Ref) bool {
+		return p.Path == r.Path && p.Start == r.Start && p.End == r.End
+	}) {
+		return
+	}
+	c.PendingRefs = append(c.PendingRefs, r)
+	c.notifyPendingRefs()
+}
+
 // PopPendingImage removes the last pending image. Returns false if none.
 func (c *ChatInput) PopPendingImage() bool {
 	if len(c.PendingImages) == 0 {
@@ -169,6 +193,16 @@ func (c *ChatInput) PopPendingImage() bool {
 	}
 	c.PendingImages = c.PendingImages[:len(c.PendingImages)-1]
 	c.notifyPendingImages()
+	return true
+}
+
+// PopPendingRef removes the last pending reference. Returns false if none.
+func (c *ChatInput) PopPendingRef() bool {
+	if len(c.PendingRefs) == 0 {
+		return false
+	}
+	c.PendingRefs = c.PendingRefs[:len(c.PendingRefs)-1]
+	c.notifyPendingRefs()
 	return true
 }
 
@@ -200,6 +234,15 @@ func (c *ChatInput) ClearPendingSkills() {
 	c.notifyPendingSkills()
 }
 
+// ClearPendingRefs removes all pending references.
+func (c *ChatInput) ClearPendingRefs() {
+	if len(c.PendingRefs) == 0 {
+		return
+	}
+	c.PendingRefs = nil
+	c.notifyPendingRefs()
+}
+
 func (c *ChatInput) notifyPendingSkills() {
 	if c.OnPendingSkillsChange != nil {
 		c.OnPendingSkillsChange(c.PendingSkills)
@@ -209,6 +252,12 @@ func (c *ChatInput) notifyPendingSkills() {
 func (c *ChatInput) notifyPendingImages() {
 	if c.OnPendingImagesChange != nil {
 		c.OnPendingImagesChange(c.PendingImages)
+	}
+}
+
+func (c *ChatInput) notifyPendingRefs() {
+	if c.OnPendingRefsChange != nil {
+		c.OnPendingRefsChange(c.PendingRefs)
 	}
 }
 
@@ -269,6 +318,8 @@ func (c *ChatInput) Handle(ctx *components.EventContext, ev xui.Event) {
 				debuglog.Logf("chat backspace popped pending image remaining=%d", len(c.PendingImages))
 			} else if c.PopPendingSkill() {
 				debuglog.Logf("chat backspace popped pending skill remaining=%d", len(c.PendingSkills))
+			} else if c.PopPendingRef() {
+				debuglog.Logf("chat backspace popped pending ref remaining=%d", len(c.PendingRefs))
 			}
 			ctx.ConsumeAndRedraw()
 			return
@@ -440,7 +491,7 @@ func (c *ChatInput) notifyChange() {
 	c.notifyCompleters()
 }
 
-// clear removes all composer text, pending images, and pending skills.
+// clear removes all composer text, pending images, refs, and skills.
 func (c *ChatInput) clear() {
 	if c.Value != "" {
 		c.Value = ""
@@ -448,6 +499,7 @@ func (c *ChatInput) clear() {
 		c.notifyChange()
 	}
 	c.ClearPendingImages()
+	c.ClearPendingRefs()
 	c.ClearPendingSkills()
 }
 
@@ -588,6 +640,11 @@ func (c *ChatInput) Draw(ctx components.DrawContext) components.Surface {
 	}
 
 	contentY := 1
+	// Refs paint first so the pending rows stay contiguous above the editor.
+	if len(c.PendingRefs) > 0 {
+		c.paintPendingRefs(&s, 1+pad, contentY, innerW, ctx.Method)
+		contentY++
+	}
 	if len(c.PendingSkills) > 0 {
 		c.paintPendingSkills(&s, 1+pad, contentY, innerW, ctx.Method)
 		contentY++
@@ -687,6 +744,31 @@ func (c *ChatInput) Draw(ctx components.DrawContext) components.Surface {
 		dumpSurfaceRow("chat row", s.Buffer, w, cy)
 	}
 	return s
+}
+
+func (c *ChatInput) paintPendingRefs(s *components.Surface, x, y, width int, method xui.WidthMethod) {
+	th := c.Theme
+	if th.Success.Fg.Kind == 0 && th.Foreground.Fg.Kind == 0 {
+		th = components.DefaultTheme()
+	}
+	labelSt := th.Muted
+	labelSt.Dim = true
+	nameSt := th.IdentityOrSuccess()
+	nameSt.Bold = false
+	nameSt.Underline = true
+
+	spans := []components.Span{{Text: "Refs: ", Style: labelSt}}
+	for i, r := range c.PendingRefs {
+		if i > 0 {
+			spans = append(spans, components.Span{Text: " ", Style: labelSt})
+		}
+		spans = append(spans, components.Span{Text: r.Label(), Style: nameSt})
+	}
+	lines := components.WrapSpans(spans, width, method)
+	if len(lines) == 0 {
+		return
+	}
+	components.PaintSpans(s, x, y, lines[0], method)
 }
 
 func (c *ChatInput) paintPendingSkills(s *components.Surface, x, y, width int, method xui.WidthMethod) {

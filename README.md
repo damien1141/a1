@@ -37,6 +37,7 @@ A lean, high-performance terminal coding agent harness in Go — a sibling to Pi
 - [Configuration](#configuration)
 - [Interactive mode](#interactive-mode)
 - [Diff review](#diff-review)
+- [Code viewer](#code-viewer)
 - [Commands](#commands)
 - [Sessions](#sessions)
 - [Headless mode](#headless-mode)
@@ -255,7 +256,7 @@ syntax highlighting. Structural markers (`#`, `` ` ``, `*`) are stripped.
 The editor supports:
 
 - `@` — fuzzy file mention picker (type `@` and start typing a path)
-- `/` — slash command picker (`/sessions`, `/branch`, `/clear`, `/diff`)
+- `/` — slash command picker (`/sessions`, `/branch`, `/clear`, `/diff`, `/code`)
 - `?` — shortcut help picker (lists `/`, `!`, `@`, and key bindings; `Esc` closes)
 - `!command` — run a shell command locally and stream its output into the
   transcript (see [Commands](#commands))
@@ -291,6 +292,18 @@ Slash-picker Enter inserts `/diff` plus a trailing space into the composer; subm
 `s` side-by-side, `i` add/edit a note, `x` delete, `a` send notes to the agent,
 `?` help, `q` / `Esc` close. Notes persist under `.phi/review.json`.
 
+## Code viewer
+
+`/code <path>[:line]` opens a full-screen source viewer: syntax highlighting, a
+CJK-aware caret (`j`/`k`, `h`/`l`, `gg`/`G`), and `v` to select lines then `a`
+to hand them to the chat input as a `path:12-18` reference the model reads.
+The pane reads files itself and answers to the same deny list as the tool
+gate, so sensitive paths (`~/.ssh`, `.env`, …), binaries and files over 8 MiB
+are refused with a toast.
+
+`Esc` closes. The status row shows the path, caret and line count while
+reading, and the selection size while `v` is active.
+
 ## Branch switching
 
 `/branch` opens the branch picker for the working directory. Two columns: the
@@ -324,6 +337,7 @@ unfinished.
 | `/branch`          | Switch the working branch — see [Branch switching](#branch-switching) |
 | `/clear`           | Start a fresh empty session (TUI)             |
 | `/diff`            | Full-screen git review — see [Diff review](#diff-review) |
+| `/code`            | Full-screen source viewer — see [Code viewer](#code-viewer) |
 | `!command`         | Run a shell command locally, stream output into the transcript; `Esc` cancels it |
 
 In the TUI, `!command` runs locally via `bash -c` — outside the agent loop. It

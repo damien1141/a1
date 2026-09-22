@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/pulseaiclub/phi/internal/components"
+	"github.com/pulseaiclub/phi/internal/components/chat"
 	"github.com/pulseaiclub/phi/internal/components/status"
 	"github.com/pulseaiclub/phi/internal/session"
 	"github.com/pulseaiclub/phi/internal/tui/commands"
@@ -26,8 +27,10 @@ func (s *stubComposer) ClearInput()                        { s.input = "" }
 func (s *stubComposer) SetInput(text string)               { s.input = text }
 func (s stubComposer) PendingSkills() []string             { return s.skills }
 func (s stubComposer) PendingImages() []imgutil.Attachment { return s.images }
+func (stubComposer) PendingRefs() []chat.Ref               { return nil }
 func (stubComposer) ClearPendingSkills()                   {}
 func (stubComposer) ClearPendingImages()                   {}
+func (stubComposer) ClearPendingRefs()                     {}
 func (stubComposer) SyncBashBorder(string)                 {}
 func (stubComposer) CloseMentionSlash()                    {}
 func (stubComposer) SetBashBorderActive(bool)              {}

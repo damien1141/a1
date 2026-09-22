@@ -10,6 +10,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `/code <path>[:line]`: full-screen source viewer with syntax highlighting, a
+  CJK-aware caret (`j`/`k`, `g`/`G`, `h`/`l`), and `v` to select lines then `a`
+  to hand them to the chat input. The pane reads files itself, so it answers to
+  the same deny list as the tool gate.
+
 ### Changed
 
 ### Deprecated
@@ -17,6 +22,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Removed
 
 ### Fixed
+
+- Horizontal scrolling no longer drops characters from the middle of a
+  wide-glyph (CJK) line in the diff and file views.
 
 ### Security
 
