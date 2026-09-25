@@ -20,6 +20,7 @@ A fork of [phi](https://github.com/pulseaiclub/phi) (e1079e0) with a different d
 - **Session memory bank:** every session gets a JSONL-backed memory bank under `~/.a1/sessions/memory/`; successful and failed tool calls are journaled automatically, and recent memories are injected into the model context as a system message.
 - **Semantic code search:** optional local semantic search via Ollama embeddings + a file chunk index; enabled from the config UI or `~/.a1/config.yaml`, exposed as the `vector_search` tool.
 - **Call graph / dependency tracer:** `graph` tool builds a directed dependency graph from source imports. Default build uses lightweight parsers for Go, Python, Rust, and JS/TS; build with `-tags treesitter` to enable full tree-sitter grammar support for 40+ languages.
+- **Batch editor with dependency ordering:** `batch` tool sorts files by dependency order using topological sort, so dependencies are edited before dependents.
 
 Everything else is still phi under the hood: same TUI, same sub-agent model, same MCP meta-tool design, same extension protocol.
 
@@ -96,6 +97,7 @@ If you want the original phi without these additions, use [pulseaiclub/phi](http
 | `scaffold`     | Project scaffold aware tools                 |
 | `journal`      | Action journal / audit trail                 |
 | `graph`        | Dependency/call graph explorer via imports   |
+| `batch`        | Dependency-ordered batch file editing        |
 | `vector_search`| Local semantic code search via Ollama embeddings |
 | `agent_spawn`  | Start an isolated sub-agent job (async)      |
 | `agent_wait`   | Wait for a job; returns short summary only   |
