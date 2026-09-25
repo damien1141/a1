@@ -5,6 +5,7 @@ import (
 	"github.com/damien1141/a1/internal/tools/apidoc"
 	"github.com/damien1141/a1/internal/tools/apitool"
 	"github.com/damien1141/a1/internal/tools/bashtool"
+	"github.com/damien1141/a1/internal/tools/batchtool"
 	"github.com/damien1141/a1/internal/tools/buildtool"
 	"github.com/damien1141/a1/internal/tools/contexttool"
 	"github.com/damien1141/a1/internal/tools/coveragetool"
@@ -133,6 +134,7 @@ func DefaultTools() []Tool {
 		journaltool.JournalTool(),
 		vectortool.VectorTool(),
 		graphtool.GraphTool(),
+		batchtool.BatchTool(),
 	}
 }
 
@@ -174,5 +176,6 @@ func ReadonlyTools() []Tool {
 		journaltool.JournalTool(),
 		vectortool.VectorTool(),
 		graphtool.GraphTool(),
+		batchtool.BatchTool(),
 	}
 }

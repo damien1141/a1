@@ -64,3 +64,51 @@ func TestGraphNilSafe(t *testing.T) {
 	assert.Equal(t, 0, g.Len())
 	assert.Equal(t, "", g.Root())
 }
+
+func TestTopologicalSortBasic(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.go"), []byte("package a\nimport \"b\"\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.go"), []byte("package b\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "c.go"), []byte("package c\nimport \"a\"\n"), 0o644))
+
+	g, err := OpenGraph(context.Background(), dir)
+	require.NoError(t, err)
+
+	resolver := NewPathResolver(dir)
+	order := g.TopologicalSortWithResolver([]string{"a.go", "b.go", "c.go"}, resolver)
+	require.Len(t, order, 3)
+	// b.go should come before a.go because a.go imports b.go
+	bIdx := indexOf(order, "b.go")
+	aIdx := indexOf(order, "a.go")
+	assert.True(t, bIdx < aIdx, "b.go should come before a.go, got %v", order)
+	// a.go should come before c.go because c.go imports a.go
+	assert.True(t, aIdx < indexOf(order, "c.go"), "a.go should come before c.go, got %v", order)
+}
+
+func TestTopologicalSortDisconnected(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.go"), []byte("package a\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.go"), []byte("package b\n"), 0o644))
+
+	g, err := OpenGraph(context.Background(), dir)
+	require.NoError(t, err)
+
+	order := g.TopologicalSort([]string{"b.go", "a.go"})
+	// Disconnected files should preserve original relative order after sorted prefix
+	assert.Len(t, order, 2)
+}
+
+func TestTopologicalSortEmpty(t *testing.T) {
+	var g *Graph
+	assert.Empty(t, g.TopologicalSort(nil))
+	assert.Empty(t, g.TopologicalSort([]string{}))
+}
+
+func indexOf(s []string, v string) int {
+	for i, x := range s {
+		if x == v {
+			return i
+		}
+	}
+	return -1
+}
