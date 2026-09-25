@@ -30,11 +30,21 @@ func TestManagerCreateAndList(t *testing.T) {
 	dir := t.TempDir()
 	initGitRepo(t, dir)
 	writeFile(t, dir, "main.txt", "hello")
+	testExecGit(t, dir, "add", "main.txt")
+	testExecGit(t, dir, "commit", "-m", "initial")
 
 	mgr := NewManager(dir)
+	originalBranch, err := currentBranch(context.Background(), dir)
+	require.NoError(t, err)
+
 	name, err := mgr.Create(context.Background())
 	require.NoError(t, err)
 	assert.Contains(t, name, snapshotBranchPrefix)
+
+	// Should still be on the original branch after create.
+	branch, err := currentBranch(context.Background(), dir)
+	require.NoError(t, err)
+	assert.Equal(t, originalBranch, branch)
 
 	branches, err := mgr.List(context.Background())
 	require.NoError(t, err)
@@ -52,17 +62,16 @@ func TestManagerRollback(t *testing.T) {
 	testExecGit(t, dir, "add", "main.txt")
 	testExecGit(t, dir, "commit", "-m", "initial")
 
-	// Create snapshot.
 	mgr := NewManager(dir)
 	name, err := mgr.Create(context.Background())
 	require.NoError(t, err)
 
-	// Make changes.
+	// Make changes after snapshot.
 	writeFile(t, dir, "main.txt", "main changed")
 	content := readFile(t, dir, "main.txt")
 	assert.Equal(t, "main changed", content)
 
-	// Rollback.
+	// Rollback should restore original content.
 	err = mgr.Rollback(context.Background(), name)
 	require.NoError(t, err)
 
@@ -74,6 +83,8 @@ func TestManagerDelete(t *testing.T) {
 	dir := t.TempDir()
 	initGitRepo(t, dir)
 	writeFile(t, dir, "main.txt", "hello")
+	testExecGit(t, dir, "add", "main.txt")
+	testExecGit(t, dir, "commit", "-m", "initial")
 
 	mgr := NewManager(dir)
 	name, err := mgr.Create(context.Background())

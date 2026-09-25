@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/damien1141/a1/internal/tools/tooldef"
 	"github.com/damien1141/a1/internal/llm"
 	"github.com/damien1141/a1/internal/project"
 	"github.com/damien1141/a1/internal/snapshot"
+	"github.com/damien1141/a1/internal/tools/tooldef"
 )
 
 var snapshotDescription = `Git-based snapshot and rollback for safe batch edits.

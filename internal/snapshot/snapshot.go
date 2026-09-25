@@ -24,33 +24,21 @@ func NewManager(cwd string) *Manager {
 }
 
 // Create creates a snapshot branch from the current HEAD and returns its name.
-// The branch points to the current commit, capturing the current state.
+// The caller stays on the current branch; the snapshot is a separate ref.
 func (m *Manager) Create(ctx context.Context) (string, error) {
 	if m == nil {
 		return "", fmt.Errorf("snapshot: manager is nil")
 	}
 	name := snapshotBranchPrefix + time.Now().Format("20060102-150405")
-	if _, err := execGit(ctx, m.cwd, "checkout", "-b", name); err != nil {
+	// Create branch at HEAD without switching to it.
+	if _, err := execGit(ctx, m.cwd, "branch", name); err != nil {
 		return "", fmt.Errorf("create snapshot branch: %w", err)
-	}
-	// If there are uncommitted changes, commit them to the snapshot branch.
-	out, err := execGit(ctx, m.cwd, "status", "--porcelain")
-	if err != nil {
-		return "", fmt.Errorf("check working tree status: %w", err)
-	}
-	if strings.TrimSpace(out) != "" {
-		if _, err := execGit(ctx, m.cwd, "add", "-A"); err != nil {
-			return "", fmt.Errorf("stage changes for snapshot: %w", err)
-		}
-		if _, err := execGit(ctx, m.cwd, "commit", "-m", "snapshot: "+name); err != nil {
-			return "", fmt.Errorf("commit snapshot: %w", err)
-		}
 	}
 	return name, nil
 }
 
-// Rollback checks out the given snapshot branch, discarding current changes.
-// It returns to the original branch after checkout.
+// Rollback resets the current working tree to the snapshot branch, discarding
+// all changes since the snapshot was taken.
 func (m *Manager) Rollback(ctx context.Context, snapshotBranch string) error {
 	if m == nil {
 		return fmt.Errorf("snapshot: manager is nil")
@@ -58,18 +46,13 @@ func (m *Manager) Rollback(ctx context.Context, snapshotBranch string) error {
 	if strings.TrimSpace(snapshotBranch) == "" {
 		return fmt.Errorf("snapshot: branch name is empty")
 	}
-	original, err := currentBranch(ctx, m.cwd)
-	if err != nil {
-		return err
+	// Verify the snapshot branch exists.
+	if _, err := execGit(ctx, m.cwd, "rev-parse", "--verify", snapshotBranch); err != nil {
+		return fmt.Errorf("snapshot branch not found: %w", err)
 	}
-	if _, err := execGit(ctx, m.cwd, "checkout", snapshotBranch); err != nil {
-		return fmt.Errorf("checkout snapshot branch: %w", err)
-	}
+	// Reset current branch to snapshot branch, discarding all changes.
 	if _, err := execGit(ctx, m.cwd, "reset", "--hard", snapshotBranch); err != nil {
 		return fmt.Errorf("reset to snapshot: %w", err)
-	}
-	if _, err := execGit(ctx, m.cwd, "checkout", original); err != nil {
-		return fmt.Errorf("return to original branch: %w", err)
 	}
 	return nil
 }
