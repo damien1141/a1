@@ -85,7 +85,7 @@ func runGraph(ctx context.Context, input json.RawMessage) (tooldef.Result, error
 
 	query := strings.TrimSpace(in.Query)
 	if query == "" {
-		return tooldef.Result{}, fmt.Errorf("query is required: describe the dependency relationship you want to inspect")
+		query = "show project dependency overview"
 	}
 
 	proj := project.GetDefaultProject()
@@ -103,7 +103,8 @@ func runGraph(ctx context.Context, input json.RawMessage) (tooldef.Result, error
 		target = guessTargetFromQuery(query, g.AllFiles())
 	}
 	if target == "" {
-		return tooldef.Result{Content: "No target file inferred from query. Pass path explicitly.", Detail: "0 results", Output: "No target file inferred from query. Pass path explicitly."}, nil
+		// Fallback: show top imported files as an overview.
+		return tooldef.Result{Content: renderOverview(g), Detail: fmt.Sprintf("%d files indexed", g.Len()), Output: renderOverview(g)}, nil
 	}
 
 	direction := strings.ToLower(strings.TrimSpace(in.Direction))
@@ -181,6 +182,34 @@ func renderGraphResults(target, direction string, paths []string) string {
 		sb.WriteString("@file ")
 		sb.WriteString(p)
 		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
+func renderOverview(g *graph.Graph) string {
+	var sb strings.Builder
+	sb.WriteString("Project dependency overview\n")
+	sb.WriteString(strings.Repeat("=", 60))
+	sb.WriteString("\n\n")
+	sb.WriteString(fmt.Sprintf("Indexed files: %d\n\n", g.Len()))
+
+	// Show top imported files.
+	type count struct {
+		path  string
+		count int
+	}
+	counts := make([]count, 0)
+	for _, f := range g.AllFiles() {
+		c := len(g.ImportedBy(f))
+		if c > 0 {
+			counts = append(counts, count{path: f, count: c})
+		}
+	}
+	if len(counts) > 0 {
+		sb.WriteString("Top imported files:\n")
+		for _, c := range counts {
+			sb.WriteString(fmt.Sprintf("  %s (%d importers)\n", c.path, c.count))
+		}
 	}
 	return sb.String()
 }
