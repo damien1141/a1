@@ -30,6 +30,7 @@ import (
 	"github.com/damien1141/a1/internal/tools/readtool"
 	"github.com/damien1141/a1/internal/tools/scaffoldtool"
 	"github.com/damien1141/a1/internal/tools/secrettool"
+	"github.com/damien1141/a1/internal/tools/snapshottool"
 	"github.com/damien1141/a1/internal/tools/stacktool"
 	"github.com/damien1141/a1/internal/tools/testtool"
 	"github.com/damien1141/a1/internal/tools/todotool"
@@ -135,6 +136,7 @@ func DefaultTools() []Tool {
 		vectortool.VectorTool(),
 		graphtool.GraphTool(),
 		batchtool.BatchTool(),
+		snapshottool.SnapshotTool(),
 	}
 }
 
@@ -177,5 +179,6 @@ func ReadonlyTools() []Tool {
 		vectortool.VectorTool(),
 		graphtool.GraphTool(),
 		batchtool.BatchTool(),
+		snapshottool.SnapshotTool(),
 	}
 }
