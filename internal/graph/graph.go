@@ -4,10 +4,10 @@ import "sync"
 
 // Graph is a directed dependency graph keyed by relative file path.
 type Graph struct {
-	mu       sync.RWMutex
-	edges    map[string][]string // src -> imports
-	reverse  map[string][]string // dst -> imported by
-	root     string
+	mu      sync.RWMutex
+	edges   map[string][]string // src -> imports
+	reverse map[string][]string // dst -> imported by
+	root    string
 }
 
 // Imports returns the direct dependencies of path.
@@ -160,10 +160,6 @@ func (g *Graph) TopologicalSortWithResolver(files []string, resolver *PathResolv
 	// Append any files that were not reachable in the dependency order
 	// (e.g., disconnected or cyclic), preserving original relative order.
 	if len(sorted) < len(files) {
-		order := make(map[string]int, len(files))
-		for i, f := range files {
-			order[f] = i
-		}
 		remaining := make([]string, 0, len(files)-len(sorted))
 		for _, f := range files {
 			if _, ok := seen[f]; !ok {

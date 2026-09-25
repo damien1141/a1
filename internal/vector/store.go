@@ -3,9 +3,9 @@ package vector
 import (
 	"bufio"
 	"context"
-"encoding/json"
-	"io"
+	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"math"
 	"os"

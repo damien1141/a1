@@ -65,8 +65,8 @@ type ComposerPane struct {
 	ctrlClose             func()
 	imageEnabled          func() bool
 
-	history    []string
-	historyIdx int // -1 when not browsing
+	history        []string
+	historyIdx     int // -1 when not browsing
 	onHistoryStore func(string)
 }
 

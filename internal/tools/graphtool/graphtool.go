@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/damien1141/a1/internal/tools/tooldef"
+	"github.com/damien1141/a1/internal/graph"
 	"github.com/damien1141/a1/internal/llm"
 	"github.com/damien1141/a1/internal/project"
-	"github.com/damien1141/a1/internal/graph"
+	"github.com/damien1141/a1/internal/tools/tooldef"
 )
 
 const (
@@ -30,28 +30,28 @@ func GraphTool() tooldef.Tool {
 			Description: graphDescription,
 			Params: &llm.FunctionParameters{
 				Type: "object",
-			Properties: llm.Object{
-				"query": llm.Object{
-					"type":        "string",
-					"description": "Natural language query about dependencies. Example: \"Who imports auth.go?\"",
+				Properties: llm.Object{
+					"query": llm.Object{
+						"type":        "string",
+						"description": "Natural language query about dependencies. Example: \"Who imports auth.go?\"",
+					},
+					"path": llm.Object{
+						"type":        "string",
+						"description": "File or module path to inspect. Example: internal/auth/auth.go",
+					},
+					"direction": llm.Object{
+						"type":        "string",
+						"description": "Traversal direction: imports, imported_by, or both. Example: imported_by",
+					},
+					"limit": llm.Object{
+						"type":        "integer",
+						"description": fmt.Sprintf("Maximum results. Example: 20 (default: %d)", defaultLimit),
+					},
+					"rescan": llm.Object{
+						"type":        "boolean",
+						"description": "Rebuild the graph before querying.",
+					},
 				},
-				"path": llm.Object{
-					"type":        "string",
-					"description": "File or module path to inspect. Example: internal/auth/auth.go",
-				},
-				"direction": llm.Object{
-					"type":        "string",
-					"description": "Traversal direction: imports, imported_by, or both. Example: imported_by",
-				},
-				"limit": llm.Object{
-					"type":        "integer",
-					"description": fmt.Sprintf("Maximum results. Example: 20 (default: %d)", defaultLimit),
-				},
-				"rescan": llm.Object{
-					"type":        "boolean",
-					"description": "Rebuild the graph before querying.",
-				},
-			},
 				Required: []string{"query"},
 			},
 			Readable: true,
@@ -70,11 +70,11 @@ func GraphTool() tooldef.Tool {
 }
 
 type graphInput struct {
-	Query    string `json:"query"`
-	Path     string `json:"path,omitempty"`
+	Query     string `json:"query"`
+	Path      string `json:"path,omitempty"`
 	Direction string `json:"direction,omitempty"`
-	Limit    int    `json:"limit"`
-	Rescan   bool   `json:"rescan"`
+	Limit     int    `json:"limit"`
+	Rescan    bool   `json:"rescan"`
 }
 
 func runGraph(ctx context.Context, input json.RawMessage) (tooldef.Result, error) {

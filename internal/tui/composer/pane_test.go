@@ -298,4 +298,3 @@ func TestComposerHistoryNavigation(t *testing.T) {
 	assert.Equal(t, "", c.Chat.Value)
 	assert.Equal(t, -1, c.historyIdx)
 }
-

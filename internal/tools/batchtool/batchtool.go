@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/damien1141/a1/internal/tools/tooldef"
+	"github.com/damien1141/a1/internal/graph"
 	"github.com/damien1141/a1/internal/llm"
 	"github.com/damien1141/a1/internal/project"
-	"github.com/damien1141/a1/internal/graph"
+	"github.com/damien1141/a1/internal/tools/tooldef"
 )
 
 var batchDescription = `Batch editor with dependency ordering.
