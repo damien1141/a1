@@ -5,9 +5,9 @@
 package branchlist
 
 import (
-	"github.com/pulseaiclub/phi/internal/components/chrome"
-	"github.com/pulseaiclub/phi/internal/components/listpicker"
-	"github.com/pulseaiclub/phi/internal/util/gitx"
+	"github.com/damien1141/a1/internal/components/chrome"
+	"github.com/damien1141/a1/internal/components/listpicker"
+	"github.com/damien1141/a1/internal/util/gitx"
 )
 
 // branchColumn leaves room for the commit subject on an 80-column terminal.

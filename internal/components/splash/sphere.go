@@ -5,16 +5,16 @@ import (
 
 	"github.com/pulseaiclub/xui"
 
-	"github.com/pulseaiclub/phi/internal/components"
+	"github.com/damien1141/a1/internal/components"
 )
 
 // Classic sphere charset.
 const sphereCharset = " .:-=+*#%@"
 
-// Default sphere palette endpoints (dark green → bright green).
+// Default sphere palette endpoints (dark blue → accent blue).
 var (
-	spherePrimary   = rgb{0, 55, 0}
-	sphereSecondary = rgb{0, 255, 136}
+	spherePrimary   = rgb{30, 60, 120}
+	sphereSecondary = rgb{138, 180, 248}
 )
 
 type rgb struct{ r, g, b uint8 }

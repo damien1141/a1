@@ -9,36 +9,36 @@ import (
 
 	cli "github.com/pulseaiclub/pli"
 
-	"github.com/pulseaiclub/phi/internal/extension"
-	"github.com/pulseaiclub/phi/internal/project"
+	"github.com/damien1141/a1/internal/extension"
+	"github.com/damien1141/a1/internal/project"
 )
 
 var (
 	pluginCommand = cli.Command{
 		Name: "plugin",
 		Desc: "manage extensions (install, list, update, remove)",
-		Long: `Install a PXB extension from a GitHub repo into ~/.phi/extensions/<repo>/.
+		Long: `Install a PXB extension from a GitHub repo into ~/.a1/extensions/<repo>/.
 
-Prefers a GitHub Release archive for this OS/arch (same layout as phi update):
+Prefers a GitHub Release archive for this OS/arch (same layout as a1 update):
 
   {repo}_{version}_{goos}_{goarch}.tar.gz   # .zip on Windows
 
-The archive must contain phi.yaml and the compiled exec binary. If no matching
+The archive must contain a1.yaml and the compiled exec binary. If no matching
 release asset exists, falls back to a shallow git clone (repo must already ship
 the binary).
 
-Install records the GitHub source in .phi-install.json, so plugins can be
+Install records the GitHub source in .a1-install.json, so plugins can be
 updated in place without manual removal:
 
 Examples:
-  phi plugin install alice/greet
-  phi plugin install alice/greet@v1.2.3
-  phi plugin install github.com/alice/greet@main
-  phi plugin list
-  phi plugin update              # update all installed plugins
-  phi plugin update greet        # update one plugin
-  phi plugin update greet@latest # switch to the newest release
-  phi plugin remove greet        # uninstall (alias: rm)
+  a1 plugin install alice/greet
+  a1 plugin install alice/greet@v1.2.3
+  a1 plugin install github.com/alice/greet@main
+  a1 plugin list
+  a1 plugin update              # update all installed plugins
+  a1 plugin update greet        # update one plugin
+  a1 plugin update greet@latest # switch to the newest release
+  a1 plugin remove greet        # uninstall (alias: rm)
 
 Security: extension processes run with your full permissions.`,
 	}
@@ -134,7 +134,7 @@ func pluginList() error {
 		return err
 	}
 	if len(installed) == 0 {
-		fmt.Println("(no plugins — try: phi plugin install alice/greet)")
+		fmt.Println("(no plugins — try: a1 plugin install alice/greet)")
 		return nil
 	}
 	for _, in := range installed {

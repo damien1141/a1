@@ -5,8 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/pulseaiclub/phi/internal/components/listpicker"
-	"github.com/pulseaiclub/phi/internal/util/gitx"
+	"github.com/damien1141/a1/internal/components/listpicker"
+	"github.com/damien1141/a1/internal/util/gitx"
 )
 
 func TestItemsAnchorsCurrentThenRecentThenLocalThenRemote(t *testing.T) {

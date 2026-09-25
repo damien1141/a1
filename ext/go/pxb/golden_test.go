@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/ext/go/pxb"
+	"github.com/damien1141/a1/ext/go/pxb"
 )
 
 // TestWriteGoldenFixtures regenerates ext/go/pxb/testdata/*.bin for TS interop.

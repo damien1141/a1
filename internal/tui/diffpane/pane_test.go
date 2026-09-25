@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/components"
+	"github.com/damien1141/a1/internal/components"
 )
 
 const sampleDiff = `diff --git a/main.go b/main.go
@@ -47,7 +47,7 @@ func TestPaneOpenCommentSearchAndSend(t *testing.T) {
 	p.Handle(ctx, xui.KeyEvent{Press: true, Code: xui.KeyEnter})
 	require.False(t, p.commentEdit)
 	require.Len(t, p.drafts, 1)
-	assert.FileExists(t, filepath.Join(dir, ".phi", "review.json"))
+	assert.FileExists(t, filepath.Join(dir, ".a1", "review.json"))
 
 	key('/')
 	for _, r := range "new" {

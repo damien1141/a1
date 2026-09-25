@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
-	imgutil "github.com/pulseaiclub/phi/internal/util/image"
+	imgutil "github.com/damien1141/a1/internal/util/image"
 )
 
 // Image is raw image data from the clipboard plus a MIME type.

@@ -6,8 +6,8 @@
 package model
 
 import (
-	"github.com/pulseaiclub/phi/internal/llm"
-	llmclient "github.com/pulseaiclub/phi/internal/llm/client"
+	"github.com/damien1141/a1/internal/llm"
+	llmclient "github.com/damien1141/a1/internal/llm/client"
 )
 
 // Preset is a built-in model catalog entry: connection defaults plus optional

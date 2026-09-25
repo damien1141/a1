@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/job"
+	"github.com/damien1141/a1/internal/job"
 )
 
 func TestShouldPublishJobProgressDedup(t *testing.T) {

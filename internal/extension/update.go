@@ -9,13 +9,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/pulseaiclub/phi/internal/util/githubrelease"
-	"github.com/pulseaiclub/phi/internal/util/update"
+	"github.com/damien1141/a1/internal/util/githubrelease"
+	"github.com/damien1141/a1/internal/util/update"
 )
 
 // UpdateOptions configures Update.
 type UpdateOptions struct {
-	// Dir is the extensions directory (typically ~/.phi/extensions).
+	// Dir is the extensions directory (typically ~/.a1/extensions).
 	Dir string
 	// ID is the plugin to update (repo name or "owner/repo"); empty = all managed.
 	ID string
@@ -109,7 +109,7 @@ func matchTarget(installed []Installed, id string) ([]Installed, error) {
 		}
 		if !in.Managed {
 			return nil, fmt.Errorf(
-				"%s exists at %s but was not installed via 'phi plugin install' (no %s); remove it manually or reinstall to manage it",
+				"%s exists at %s but was not installed via 'a1 plugin install' (no %s); remove it manually or reinstall to manage it",
 				in.ID,
 				in.Path,
 				installMetaFile,

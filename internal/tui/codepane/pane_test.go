@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/components/chat"
+	"github.com/damien1141/a1/internal/components"
+	"github.com/damien1141/a1/internal/components/chat"
 )
 
 // harness collects the pane's side effects so tests can assert on them.

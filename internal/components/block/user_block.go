@@ -3,7 +3,7 @@ package block
 import (
 	"github.com/pulseaiclub/xui"
 
-	components "github.com/pulseaiclub/phi/internal/components"
+	components "github.com/damien1141/a1/internal/components"
 )
 
 // UserBlock renders a user prompt with success left rule + italic.

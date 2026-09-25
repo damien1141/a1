@@ -12,8 +12,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/pulseaiclub/phi/internal/llm"
-	"github.com/pulseaiclub/phi/internal/util"
+	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/util"
 )
 
 const (

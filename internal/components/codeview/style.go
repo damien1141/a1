@@ -3,7 +3,7 @@ package codeview
 import (
 	"github.com/pulseaiclub/xui"
 
-	"github.com/pulseaiclub/phi/internal/components"
+	"github.com/damien1141/a1/internal/components"
 )
 
 // rowStyle is the row background. The cursor line carries the selection wash —

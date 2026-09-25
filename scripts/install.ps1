@@ -56,7 +56,7 @@ $procArch = $env:PROCESSOR_ARCHITEW6432
 if (-not $procArch) { $procArch = $env:PROCESSOR_ARCHITECTURE }
 $goarch = switch ($procArch) {
     'AMD64' { 'amd64' }
-    'ARM64' { throw 'windows/arm64 builds are not published; download the amd64 zip from https://github.com/pulseaiclub/phi/releases if it runs on your machine' }
+    'ARM64' { throw 'windows/arm64 builds are not published; download the amd64 zip from https://github.com/damien1141/a1/releases if it runs on your machine' }
     default { throw "unsupported CPU arch: $procArch" }
 }
 

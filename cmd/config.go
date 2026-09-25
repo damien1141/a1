@@ -20,7 +20,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/pulseaiclub/phi/internal/util"
+	"github.com/damien1141/a1/internal/util"
 )
 
 //go:embed config.html

@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/components/tree"
+	"github.com/damien1141/a1/internal/components/tree"
 )
 
 func TestPrefixForSiblings(t *testing.T) {

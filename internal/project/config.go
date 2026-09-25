@@ -8,12 +8,12 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/pulseaiclub/phi/internal/llm"
-	"github.com/pulseaiclub/phi/internal/permission"
-	"github.com/pulseaiclub/phi/internal/project/model"
+	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/permission"
+	"github.com/damien1141/a1/internal/project/model"
 )
 
-// Config is the project-level configuration loaded from ~/.phi/config.yaml.
+// Config is the project-level configuration loaded from ~/.a1/config.yaml.
 // All models live in one flat list under the models key; DefaultModel names
 // the entry used to start sessions (empty → the first entry).
 type Config struct {
@@ -213,7 +213,7 @@ func modelEntryToConfig(m modelEntry) llm.ModelConfig {
 	return cfg
 }
 
-// fileConfig mirrors the YAML keys in ~/.phi/config.yaml.
+// fileConfig mirrors the YAML keys in ~/.a1/config.yaml.
 type fileConfig struct {
 	Models      []modelEntry  `yaml:"models"`
 	SkillPath   *string       `yaml:"skill_path"`

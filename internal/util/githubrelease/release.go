@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/pulseaiclub/phi/internal/util"
+	"github.com/damien1141/a1/internal/util"
 )
 
 const apiVersion = "2022-11-28"

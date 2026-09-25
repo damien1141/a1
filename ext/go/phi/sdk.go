@@ -9,8 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	ext "github.com/pulseaiclub/phi/ext/go"
-	"github.com/pulseaiclub/phi/ext/go/pxb"
+	ext "github.com/damien1141/a1/ext/go"
+	"github.com/damien1141/a1/ext/go/pxb"
 )
 
 // ExtensionAPI is the author-facing registration surface for a PXB extension binary.

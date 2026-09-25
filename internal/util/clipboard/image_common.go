@@ -3,7 +3,7 @@ package clipboard
 import (
 	"strings"
 
-	"github.com/pulseaiclub/phi/internal/util"
+	"github.com/damien1141/a1/internal/util"
 )
 
 // splitLines splits on LF (normalizing CRLF) and drops empty lines.

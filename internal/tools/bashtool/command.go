@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pulseaiclub/phi/internal/project"
-	"github.com/pulseaiclub/phi/internal/tools/tooldef"
+	"github.com/damien1141/a1/internal/project"
+	"github.com/damien1141/a1/internal/tools/tooldef"
 )
 
 // shellWaitDelay is how long Cmd.Wait waits after Cancel for the process tree
@@ -19,7 +19,7 @@ import (
 const shellWaitDelay = 3 * time.Second
 
 // shellEnv returns the environment for shell commands: the parent env with
-// phi's bin dir (~/.phi/bin, where fd/ripgrep are downloaded) prepended to
+// phi's bin dir (~/.a1/bin, where fd/ripgrep are downloaded) prepended to
 // PATH.
 func shellEnv() []string {
 	env := os.Environ()

@@ -5,8 +5,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/pulseaiclub/phi/internal/job"
-	"github.com/pulseaiclub/phi/internal/session"
+	"github.com/damien1141/a1/internal/job"
+	"github.com/damien1141/a1/internal/session"
 )
 
 // RedrawRelay lets cmd construct a Bus before the Editor exists.

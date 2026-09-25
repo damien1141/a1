@@ -36,7 +36,7 @@ func TestProjectSessionDir(t *testing.T) {
 func TestProjectSessionDirMethod(t *testing.T) {
 	p := &Project{
 		root:   "/Users/foo/Phi",
-		global: GlobalLayout{root: "/tmp/.phi"},
+		global: GlobalLayout{root: "/tmp/.a1"},
 	}
-	assert.Equal(t, filepath.Join("/tmp/.phi/session", "--Users-foo-Phi--"), p.SessionDir())
+	assert.Equal(t, filepath.Join("/tmp/.a1/session", "--Users-foo-Phi--"), p.SessionDir())
 }

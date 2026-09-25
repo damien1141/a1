@@ -4,7 +4,7 @@ import (
 	"encoding/base64"
 	"path/filepath"
 
-	"github.com/pulseaiclub/phi/internal/llm"
+	"github.com/damien1141/a1/internal/llm"
 )
 
 // Attachment is a pending image: display label plus raw bytes for the model.

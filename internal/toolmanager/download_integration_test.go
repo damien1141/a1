@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/util/githubrelease"
+	"github.com/damien1141/a1/internal/util/githubrelease"
 )
 
 func TestDownloadToolsFromGitHub(t *testing.T) {

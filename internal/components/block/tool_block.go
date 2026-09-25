@@ -5,9 +5,9 @@ import (
 
 	"github.com/pulseaiclub/xui"
 
-	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/components/chrome"
-	"github.com/pulseaiclub/phi/internal/components/status"
+	"github.com/damien1141/a1/internal/components"
+	"github.com/damien1141/a1/internal/components/chrome"
+	"github.com/damien1141/a1/internal/components/status"
 )
 
 // ToolBlock renders a generic tool_use row: status glyph, name,

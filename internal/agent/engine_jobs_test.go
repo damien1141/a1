@@ -7,9 +7,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/agent"
-	"github.com/pulseaiclub/phi/internal/job"
-	"github.com/pulseaiclub/phi/internal/llm"
+	"github.com/damien1141/a1/internal/agent"
+	"github.com/damien1141/a1/internal/job"
+	"github.com/damien1141/a1/internal/llm"
 )
 
 func TestNewEngineRegistersJobs(t *testing.T) {

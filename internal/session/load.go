@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pulseaiclub/phi/internal/llm"
-	"github.com/pulseaiclub/phi/internal/util"
+	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/util"
 )
 
 // SessionMeta is a lightweight listing row for persisted sessions.

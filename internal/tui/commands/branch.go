@@ -5,10 +5,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/pulseaiclub/phi/internal/components/toast"
-	"github.com/pulseaiclub/phi/internal/tui/controller"
-	"github.com/pulseaiclub/phi/internal/tui/pathutil"
-	"github.com/pulseaiclub/phi/internal/util/gitx"
+	"github.com/damien1141/a1/internal/components/toast"
+	"github.com/damien1141/a1/internal/tui/controller"
+	"github.com/damien1141/a1/internal/tui/pathutil"
+	"github.com/damien1141/a1/internal/util/gitx"
 )
 
 // BranchCommands owns the /branch working-context switcher.

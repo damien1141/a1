@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/pulseaiclub/phi/internal/util/gitx"
+	"github.com/damien1141/a1/internal/util/gitx"
 )
 
 // LabelForSpec is the overlay title suffix for a /diff argument list.

@@ -9,11 +9,11 @@ import (
 
 	cli "github.com/pulseaiclub/pli"
 
-	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/components/app"
-	"github.com/pulseaiclub/phi/internal/project"
-	"github.com/pulseaiclub/phi/internal/tui/controller"
-	"github.com/pulseaiclub/phi/internal/tui/editor"
+	"github.com/damien1141/a1/internal/components"
+	"github.com/damien1141/a1/internal/components/app"
+	"github.com/damien1141/a1/internal/project"
+	"github.com/damien1141/a1/internal/tui/controller"
+	"github.com/damien1141/a1/internal/tui/editor"
 )
 
 var tuiCommand = cli.Command{
@@ -28,10 +28,10 @@ var tuiCommand = cli.Command{
 func runTUI() error {
 	proj := project.GetDefaultProject()
 	if err := proj.LoadConfig(); err != nil {
-		fmt.Fprintln(os.Stderr, "phi:", err)
+		fmt.Fprintln(os.Stderr, "a1:", err)
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "Configure a model first, then restart:")
-		fmt.Fprintln(os.Stderr, "  phi config")
+		fmt.Fprintln(os.Stderr, "  a1 config")
 		fmt.Fprintln(os.Stderr, "or set PHI_MODEL and PHI_API_KEY.")
 		return exitCode(ExitUsage)
 	}
@@ -47,7 +47,7 @@ func runTUI() error {
 
 	vx, err := xui.New(xui.Options{Mouse: true, BracketedPaste: true})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "phi: terminal UI:", err)
+		fmt.Fprintln(os.Stderr, "a1: terminal UI:", err)
 		return exitCode(ExitError)
 	}
 	defer func(vx *xui.XUI) {
@@ -59,7 +59,7 @@ func runTUI() error {
 
 	cwd, err := os.Getwd()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "phi: getwd:", err)
+		fmt.Fprintln(os.Stderr, "a1: getwd:", err)
 		return exitCode(ExitError)
 	}
 	th := components.DefaultTheme()
@@ -76,7 +76,7 @@ func runTUI() error {
 	bus := controller.NewBus(redraw.Fire)
 	ctrl, err := controller.NewController(bus, proj, cwd)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "phi:", err)
+		fmt.Fprintln(os.Stderr, "a1:", err)
 		return exitCode(ExitError)
 	}
 	defer ctrl.Close()
@@ -102,7 +102,7 @@ func runTUI() error {
 	ui.StartUpdateCheck(proj.Global().Root())
 	ui.StartBranchWatch()
 	if err := application.Run(ui); err != nil {
-		fmt.Fprintln(os.Stderr, "phi:", err)
+		fmt.Fprintln(os.Stderr, "a1:", err)
 		return exitCode(ExitError)
 	}
 	return nil

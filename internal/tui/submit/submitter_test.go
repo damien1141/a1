@@ -6,14 +6,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/components/chat"
-	"github.com/pulseaiclub/phi/internal/components/status"
-	"github.com/pulseaiclub/phi/internal/session"
-	"github.com/pulseaiclub/phi/internal/tui/commands"
-	"github.com/pulseaiclub/phi/internal/tui/controller"
-	"github.com/pulseaiclub/phi/internal/tui/transcript"
-	imgutil "github.com/pulseaiclub/phi/internal/util/image"
+	"github.com/damien1141/a1/internal/components"
+	"github.com/damien1141/a1/internal/components/chat"
+	"github.com/damien1141/a1/internal/components/status"
+	"github.com/damien1141/a1/internal/session"
+	"github.com/damien1141/a1/internal/tui/commands"
+	"github.com/damien1141/a1/internal/tui/controller"
+	"github.com/damien1141/a1/internal/tui/transcript"
+	imgutil "github.com/damien1141/a1/internal/util/image"
 )
 
 type stubComposer struct {
@@ -62,7 +62,7 @@ func newTestSubmitter(
 func TestSubmitter_IsBusy(t *testing.T) {
 	th := components.DefaultTheme()
 	spin := status.NewSpinner(th.ToolName)
-	tp := transcript.NewTranscriptPane(th, spin, "Phi test")
+	tp := transcript.NewTranscriptPane(th, spin, "A1 test")
 	sub := newTestSubmitter(t, tp, nil, nil, nil)
 	assert.False(t, sub.IsBusy())
 }
@@ -71,7 +71,7 @@ func TestSubmitter_StreamActive_activity(t *testing.T) {
 	th := components.DefaultTheme()
 	spin := status.NewSpinner(th.ToolName)
 	activity := controller.NewActivityHandler(spin)
-	sub := newTestSubmitter(t, transcript.NewTranscriptPane(th, spin, "Phi test"), activity, nil, nil)
+	sub := newTestSubmitter(t, transcript.NewTranscriptPane(th, spin, "A1 test"), activity, nil, nil)
 	activity.Apply(controller.ActivityWaiting)
 	assert.True(t, sub.StreamActive())
 }
@@ -79,7 +79,7 @@ func TestSubmitter_StreamActive_activity(t *testing.T) {
 func TestSubmitter_Submit_unknownSlashFallsThroughToAgent(t *testing.T) {
 	th := components.DefaultTheme()
 	spin := status.NewSpinner(th.ToolName)
-	tp := transcript.NewTranscriptPane(th, spin, "Phi test")
+	tp := transcript.NewTranscriptPane(th, spin, "A1 test")
 	sub := newTestSubmitter(t, tp, nil, nil, commands.NewCommandRegistry())
 	sub.Submit("/not-a-real-command")
 	require.Len(t, tp.Snapshot().Messages, 1)
@@ -90,7 +90,7 @@ func TestSubmitter_Submit_unknownSlashFallsThroughToAgent(t *testing.T) {
 func TestSubmitter_Submit_bareBangFallsThroughToAgent(t *testing.T) {
 	th := components.DefaultTheme()
 	spin := status.NewSpinner(th.ToolName)
-	tp := transcript.NewTranscriptPane(th, spin, "Phi test")
+	tp := transcript.NewTranscriptPane(th, spin, "A1 test")
 	sub := newTestSubmitter(t, tp, nil, nil, nil)
 	sub.Submit("!")
 	require.Len(t, tp.Snapshot().Messages, 1)
@@ -100,7 +100,7 @@ func TestSubmitter_Submit_bareBangFallsThroughToAgent(t *testing.T) {
 func TestSubmitter_Submit_needsArgsRefillsComposer(t *testing.T) {
 	th := components.DefaultTheme()
 	spin := status.NewSpinner(th.ToolName)
-	tp := transcript.NewTranscriptPane(th, spin, "Phi test")
+	tp := transcript.NewTranscriptPane(th, spin, "A1 test")
 	comp := &stubComposer{}
 	reg := commands.NewCommandRegistry()
 	reg.Register(commands.Command{
@@ -118,7 +118,7 @@ func TestSubmitter_Submit_needsArgsRefillsComposer(t *testing.T) {
 func TestSubmitter_Submit_withImagesOnly(t *testing.T) {
 	th := components.DefaultTheme()
 	spin := status.NewSpinner(th.ToolName)
-	tp := transcript.NewTranscriptPane(th, spin, "Phi test")
+	tp := transcript.NewTranscriptPane(th, spin, "A1 test")
 	images := []imgutil.Attachment{
 		{Label: "a.png", Result: imgutil.Result{Data: []byte("abc"), MimeType: "image/png"}},
 	}

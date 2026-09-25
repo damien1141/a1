@@ -24,8 +24,8 @@ func TestTagVersion(t *testing.T) {
 
 func TestDownloadBaseURL(t *testing.T) {
 	t.Parallel()
-	in := "https://github.com/pulseaiclub/phi/releases/tag/v0.1.0"
-	want := "https://github.com/pulseaiclub/phi/releases/download/v0.1.0"
+	in := "https://github.com/damien1141/a1/releases/tag/v0.1.0"
+	want := "https://github.com/damien1141/a1/releases/download/v0.1.0"
 	require.Equal(t, want, DownloadBaseURL(in))
 }
 

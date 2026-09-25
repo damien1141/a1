@@ -13,17 +13,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pulseaiclub/phi/internal/agent"
-	"github.com/pulseaiclub/phi/internal/extension"
-	"github.com/pulseaiclub/phi/internal/job"
-	"github.com/pulseaiclub/phi/internal/llm"
-	"github.com/pulseaiclub/phi/internal/mcp"
-	"github.com/pulseaiclub/phi/internal/project/model"
-	"github.com/pulseaiclub/phi/internal/session"
-	"github.com/pulseaiclub/phi/internal/tools"
+	"github.com/damien1141/a1/internal/agent"
+	"github.com/damien1141/a1/internal/extension"
+	"github.com/damien1141/a1/internal/job"
+	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/mcp"
+	"github.com/damien1141/a1/internal/project/model"
+	"github.com/damien1141/a1/internal/session"
+	"github.com/damien1141/a1/internal/tools"
 )
 
-// runOptions holds parsed `phi run` flags.
+// runOptions holds parsed `a1 run` flags.
 type runOptions struct {
 	prompt       string
 	jsonl        bool
@@ -43,7 +43,7 @@ func runHeadless(opts runOptions) error {
 
 	bs, err := loadRunBootstrap(ctx, opts.sessionDir, opts.yolo)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "phi run:", err)
+		fmt.Fprintln(os.Stderr, "a1 run:", err)
 		return exitCode(ExitUsage)
 	}
 	if opts.yolo {
@@ -54,11 +54,11 @@ func runHeadless(opts runOptions) error {
 	if opts.continueLast {
 		list, err := session.ListSessions(bs.SessionDir)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "phi run:", err)
+			fmt.Fprintln(os.Stderr, "a1 run:", err)
 			return exitCode(ExitError)
 		}
 		if len(list) == 0 {
-			fmt.Fprintln(os.Stderr, "phi run: --continue-last found no sessions in", bs.SessionDir)
+			fmt.Fprintln(os.Stderr, "a1 run: --continue-last found no sessions in", bs.SessionDir)
 			return exitCode(ExitError)
 		}
 		resumePath = list[0].File
@@ -110,7 +110,7 @@ func runHeadless(opts runOptions) error {
 			return extRunner
 		})
 		if jobErr != nil {
-			fmt.Fprintln(os.Stderr, "phi run:", jobErr)
+			fmt.Fprintln(os.Stderr, "a1 run:", jobErr)
 			return exitCode(ExitUsage)
 		}
 		defer func() { _ = jobs.Close(context.Background()) }()
@@ -129,13 +129,13 @@ func runHeadless(opts runOptions) error {
 	}
 	sess, err := agent.NewSession(sessionOpts...)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "phi run:", err)
+		fmt.Fprintln(os.Stderr, "a1 run:", err)
 		return exitCode(ExitUsage)
 	}
 
 	engine, err := agent.NewEngine(bs.Config.Model(), sess, engineOpts...)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "phi run:", err)
+		fmt.Fprintln(os.Stderr, "a1 run:", err)
 		return exitCode(ExitUsage)
 	}
 
@@ -154,7 +154,7 @@ func runHeadless(opts runOptions) error {
 	return exitCode(runLoop(runCtx, engine, opts))
 }
 
-// loadRunExtensions discovers user + project extensions for headless `phi run`.
+// loadRunExtensions discovers user + project extensions for headless `a1 run`.
 // Failures are non-fatal (fail-open). Warnings go to stderr as a one-line hint.
 func loadRunExtensions(bs *runBootstrap) *extension.Runner {
 	if bs == nil || bs.Proj == nil {

@@ -7,13 +7,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/pulseaiclub/phi/internal/extension"
-	"github.com/pulseaiclub/phi/internal/job"
-	"github.com/pulseaiclub/phi/internal/llm"
-	"github.com/pulseaiclub/phi/internal/permission"
-	"github.com/pulseaiclub/phi/internal/project/model"
-	"github.com/pulseaiclub/phi/internal/session"
-	"github.com/pulseaiclub/phi/internal/tools"
+	"github.com/damien1141/a1/internal/extension"
+	"github.com/damien1141/a1/internal/job"
+	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/permission"
+	"github.com/damien1141/a1/internal/project/model"
+	"github.com/damien1141/a1/internal/session"
+	"github.com/damien1141/a1/internal/tools"
 )
 
 // EngineRunner runs a child [Engine.Loop] as a [job.Runner].

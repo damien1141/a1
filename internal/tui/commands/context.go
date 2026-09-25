@@ -3,9 +3,9 @@ package commands
 import (
 	"time"
 
-	"github.com/pulseaiclub/phi/internal/components/palette"
-	"github.com/pulseaiclub/phi/internal/components/toast"
-	"github.com/pulseaiclub/phi/internal/tui/controller"
+	"github.com/damien1141/a1/internal/components/palette"
+	"github.com/damien1141/a1/internal/components/toast"
+	"github.com/damien1141/a1/internal/tui/controller"
 )
 
 // Context provides TUI services to command handlers.

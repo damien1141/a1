@@ -9,17 +9,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pulseaiclub/phi/internal/agent/prompt"
-	"github.com/pulseaiclub/phi/internal/extension"
-	"github.com/pulseaiclub/phi/internal/job"
-	"github.com/pulseaiclub/phi/internal/llm"
-	llmclient "github.com/pulseaiclub/phi/internal/llm/client"
-	"github.com/pulseaiclub/phi/internal/llm/skills"
-	"github.com/pulseaiclub/phi/internal/mcp"
-	"github.com/pulseaiclub/phi/internal/permission"
-	"github.com/pulseaiclub/phi/internal/session"
-	"github.com/pulseaiclub/phi/internal/session/compaction"
-	"github.com/pulseaiclub/phi/internal/tools"
+	"github.com/damien1141/a1/internal/agent/prompt"
+	"github.com/damien1141/a1/internal/extension"
+	"github.com/damien1141/a1/internal/job"
+	"github.com/damien1141/a1/internal/llm"
+	llmclient "github.com/damien1141/a1/internal/llm/client"
+	"github.com/damien1141/a1/internal/llm/skills"
+	"github.com/damien1141/a1/internal/mcp"
+	"github.com/damien1141/a1/internal/permission"
+	"github.com/damien1141/a1/internal/session"
+	"github.com/damien1141/a1/internal/session/compaction"
+	"github.com/damien1141/a1/internal/tools"
 )
 
 // ErrMaxRounds is returned (wrapped) by Loop when the model exceeds the

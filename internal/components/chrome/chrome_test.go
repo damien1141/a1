@@ -6,9 +6,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/components/chrome"
-	"github.com/pulseaiclub/phi/internal/components/status"
+	"github.com/damien1141/a1/internal/components"
+	"github.com/damien1141/a1/internal/components/chrome"
+	"github.com/damien1141/a1/internal/components/status"
 )
 
 func TestHintDialect(t *testing.T) {

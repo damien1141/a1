@@ -3,9 +3,9 @@ package agent
 import (
 	"errors"
 
-	"github.com/pulseaiclub/phi/internal/extension"
-	"github.com/pulseaiclub/phi/internal/job"
-	"github.com/pulseaiclub/phi/internal/llm"
+	"github.com/damien1141/a1/internal/extension"
+	"github.com/damien1141/a1/internal/job"
+	"github.com/damien1141/a1/internal/llm"
 )
 
 // NewJobManager creates a process-level job manager whose runner drives child Engines.

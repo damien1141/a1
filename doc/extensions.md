@@ -48,7 +48,7 @@ root [README](../README.md#extensions). Re-probe with
 
 | Location | Scope |
 |----------|-------|
-| `~/.phi/extensions/<name>/phi.yaml` | Global |
+| `~/.a1/extensions/<name>/phi.yaml` | Global |
 | `<cwd>/.phi/extensions/<name>/phi.yaml` | Project-local |
 
 Same name: project wins. Disable all with `PHI_EXTENSIONS=off`.
@@ -184,8 +184,8 @@ Build and install:
 
 ```bash
 go build -o hello .
-mkdir -p ~/.phi/extensions/hello
-cp hello phi.yaml ~/.phi/extensions/hello/
+mkdir -p ~/.a1/extensions/hello
+cp hello phi.yaml ~/.a1/extensions/hello/
 ```
 
 Reload: **Ctrl+K → extensions → reload**.
@@ -298,8 +298,8 @@ Build and install (see `ext/rust/examples/` for runnable extensions):
 ```bash
 cd ext/rust
 cargo build --release --example hello
-mkdir -p ~/.phi/extensions/hello
-cp target/release/examples/hello phi.yaml ~/.phi/extensions/hello/
+mkdir -p ~/.a1/extensions/hello
+cp target/release/examples/hello phi.yaml ~/.a1/extensions/hello/
 ```
 
 Reload: **Ctrl+K → extensions → reload**.
@@ -307,12 +307,12 @@ Reload: **Ctrl+K → extensions → reload**.
 ## Install from GitHub
 
 ```bash
-phi plugin install alice/greet
-phi plugin install alice/greet@v1.2.3
+a1 plugin install alice/greet
+a1 plugin install alice/greet@v1.2.3
 ```
 
 Install prefers a **GitHub Release** asset for the current OS/arch (same
-naming as `phi update`):
+naming as `a1 update`):
 
 ```text
 {repo}_{version}_{goos}_{goarch}.tar.gz   # .zip on Windows
@@ -329,12 +329,12 @@ repos will fail). Source-only yaegi repos no longer load.
 ### Managing installed plugins
 
 ```bash
-phi plugin list                  # installed plugins: id, version, source, path
-phi plugin update                # update all managed plugins
-phi plugin update greet          # update one plugin
-phi plugin update greet@latest   # switch to the newest release
-phi plugin update --check        # report available updates without installing
-phi plugin remove greet          # uninstall (alias: rm)
+a1 plugin list                  # installed plugins: id, version, source, path
+a1 plugin update                # update all managed plugins
+a1 plugin update greet          # update one plugin
+a1 plugin update greet@latest   # switch to the newest release
+a1 plugin update --check        # report available updates without installing
+a1 plugin remove greet          # uninstall (alias: rm)
 ```
 
 Install records the GitHub source in `.phi-install.json` inside the extension
@@ -342,17 +342,17 @@ directory. `update` prepares the complete replacement beside the installed tree
 before switching directories. The old tree is kept as a backup until the switch
 completes; release archives are preferred, with the same git-clone fallback as
 install. A pinned ref
-(`@v1.2.3`) stays pinned — override it with `phi plugin update greet@latest`
+(`@v1.2.3`) stays pinned — override it with `a1 plugin update greet@latest`
 or another tag.
 
-Extensions not installed via `phi plugin install` (manual copies) carry no
+Extensions not installed via `a1 plugin install` (manual copies) carry no
 metadata and are left untouched by `update`/`remove`; reinstall once to bring
 them under management.
 
 ## Lifecycle (process)
 
 1. Discover `phi.yaml`
-2. Spawn `exec` (stderr → `~/.phi/logs/ext-<name>.log`)
+2. Spawn `exec` (stderr → `~/.a1/logs/ext-<name>.log`)
 3. Ext → `Hello` · Host → `HelloAck`
 4. Ext → `Register*` / `Subscribe` · Ext → `Ready`
 5. Runtime RPC (`CommandInvoked`, `ToolInvoke`, `Intercept`, `Event`, `HostRequest`, `SessionMeta`)
@@ -365,7 +365,7 @@ them under management.
 | `ext/go/` (module `github.com/pulseaiclub/phi/ext/go`) | Shared types (`Tool`, events) |
 | `ext/go/pxb` | Binary wire protocol |
 | `ext/go/phi` | Go author SDK (`ExtensionAPI.Run`) |
-| `ext/rust` (crate `phi-ext`) | Rust author SDK (`pxb` + `phi` modules; deps: serde/serde_json + tokio `rt`) |
+| `ext/rust` (crate `phi-ext`) | Rust author SDK (`pxb` + `a1` modules; deps: serde/serde_json + tokio `rt`) |
 | `internal/extension` | Discover, spawn, Runner shims |
 
 ## Migration from yaegi

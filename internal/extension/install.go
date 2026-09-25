@@ -12,12 +12,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pulseaiclub/phi/internal/util/githubrelease"
+	"github.com/damien1141/a1/internal/util/githubrelease"
 )
 
 // InstallOptions configures Install.
 type InstallOptions struct {
-	// Dir is the extensions directory (typically ~/.phi/extensions).
+	// Dir is the extensions directory (typically ~/.a1/extensions).
 	Dir string
 	// Spec is the GitHub plugin to install.
 	Spec   Spec
@@ -230,7 +230,7 @@ func installFromGit(ctx context.Context, opts InstallOptions, spec Spec, dest st
 	}
 
 	// Clone beside dest so installation can rename on the same volume.
-	tmp, err := os.MkdirTemp(filepath.Dir(dest), ".phi-clone-")
+	tmp, err := os.MkdirTemp(filepath.Dir(dest), ".a1-clone-")
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
@@ -304,7 +304,7 @@ func placeTree(staging, dest string, replace bool) error {
 		return fmt.Errorf("check backup %s: %w", bak, err)
 	}
 
-	incoming, err := os.MkdirTemp(filepath.Dir(dest), ".phi-stage-")
+	incoming, err := os.MkdirTemp(filepath.Dir(dest), ".a1-stage-")
 	if err != nil {
 		return fmt.Errorf("create replacement staging dir: %w", err)
 	}

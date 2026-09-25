@@ -45,21 +45,21 @@ func DefaultTheme() Theme { return DarkTheme() }
 
 // DarkTheme is Phi's curated dark palette — cool info, teal identity, mint success.
 func DarkTheme() Theme {
-	info := xui.Style{Fg: xui.RGBColor(0x7d, 0xc3, 0xff)}
-	title := xui.Style{Fg: xui.RGBColor(0xd0, 0xd4, 0xdc)}
+	info := xui.Style{Fg: xui.RGBColor(0x8a, 0xb4, 0xf8)}
+	title := xui.Style{Fg: xui.RGBColor(0xe5, 0xe7, 0xeb), Bold: true}
 	return Theme{
-		Foreground:  xui.Style{Fg: xui.DefaultColor()},
-		Muted:       xui.Style{Fg: xui.IndexedColor(245), Dim: true},
-		Success:     xui.Style{Fg: xui.RGBColor(0x7d, 0xc3, 0xa0), Bold: true},
-		Identity:    xui.Style{Fg: xui.RGBColor(0x5e, 0xc4, 0xb4), Bold: true}, // teal ≠ success mint
+		Foreground:  xui.Style{Fg: xui.RGBColor(0xcc, 0xd0, 0xd9)},
+		Muted:       xui.Style{Fg: xui.RGBColor(0x8a, 0x8f, 0x9c), Dim: true},
+		Success:     xui.Style{Fg: xui.RGBColor(0x58, 0x99, 0x79), Bold: true},
+		Identity:    xui.Style{Fg: xui.RGBColor(0x8a, 0xb4, 0xf8), Bold: true},
 		Title:       title,
-		Accent:      xui.Style{Fg: xui.RGBColor(0xc4, 0x8a, 0xd9), Underline: true},
+		Accent:      xui.Style{Fg: xui.RGBColor(0x8a, 0xb4, 0xf8), Underline: true},
 		Warning:     xui.Style{Fg: xui.RGBColor(0xe5, 0xc0, 0x7b)},
-		Destructive: xui.Style{Fg: xui.RGBColor(0xe0, 0x6c, 0x75)},
-		Border:      xui.Style{Fg: xui.IndexedColor(240)},
+		Destructive: xui.Style{Fg: xui.RGBColor(0xf8, 0x5e, 0x4d)},
+		Border:      xui.Style{Fg: xui.RGBColor(0x2a, 0x2a, 0x2d)},
 		ToolName:    info,
-		SelectionBg: xui.Style{Bg: xui.RGBColor(0x2a, 0x3f, 0x5f)},
-		SelectionFg: xui.Style{Fg: xui.RGBColor(0xf0, 0xf3, 0xf8), Bold: true},
+		SelectionBg: xui.Style{Bg: xui.RGBColor(0x1a, 0x1a, 0x1d)},
+		SelectionFg: xui.Style{Fg: xui.RGBColor(0xeb, 0xf0, 0xff), Bold: true},
 		Command:     title,
 	}
 }

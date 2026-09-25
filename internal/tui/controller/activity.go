@@ -3,8 +3,8 @@ package controller
 import (
 	"fmt"
 
-	"github.com/pulseaiclub/phi/internal/components/status"
-	"github.com/pulseaiclub/phi/internal/session"
+	"github.com/damien1141/a1/internal/components/status"
+	"github.com/damien1141/a1/internal/session"
 )
 
 // Activity mirrors session status for the composer status slot (driven by the stream pipeline).

@@ -6,11 +6,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/components/block"
-	"github.com/pulseaiclub/phi/internal/job"
-	"github.com/pulseaiclub/phi/internal/session"
-	"github.com/pulseaiclub/phi/internal/tui/transcript"
+	"github.com/damien1141/a1/internal/components"
+	"github.com/damien1141/a1/internal/components/block"
+	"github.com/damien1141/a1/internal/job"
+	"github.com/damien1141/a1/internal/session"
+	"github.com/damien1141/a1/internal/tui/transcript"
 )
 
 func TestMapperSyncDirtyOnlyChangedRows(t *testing.T) {

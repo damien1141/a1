@@ -1,6 +1,6 @@
 package session
 
-import "github.com/pulseaiclub/phi/internal/llm"
+import "github.com/damien1141/a1/internal/llm"
 
 // ToolDetail resolves a friendly one-line display detail for a tool call's raw
 // JSON arguments, mirroring the live executor's DetailFromArgs. It returns ""

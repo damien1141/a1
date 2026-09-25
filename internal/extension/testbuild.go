@@ -22,7 +22,7 @@ func Materialize(ctx context.Context, dir, name, version, mainGo string) error {
 		return err
 	}
 	mod := fmt.Sprintf(
-		"module %s\n\ngo 1.26\n\nrequire github.com/pulseaiclub/phi/ext/go v0.0.0\n\nreplace github.com/pulseaiclub/phi/ext/go => %s\n",
+		"module %s\n\ngo 1.26\n\nrequire github.com/damien1141/a1/ext/go v0.0.0\n\nreplace github.com/damien1141/a1/ext/go => %s\n",
 		name,
 		filepath.ToSlash(filepath.Join(phiRoot, "ext", "go")),
 	)

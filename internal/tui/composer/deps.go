@@ -3,11 +3,11 @@ package composer
 import (
 	"github.com/pulseaiclub/xui"
 
-	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/components/chat"
-	"github.com/pulseaiclub/phi/internal/components/layout"
-	"github.com/pulseaiclub/phi/internal/components/palette"
-	imgutil "github.com/pulseaiclub/phi/internal/util/image"
+	"github.com/damien1141/a1/internal/components"
+	"github.com/damien1141/a1/internal/components/chat"
+	"github.com/damien1141/a1/internal/components/layout"
+	"github.com/damien1141/a1/internal/components/palette"
+	imgutil "github.com/damien1141/a1/internal/util/image"
 )
 
 // Input is the composer surface Submitter (and its BashRunner) use.

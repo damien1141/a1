@@ -5,7 +5,7 @@ import (
 
 	"github.com/pulseaiclub/xui"
 
-	"github.com/pulseaiclub/phi/internal/components"
+	"github.com/damien1141/a1/internal/components"
 )
 
 // Spinner — animated activity indicator. Advance with Tick().

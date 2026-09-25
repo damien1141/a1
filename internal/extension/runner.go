@@ -9,11 +9,11 @@ import (
 	"strings"
 	"sync"
 
-	ext "github.com/pulseaiclub/phi/ext/go"
-	"github.com/pulseaiclub/phi/ext/go/pxb"
-	"github.com/pulseaiclub/phi/internal/debuglog"
-	"github.com/pulseaiclub/phi/internal/llm"
-	"github.com/pulseaiclub/phi/internal/tools"
+	ext "github.com/damien1141/a1/ext/go"
+	"github.com/damien1141/a1/ext/go/pxb"
+	"github.com/damien1141/a1/internal/debuglog"
+	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/tools"
 )
 
 const maxContextBytes = 4 * 1024

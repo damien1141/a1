@@ -12,7 +12,7 @@ import (
 
 // installMetaFile is the sidecar written into a phi-managed extension dir.
 // Its absence marks a manual install: update/remove refuse to touch it.
-const installMetaFile = ".phi-install.json"
+const installMetaFile = ".a1-install.json"
 
 // Install source labels recorded in InstallMeta.
 const (

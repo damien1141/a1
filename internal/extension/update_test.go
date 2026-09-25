@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/util/githubrelease"
+	"github.com/damien1141/a1/internal/util/githubrelease"
 )
 
 // managedPlugin seeds a phi-managed extension dir: phi.yaml, exec binary, and
@@ -258,7 +258,7 @@ func TestUpdateUnmanagedRefused(t *testing.T) {
 
 	err := Update(t.Context(), UpdateOptions{Dir: dir, ID: "greet", Stdout: io.Discard})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not installed via 'phi plugin install'")
+	assert.Contains(t, err.Error(), "not installed via 'a1 plugin install'")
 }
 
 func TestUpdateNotInstalled(t *testing.T) {
@@ -288,7 +288,7 @@ func TestRemoveRefusesUnmanaged(t *testing.T) {
 
 	err := Remove(dir, "greet")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not installed via 'phi plugin install'")
+	assert.Contains(t, err.Error(), "not installed via 'a1 plugin install'")
 	assert.DirExists(t, d)
 }
 

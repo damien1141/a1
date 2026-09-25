@@ -13,7 +13,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/pulseaiclub/phi/internal/util/githubrelease"
+	"github.com/damien1141/a1/internal/util/githubrelease"
 )
 
 // platformArchiveName returns the GoReleaser-style asset name for a project:

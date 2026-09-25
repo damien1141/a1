@@ -33,16 +33,16 @@ var root = sync.OnceValue(buildRoot)
 
 func buildRoot() *cli.Command {
 	r := &cli.Command{
-		Name: "phi",
+		Name: "a1",
 		Desc: "terminal coding agent",
-		Long: `phi                start the interactive TUI
-phi tui            start the interactive TUI
-phi config         open the HTML config editor (local web server)
-phi update         install the latest release (see 'phi update --help')
-phi run -p "..."   run one agent loop headlessly (see 'phi run --help')
-phi sessions list  list persisted sessions for this directory
-phi mcp …          manage MCP servers (see 'phi mcp --help')
-phi plugin …          install/list/update/remove extensions (see 'phi plugin --help')`,
+		Long: `a1                start the interactive TUI
+a1 tui            start the interactive TUI
+a1 config         open the HTML config editor (local web server)
+a1 update         install the latest release (see 'a1 update --help')
+a1 run -p "..."   run one agent loop headlessly (see 'a1 run --help')
+a1 sessions list  list persisted sessions for this directory
+a1 mcp …          manage MCP servers (see 'a1 mcp --help')
+a1 plugin …          install/list/update/remove extensions (see 'a1 plugin --help')`,
 	}
 	r.Run = func(args []string, _ cli.Flags) error {
 		if len(args) > 0 {

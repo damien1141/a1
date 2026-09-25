@@ -11,12 +11,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/components/listpicker"
-	"github.com/pulseaiclub/phi/internal/components/mention"
-	"github.com/pulseaiclub/phi/internal/tui/commands"
-	"github.com/pulseaiclub/phi/internal/tui/controller"
-	"github.com/pulseaiclub/phi/internal/util/gitx"
+	"github.com/damien1141/a1/internal/components"
+	"github.com/damien1141/a1/internal/components/listpicker"
+	"github.com/damien1141/a1/internal/components/mention"
+	"github.com/damien1141/a1/internal/tui/commands"
+	"github.com/damien1141/a1/internal/tui/controller"
+	"github.com/damien1141/a1/internal/util/gitx"
 )
 
 // png1x1Base64 is a 1x1 transparent PNG (same fixture as util/image tests).

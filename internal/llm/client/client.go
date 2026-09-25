@@ -5,12 +5,12 @@ import (
 	"iter"
 	"net/http"
 
-	"github.com/pulseaiclub/phi/internal/llm"
-	"github.com/pulseaiclub/phi/internal/llm/anthropic"
-	"github.com/pulseaiclub/phi/internal/llm/gemini"
-	"github.com/pulseaiclub/phi/internal/llm/openai"
-	"github.com/pulseaiclub/phi/internal/llm/openai/responses"
-	"github.com/pulseaiclub/phi/internal/util"
+	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/llm/anthropic"
+	"github.com/damien1141/a1/internal/llm/gemini"
+	"github.com/damien1141/a1/internal/llm/openai"
+	"github.com/damien1141/a1/internal/llm/openai/responses"
+	"github.com/damien1141/a1/internal/util"
 )
 
 // Client talks to the configured LLM endpoint: OpenAI chat-completions by

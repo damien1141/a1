@@ -13,11 +13,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/pulseaiclub/phi/internal/tools/tooldef"
+	"github.com/damien1141/a1/internal/tools/tooldef"
 
-	"github.com/pulseaiclub/phi/internal/llm"
-	"github.com/pulseaiclub/phi/internal/project"
-	"github.com/pulseaiclub/phi/internal/util"
+	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/project"
+	"github.com/damien1141/a1/internal/util"
 )
 
 var (

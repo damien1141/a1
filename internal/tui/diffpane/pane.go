@@ -11,10 +11,10 @@ import (
 
 	"github.com/pulseaiclub/xui"
 
-	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/components/diffview"
-	"github.com/pulseaiclub/phi/internal/components/listpicker"
-	"github.com/pulseaiclub/phi/internal/util/diffreview"
+	"github.com/damien1141/a1/internal/components"
+	"github.com/damien1141/a1/internal/components/diffview"
+	"github.com/damien1141/a1/internal/components/listpicker"
+	"github.com/damien1141/a1/internal/util/diffreview"
 )
 
 // Pane is a full-screen git diff review overlay.

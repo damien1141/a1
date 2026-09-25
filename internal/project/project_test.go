@@ -82,8 +82,8 @@ func TestLookBinFallsBackToPATH(t *testing.T) {
 
 func TestProjectDirs(t *testing.T) {
 	p := discoverInTempHome(t)
-	assert.Equal(t, filepath.Join(p.Root(), ".phi", "extensions"), p.ExtensionsDir())
-	assert.Equal(t, filepath.Join(p.Root(), ".phi", "mcp.json"), p.MCPConfigFile())
+	assert.Equal(t, filepath.Join(p.Root(), ".a1", "extensions"), p.ExtensionsDir())
+	assert.Equal(t, filepath.Join(p.Root(), ".a1", "mcp.json"), p.MCPConfigFile())
 }
 
 func TestLoadConfigDefaults(t *testing.T) {

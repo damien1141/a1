@@ -5,10 +5,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/components/status"
-	"github.com/pulseaiclub/phi/internal/job"
-	"github.com/pulseaiclub/phi/internal/tools"
-	"github.com/pulseaiclub/phi/internal/tui/transcript"
+	"github.com/damien1141/a1/internal/components/status"
+	"github.com/damien1141/a1/internal/job"
+	"github.com/damien1141/a1/internal/tools"
+	"github.com/damien1141/a1/internal/tui/transcript"
 )
 
 func TestSubagentStoreProgressAndResult(t *testing.T) {

@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/pulseaiclub/phi/internal/tools/tooldef"
+	"github.com/damien1141/a1/internal/tools/tooldef"
 
-	"github.com/pulseaiclub/phi/internal/llm"
+	"github.com/damien1141/a1/internal/llm"
 )
 
 var writeDescription = `Write content to a file. Creates the file if it does not exist; overwrites the entire file if it does. Creates parent directories.`

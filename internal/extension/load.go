@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	ext "github.com/pulseaiclub/phi/ext/go"
-	"github.com/pulseaiclub/phi/internal/debuglog"
+	ext "github.com/damien1141/a1/ext/go"
+	"github.com/damien1141/a1/internal/debuglog"
 )
 
 // Load discovers PXB extensions and spawns each subprocess.
@@ -44,6 +44,6 @@ func extensionLogDir(userDir string) string {
 	if userDir == "" {
 		return filepath.Join(os.TempDir(), "phi-ext-logs")
 	}
-	// ~/.phi/extensions → ~/.phi/logs
+	// ~/.a1/extensions → ~/.a1/logs
 	return filepath.Join(filepath.Dir(userDir), "logs")
 }

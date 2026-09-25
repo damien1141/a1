@@ -3,8 +3,8 @@ package commands
 import (
 	"strings"
 
-	"github.com/pulseaiclub/phi/internal/components/palette"
-	"github.com/pulseaiclub/phi/internal/llm/skills"
+	"github.com/damien1141/a1/internal/components/palette"
+	"github.com/damien1141/a1/internal/llm/skills"
 )
 
 // SkillsCommands owns the skills palette command.

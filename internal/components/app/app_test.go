@@ -6,7 +6,7 @@ import (
 	"github.com/pulseaiclub/xui"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/pulseaiclub/phi/internal/components"
+	"github.com/damien1141/a1/internal/components"
 )
 
 type stubWidget struct {

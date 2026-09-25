@@ -53,7 +53,7 @@ rm -f "${VERSION_FILE}.bak"
 
 # Keep root go.mod's require on the nested ext module in sync.
 if [ -f "$ROOT_GOMOD" ]; then
-    sed -i.bak -E "s|github.com/pulseaiclub/phi/ext/go v[0-9][^[:space:]]*|github.com/pulseaiclub/phi/ext/go $NEW_VERSION|" "$ROOT_GOMOD"
+    sed -i.bak -E "s|github.com/damien1141/a1/ext/go v[0-9][^[:space:]]*|github.com/damien1141/a1/ext/go $NEW_VERSION|" "$ROOT_GOMOD"
     rm -f "${ROOT_GOMOD}.bak"
 fi
 

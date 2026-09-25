@@ -3,8 +3,8 @@ package commands
 import (
 	"time"
 
-	"github.com/pulseaiclub/phi/internal/components/toast"
-	"github.com/pulseaiclub/phi/internal/tui/controller"
+	"github.com/damien1141/a1/internal/components/toast"
+	"github.com/damien1141/a1/internal/tui/controller"
 )
 
 // publishToast sends a toast message via the bus. Safe to call with a nil bus.

@@ -3,11 +3,11 @@ package client
 import (
 	"context"
 
-	"github.com/pulseaiclub/phi/internal/llm"
-	"github.com/pulseaiclub/phi/internal/llm/anthropic"
-	"github.com/pulseaiclub/phi/internal/llm/gemini"
-	"github.com/pulseaiclub/phi/internal/llm/openai"
-	"github.com/pulseaiclub/phi/internal/llm/openai/responses"
+	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/llm/anthropic"
+	"github.com/damien1141/a1/internal/llm/gemini"
+	"github.com/damien1141/a1/internal/llm/openai"
+	"github.com/damien1141/a1/internal/llm/openai/responses"
 )
 
 // Hooks holds optional per-provider request interceptors. Only the field

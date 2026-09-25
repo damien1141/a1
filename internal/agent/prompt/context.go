@@ -34,7 +34,7 @@ func loadContextFileFromDir(dir string) *ContextFile {
 }
 
 // loadProjectContextFiles discovers AGENTS.md / CLAUDE.md in the workspace:
-//  1. global agent dir (~/.phi) first
+//  1. global agent dir (~/.a1) first
 //  2. then every ancestor from filesystem root down to cwd (cwd last)
 //
 // Each directory contributes at most one file. Paths are deduped.
@@ -113,5 +113,5 @@ func phiAgentDir() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".phi")
+	return filepath.Join(home, ".a1")
 }

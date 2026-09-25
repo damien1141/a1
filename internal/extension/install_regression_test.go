@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/util/githubrelease"
+	"github.com/damien1141/a1/internal/util/githubrelease"
 )
 
 func TestPlaceTreeCopyFailurePreservesOld(t *testing.T) {

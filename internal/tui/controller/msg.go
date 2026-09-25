@@ -3,10 +3,10 @@ package controller
 import (
 	"time"
 
-	"github.com/pulseaiclub/phi/internal/components/toast"
-	"github.com/pulseaiclub/phi/internal/job"
-	"github.com/pulseaiclub/phi/internal/permission"
-	"github.com/pulseaiclub/phi/internal/session"
+	"github.com/damien1141/a1/internal/components/toast"
+	"github.com/damien1141/a1/internal/job"
+	"github.com/damien1141/a1/internal/permission"
+	"github.com/damien1141/a1/internal/session"
 )
 
 // Msg is a UI-thread message. Producers send; Editor.Update applies.

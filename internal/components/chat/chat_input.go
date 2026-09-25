@@ -7,13 +7,13 @@ import (
 
 	"github.com/pulseaiclub/xui"
 
-	"github.com/pulseaiclub/phi/internal/util"
+	"github.com/damien1141/a1/internal/util"
 
-	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/components/layout"
-	"github.com/pulseaiclub/phi/internal/components/text"
-	"github.com/pulseaiclub/phi/internal/debuglog"
-	imgutil "github.com/pulseaiclub/phi/internal/util/image"
+	"github.com/damien1141/a1/internal/components"
+	"github.com/damien1141/a1/internal/components/layout"
+	"github.com/damien1141/a1/internal/components/text"
+	"github.com/damien1141/a1/internal/debuglog"
+	imgutil "github.com/damien1141/a1/internal/util/image"
 )
 
 // ChatInput is a composer: rounded border, edge labels, multiline editor.

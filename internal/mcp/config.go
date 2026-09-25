@@ -33,16 +33,16 @@ func Disabled() bool {
 	return v == "0" || v == "false" || v == "off" || v == "no"
 }
 
-// UserConfigPath returns ~/.phi/mcp.json.
+// UserConfigPath returns ~/.a1/mcp.json.
 func UserConfigPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".phi", "mcp.json"), nil
+	return filepath.Join(home, ".a1", "mcp.json"), nil
 }
 
-// LogDir returns ~/.phi/logs/mcp (or PHI_MCP_LOG_DIR if set).
+// LogDir returns ~/.a1/logs/mcp (or PHI_MCP_LOG_DIR if set).
 func LogDir() (string, error) {
 	if override := strings.TrimSpace(os.Getenv("PHI_MCP_LOG_DIR")); override != "" {
 		//nolint:gosec // G703: PHI_MCP_LOG_DIR is an explicit user override
@@ -55,14 +55,14 @@ func LogDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(home, ".phi", "logs", "mcp")
+	dir := filepath.Join(home, ".a1", "logs", "mcp")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
 	return dir, nil
 }
 
-// Load merges ~/.phi/mcp.json with the project config at projectConfigPath
+// Load merges ~/.a1/mcp.json with the project config at projectConfigPath
 // (project overrides same name). Missing files yield an empty map without error.
 func Load(projectConfigPath string) (map[string]ServerConfig, error) {
 	servers := map[string]ServerConfig{}
@@ -95,7 +95,7 @@ func mergeFile(path string, into map[string]ServerConfig) error {
 	return nil
 }
 
-// SaveUser writes servers to ~/.phi/mcp.json.
+// SaveUser writes servers to ~/.a1/mcp.json.
 func SaveUser(servers map[string]ServerConfig) error {
 	path, err := UserConfigPath()
 	if err != nil {

@@ -10,8 +10,8 @@ import (
 
 	"github.com/pulseaiclub/xui"
 
-	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/components/status"
+	"github.com/damien1141/a1/internal/components"
+	"github.com/damien1141/a1/internal/components/status"
 )
 
 // Status / expand glyphs.

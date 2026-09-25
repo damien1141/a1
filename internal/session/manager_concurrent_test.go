@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/llm"
+	"github.com/damien1141/a1/internal/llm"
 )
 
 // TestManagerConcurrentAccess guards the mutex: concurrent append/read

@@ -7,8 +7,8 @@ import (
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/pulseaiclub/xui"
 
-	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/util/diffreview"
+	"github.com/damien1141/a1/internal/components"
+	"github.com/damien1141/a1/internal/util/diffreview"
 )
 
 const highlightRowLimit = 5000

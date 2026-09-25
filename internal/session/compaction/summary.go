@@ -5,7 +5,7 @@ import (
 	_ "embed"
 	"fmt"
 
-	"github.com/pulseaiclub/phi/internal/llm"
+	"github.com/damien1141/a1/internal/llm"
 )
 
 var (

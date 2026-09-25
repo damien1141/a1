@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/extension"
-	"github.com/pulseaiclub/phi/internal/project"
+	"github.com/damien1141/a1/internal/extension"
+	"github.com/damien1141/a1/internal/project"
 )
 
 func TestSwapExtensionRunner_ClosesPrevious(t *testing.T) {

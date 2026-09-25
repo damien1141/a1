@@ -107,7 +107,7 @@ func scanDir(dir, source string) ([]Discovered, []Warning, error) {
 			continue
 		}
 		full := filepath.Join(dir, name)
-		// Stat follows symlinks so `ln -s examples/foo .phi/extensions/foo` works.
+		// Stat follows symlinks so `ln -s examples/foo .a1/extensions/foo` works.
 		// ReadDir's IsDir is false for symlink entries on Unix.
 		st, err := os.Stat(full)
 		if err != nil || !st.IsDir() {

@@ -2,7 +2,7 @@
 
 | Path                     | Purpose                                        |
 | ------------------------ | ---------------------------------------------- |
-| `cmd/`                   | Entry points (`main.go` via pli: `phi run`, `phi update`, `phi sessions`, …) |
+| `cmd/`                   | Entry points (`main.go` via pli: `a1 run`, `a1 update`, `a1 sessions`, …) |
 | `ext/`                   | Public extension API, PXB protocol (`ext/go/pxb`), author SDK (`ext/go/phi`) — nested Go module `github.com/pulseaiclub/phi/ext/go` |
 | `internal/util/update/`  | Self-update check + GitHub Releases install    |
 | `internal/agent/`        | Agent engine, executor, jobs                     |
@@ -26,7 +26,7 @@
 | `internal/tui/commands/` | Slash/palette registry, session/extension commands |
 | `internal/tui/pathutil/` | Cwd + git branch path labels |
 | `internal/tui/controller/` | Engine lifecycle, Bus/Msg, activity |
-| `internal/version/`      | Build-time `Version` (splash / `phi update`) |
+| `internal/version/`      | Build-time `Version` (splash / `a1 update`) |
 | `internal/util/`         | Shared helpers (diff, retry, SSE, file search, …) |
 | `internal/util/diffreview/` | Unified-diff parse/render, review comments, git load |
 | `internal/permission/`   | Permission policy and ask gate                 |

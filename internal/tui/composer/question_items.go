@@ -3,7 +3,7 @@ package composer
 import (
 	"strings"
 
-	"github.com/pulseaiclub/phi/internal/components/mention"
+	"github.com/damien1141/a1/internal/components/mention"
 )
 
 func questionShortcutItems() []mention.Item {

@@ -1,8 +1,8 @@
 package compaction
 
 import (
-	"github.com/pulseaiclub/phi/internal/llm"
-	"github.com/pulseaiclub/phi/internal/session"
+	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/session"
 )
 
 // CutPointResult identifies where to cut the session history: the index of

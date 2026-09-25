@@ -11,11 +11,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/extension"
-	"github.com/pulseaiclub/phi/internal/llm"
-	"github.com/pulseaiclub/phi/internal/permission"
-	"github.com/pulseaiclub/phi/internal/session"
-	"github.com/pulseaiclub/phi/internal/tools"
+	"github.com/damien1141/a1/internal/extension"
+	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/permission"
+	"github.com/damien1141/a1/internal/session"
+	"github.com/damien1141/a1/internal/tools"
 )
 
 func loadExt(t *testing.T, mainGo string) *extension.Runner {
@@ -222,8 +222,8 @@ func TestExecutorExtDenySkipsGateAsk(t *testing.T) {
 	}
 	r := loadExt(t, `package main
 import (
-  "github.com/pulseaiclub/phi/ext/go"
-  "github.com/pulseaiclub/phi/ext/go/phi"
+  "github.com/damien1141/a1/ext/go"
+  "github.com/damien1141/a1/ext/go/phi"
 )
 func main() {
   m := phi.New("test", "0.0.1")
@@ -274,8 +274,8 @@ func TestExecutorExtModifySeenByGateAndRun(t *testing.T) {
 	r := loadExt(t, `package main
 import (
   "encoding/json"
-  "github.com/pulseaiclub/phi/ext/go"
-  "github.com/pulseaiclub/phi/ext/go/phi"
+  "github.com/damien1141/a1/ext/go"
+  "github.com/damien1141/a1/ext/go/phi"
 )
 func main() {
   m := phi.New("test", "0.0.1")
@@ -314,8 +314,8 @@ func TestExecutorExtPostContextOnModelOnly(t *testing.T) {
 	}
 	r := loadExt(t, `package main
 import (
-  "github.com/pulseaiclub/phi/ext/go"
-  "github.com/pulseaiclub/phi/ext/go/phi"
+  "github.com/damien1141/a1/ext/go"
+  "github.com/damien1141/a1/ext/go/phi"
 )
 func main() {
   m := phi.New("test", "0.0.1")

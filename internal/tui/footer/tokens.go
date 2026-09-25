@@ -6,9 +6,9 @@ import (
 
 	"github.com/pulseaiclub/xui"
 
-	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/components/layout"
-	"github.com/pulseaiclub/phi/internal/session"
+	"github.com/damien1141/a1/internal/components"
+	"github.com/damien1141/a1/internal/components/layout"
+	"github.com/damien1141/a1/internal/session"
 )
 
 // contextFillLevel ranks context-window pressure for the fill label.

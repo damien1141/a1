@@ -8,12 +8,12 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/pulseaiclub/phi/internal/extension"
-	"github.com/pulseaiclub/phi/internal/llm"
-	"github.com/pulseaiclub/phi/internal/permission"
-	"github.com/pulseaiclub/phi/internal/session"
-	"github.com/pulseaiclub/phi/internal/tools"
-	"github.com/pulseaiclub/phi/internal/util"
+	"github.com/damien1141/a1/internal/extension"
+	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/permission"
+	"github.com/damien1141/a1/internal/session"
+	"github.com/damien1141/a1/internal/tools"
+	"github.com/damien1141/a1/internal/util"
 )
 
 // ToolCanceledResult is returned to the model when a user cancels a tool call.

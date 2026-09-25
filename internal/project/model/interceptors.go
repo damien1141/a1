@@ -3,10 +3,10 @@ package model
 import (
 	"context"
 
-	"github.com/pulseaiclub/phi/internal/llm"
-	llmclient "github.com/pulseaiclub/phi/internal/llm/client"
-	"github.com/pulseaiclub/phi/internal/llm/gemini"
-	"github.com/pulseaiclub/phi/internal/llm/openai"
+	"github.com/damien1141/a1/internal/llm"
+	llmclient "github.com/damien1141/a1/internal/llm/client"
+	"github.com/damien1141/a1/internal/llm/gemini"
+	"github.com/damien1141/a1/internal/llm/openai"
 )
 
 // deepseekThinking enables DeepSeek's extra_body.thinking on OpenAI-shaped requests.

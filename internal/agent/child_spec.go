@@ -1,9 +1,9 @@
 package agent
 
 import (
-	"github.com/pulseaiclub/phi/internal/job"
-	"github.com/pulseaiclub/phi/internal/permission"
-	"github.com/pulseaiclub/phi/internal/tools"
+	"github.com/damien1141/a1/internal/job"
+	"github.com/damien1141/a1/internal/permission"
+	"github.com/damien1141/a1/internal/tools"
 )
 
 // ChildSpec is the capability profile for a sub-agent role.

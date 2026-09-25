@@ -1,6 +1,6 @@
 package extension
 
-import ext "github.com/pulseaiclub/phi/ext/go"
+import ext "github.com/damien1141/a1/ext/go"
 
 // BusUI publishes UI effects onto host callbacks.
 type BusUI struct {

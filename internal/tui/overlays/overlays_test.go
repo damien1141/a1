@@ -6,9 +6,9 @@ import (
 	"github.com/pulseaiclub/xui"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/permission"
-	"github.com/pulseaiclub/phi/internal/tui/controller"
+	"github.com/damien1141/a1/internal/components"
+	"github.com/damien1141/a1/internal/permission"
+	"github.com/damien1141/a1/internal/tui/controller"
 )
 
 func testOverlays(activity *controller.ActivityHandler) *Overlays {

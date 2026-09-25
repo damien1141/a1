@@ -6,9 +6,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/mcp"
-	"github.com/pulseaiclub/phi/internal/tools/mcptool"
-	"github.com/pulseaiclub/phi/internal/tools/tooldef"
+	"github.com/damien1141/a1/internal/mcp"
+	"github.com/damien1141/a1/internal/tools/mcptool"
+	"github.com/damien1141/a1/internal/tools/tooldef"
 )
 
 func TestMCPToolsRegister(t *testing.T) {

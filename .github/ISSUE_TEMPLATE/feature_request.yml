@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Thanks for the idea. Please keep phi small and focused — say what problem you're solving, and the template will help us understand the trade-offs.
-        - Search [existing issues](https://github.com/pulseaiclub/phi/issues) for a duplicate or related discussion first.
+        - Search [existing issues](https://github.com/damien1141/a1/issues) for a duplicate or related discussion first.
   - type: textarea
     id: problem
     attributes:

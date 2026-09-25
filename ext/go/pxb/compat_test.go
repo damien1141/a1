@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/ext/go/pxb"
+	"github.com/damien1141/a1/ext/go/pxb"
 )
 
 func TestTaggedRoundTripIntercept(t *testing.T) {

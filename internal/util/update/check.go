@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/pulseaiclub/phi/internal/util/githubrelease"
+	"github.com/damien1141/a1/internal/util/githubrelease"
 )
 
-// Repo is the GitHub repository that publishes phi releases.
+// Repo is the GitHub repository that publishes a1 releases.
 const Repo = "pulseaiclub/phi"
 
 const (
@@ -37,7 +37,7 @@ type updateCache struct {
 type CheckOptions struct {
 	// Current is the running binary version (e.g. version.Version).
 	Current string
-	// CacheDir is where update-check.json is stored (typically ~/.phi).
+	// CacheDir is where update-check.json is stored (typically ~/.a1).
 	CacheDir string
 	// Force bypasses the on-disk cache.
 	Force bool

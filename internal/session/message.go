@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/pulseaiclub/phi/internal/llm"
+	"github.com/damien1141/a1/internal/llm"
 )
 
 // Role is the speaker of a transcript message.

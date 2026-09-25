@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	ext "github.com/pulseaiclub/phi/ext/go"
+	ext "github.com/damien1141/a1/ext/go"
 )
 
 func TestInstallMetaRoundtrip(t *testing.T) {

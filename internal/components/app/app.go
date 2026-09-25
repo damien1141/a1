@@ -5,9 +5,9 @@ import (
 
 	"github.com/pulseaiclub/xui"
 
-	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/components/chat"
-	"github.com/pulseaiclub/phi/internal/components/palette"
+	"github.com/damien1141/a1/internal/components"
+	"github.com/damien1141/a1/internal/components/chat"
+	"github.com/damien1141/a1/internal/components/palette"
 )
 
 // App is the vxfw-style application runtime.

@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/tools/tooldef"
+	"github.com/damien1141/a1/internal/tools/tooldef"
 )
 
 func TestIsLegacyWslBashPath(t *testing.T) {

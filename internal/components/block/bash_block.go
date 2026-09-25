@@ -6,10 +6,10 @@ import (
 
 	"github.com/pulseaiclub/xui"
 
-	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/components/chrome"
-	"github.com/pulseaiclub/phi/internal/components/status"
-	"github.com/pulseaiclub/phi/internal/util"
+	"github.com/damien1141/a1/internal/components"
+	"github.com/damien1141/a1/internal/components/chrome"
+	"github.com/damien1141/a1/internal/components/status"
+	"github.com/damien1141/a1/internal/util"
 )
 
 // BashBlock renders bash tool / "!cmd" output:
@@ -17,7 +17,7 @@ import (
 //	$ ls
 //	  parser.go
 //	  ...
-//	  [Showing lines 10-100 of 100. Full/retained output: /tmp/phi-bash-….log]
+//	  [Showing lines 10-100 of 100. Full/retained output: /tmp/a1-bash-….log]
 //
 // Long output is truncated by the bash tool with a /tmp dump — this widget
 // does not invent a useless "Show more" chrome.

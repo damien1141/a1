@@ -6,8 +6,8 @@ import (
 
 	cli "github.com/pulseaiclub/pli"
 
-	"github.com/pulseaiclub/phi/internal/project"
-	"github.com/pulseaiclub/phi/internal/session"
+	"github.com/damien1141/a1/internal/project"
+	"github.com/damien1141/a1/internal/session"
 )
 
 var (

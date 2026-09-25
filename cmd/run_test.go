@@ -17,13 +17,13 @@ import (
 
 	cli "github.com/pulseaiclub/pli"
 
-	"github.com/pulseaiclub/phi/internal/agent"
-	"github.com/pulseaiclub/phi/internal/job"
-	"github.com/pulseaiclub/phi/internal/llm"
-	"github.com/pulseaiclub/phi/internal/mcp"
-	"github.com/pulseaiclub/phi/internal/permission"
-	"github.com/pulseaiclub/phi/internal/session"
-	"github.com/pulseaiclub/phi/internal/tools"
+	"github.com/damien1141/a1/internal/agent"
+	"github.com/damien1141/a1/internal/job"
+	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/mcp"
+	"github.com/damien1141/a1/internal/permission"
+	"github.com/damien1141/a1/internal/session"
+	"github.com/damien1141/a1/internal/tools"
 )
 
 func TestRunOptionsFromFlags(t *testing.T) {
@@ -276,7 +276,7 @@ func TestRootDispatchHelpAndUnknown(t *testing.T) {
 	err := root().Dispatch([]string{"--help"})
 	var he *cli.HelpError
 	require.ErrorAs(t, err, &he)
-	assert.Contains(t, he.Help, "usage: phi")
+	assert.Contains(t, he.Help, "usage: a1")
 	assert.Contains(t, he.Help, "run")
 	assert.Contains(t, he.Help, "sessions")
 
@@ -290,7 +290,7 @@ func TestRunCommandHelp(t *testing.T) {
 	err := root().Dispatch([]string{"run", "--help"})
 	var he *cli.HelpError
 	require.ErrorAs(t, err, &he)
-	assert.Contains(t, he.Help, "usage: phi run")
+	assert.Contains(t, he.Help, "usage: a1 run")
 	assert.Contains(t, he.Help, "--prompt")
 	assert.Contains(t, he.Help, "--yolo")
 	assert.Contains(t, he.Help, "--tools")

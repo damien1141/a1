@@ -3,24 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>phi config</title>
+<title>A1 config</title>
 <style>
   :root {
     color-scheme: dark;
-    --bg: #0e1218;
-    --surface: #171c24;
-    --surface-strong: #1d2430;
-    --surface-muted: #12171e;
-    --border: #2a3442;
-    --border-strong: #3b4a5e;
-    --text: #edf2f7;
-    --text-muted: #9aa8b7;
-    --text-subtle: #718092;
-    --blue: #72a7ff;
-    --blue-strong: #3f80ea;
-    --green: #76d39a;
-    --amber: #e4b76a;
-    --red: #f08d8d;
+    --bg: #0F0F11;
+    --surface: #1a1a1d;
+    --surface-strong: #212125;
+    --surface-muted: #151517;
+    --border: #2a2a2d;
+    --border-strong: #3a3a3d;
+    --text: #ccd0d9;
+    --text-muted: #8a8f9c;
+    --text-subtle: #6a6a75;
+    --blue: #8AB4F8;
+    --blue-strong: #6a9cf8;
+    --green: #589979;
+    --amber: #e5c07b;
+    --red: #F85E4D;
   }
 
   * { box-sizing: border-box; }
@@ -182,7 +182,7 @@
     line-height: 1.2;
   }
 
-  .button:not(:disabled):hover { border-color: var(--blue); background: #263347; }
+  .button:not(:disabled):hover { border-color: var(--blue); background: #1e1e28; }
 
   .button:focus-visible,
   .secret-toggle:focus-visible {
@@ -194,10 +194,10 @@
     border-color: var(--blue-strong);
     background: var(--blue-strong);
     color: #fff;
-    box-shadow: 0 6px 16px rgba(63, 128, 234, .22);
+    box-shadow: 0 6px 16px rgba(106, 156, 248, .22);
   }
 
-  .button.primary:not(:disabled):hover { border-color: #6098f0; background: #4d8af0; }
+  .button.primary:not(:disabled):hover { border-color: #7aacf9; background: #6a9cf8; }
 
   .button.secondary { background: transparent; }
 
@@ -211,7 +211,7 @@
 
   .button.tertiary:not(:disabled):hover {
     border-color: transparent;
-    background: rgba(114, 167, 255, .1);
+    background: rgba(138, 180, 248, .1);
   }
 
   .button.danger {
@@ -220,7 +220,7 @@
     color: var(--text-muted);
   }
 
-  .button.danger:not(:disabled):hover { border-color: #633e48; background: #2a1d25; color: var(--red); }
+  .button.danger:not(:disabled):hover { border-color: #5a2a35; background: #1a1215; color: var(--red); }
 
   .button.small { min-height: 34px; padding: 7px 11px; font-size: 13px; }
 
@@ -262,8 +262,8 @@
   }
 
   .model-card.is-default {
-    border-color: #4e7e6a;
-    box-shadow: 0 0 0 1px rgba(118, 211, 154, .08);
+    border-color: #3a5a4a;
+    box-shadow: 0 0 0 1px rgba(88, 153, 121, .08);
   }
 
   .model-card-head { align-items: flex-start; }
@@ -284,7 +284,7 @@
 
   .model-badge {
     padding: 3px 7px;
-    border: 1px solid #407257;
+    border: 1px solid #3a5a4a;
     border-radius: 4px;
     color: var(--green);
     font-size: 11px;
@@ -319,7 +319,7 @@
   .default-control[hidden] { display: none; }
 
   .model-card.is-default .default-control {
-    border-color: #407257;
+    border-color: #3a5a4a;
     color: var(--green);
   }
 
@@ -416,14 +416,14 @@
 
   input:focus, select:focus, textarea:focus {
     border-color: var(--blue);
-    box-shadow: 0 0 0 2px rgba(114, 167, 255, .14);
+    box-shadow: 0 0 0 2px rgba(138, 180, 248, .14);
   }
 
   input[aria-invalid="true"],
   select[aria-invalid="true"],
   textarea[aria-invalid="true"] {
     border-color: var(--red);
-    box-shadow: 0 0 0 2px rgba(240, 141, 141, .12);
+    box-shadow: 0 0 0 2px rgba(248, 93, 77, .12);
   }
 
   textarea {
@@ -460,7 +460,7 @@
     font-weight: 600;
   }
 
-  .secret-toggle:hover { color: var(--text); background: #263347; }
+  .secret-toggle:hover { color: var(--text); background: #1e1e28; }
 
   .empty-models {
     padding: 26px;
@@ -732,7 +732,7 @@
   .lang-toggle:not(:disabled):hover {
     border-color: var(--blue);
     color: var(--text);
-    background: #263347;
+    background: #1e1e28;
   }
 
   .lang-toggle:focus-visible {
@@ -746,7 +746,7 @@
   <header class="page-header">
     <div class="header-top">
       <div class="brand-line">
-        <span class="brand">phi</span>
+        <span class="brand">A1</span>
         <span class="brand-divider">/</span>
         <span data-i18n="brandLocal">Local config</span>
       </div>
@@ -787,7 +787,7 @@
           <div class="field field-full">
             <label class="field-label" for="skillPath" data-i18n="skillPathLabel">Skills directory</label>
             <div class="field-help" data-i18n-html="skillPathHelp">Reads <code>SKILL.md</code> files inside; leave empty for the default path.</div>
-            <input id="skillPath" type="text" data-i18n-placeholder="skillPathPlaceholder" placeholder="e.g. ~/.phi/skills" autocomplete="off">
+            <input id="skillPath" type="text" data-i18n-placeholder="skillPathPlaceholder" placeholder="e.g. ~/.a1/skills" autocomplete="off">
           </div>
         </div>
       </section>
@@ -896,10 +896,10 @@
 <script>
 "use strict";
 
-const LANG_KEY = "phi-config-lang";
+const LANG_KEY = "a1-config-lang";
 const I18N = {
   en: {
-    documentTitle: "phi config",
+    documentTitle: "A1 config",
     brandLocal: "Local config",
     pageTitle: "Config",
     pageLede: "Manage model connections, skills path, and agent permissions. Saves write straight to the local config file.",
@@ -912,7 +912,7 @@ const I18N = {
     generalHelp: "Choose where skill files are loaded from.",
     skillPathLabel: "Skills directory",
     skillPathHelp: "Reads <code>SKILL.md</code> files inside; leave empty for the default path.",
-    skillPathPlaceholder: "e.g. ~/.phi/skills",
+    skillPathPlaceholder: "e.g. ~/.a1/skills",
     permHeading: "Permission mode",
     permHelp: "Controls how the agent runs commands, reads or writes files, and makes network requests.",
     modeLabel: "Run mode",
@@ -1025,7 +1025,7 @@ const I18N = {
     validateAskTimeoutLabel: "Approval timeout",
   },
   zh: {
-    documentTitle: "phi 配置中心",
+    documentTitle: "A1 配置中心",
     brandLocal: "本地配置",
     pageTitle: "配置中心",
     pageLede: "管理模型连接、技能目录和 Agent 权限。保存后会立即写入本地配置文件。",
@@ -1038,7 +1038,7 @@ const I18N = {
     generalHelp: "指定技能文件的加载目录。",
     skillPathLabel: "技能目录",
     skillPathHelp: "读取其中的 <code>SKILL.md</code> 文件；留空则使用默认目录。",
-    skillPathPlaceholder: "例如 ~/.phi/skills",
+    skillPathPlaceholder: "例如 ~/.a1/skills",
     permHeading: "权限模式",
     permHelp: "控制 Agent 执行命令、读写文件和联网请求时的行为。",
     modeLabel: "运行模式",
@@ -1748,7 +1748,7 @@ async function load(messageKey, expectedVersion) {
     }
 
     orig = doc || {};
-    $("path").textContent = doc.path || "~/.phi/config.yaml";
+    $("path").textContent = doc.path || "~/.a1/config.yaml";
     $("models").innerHTML = "";
     modelRows.length = 0;
     modelSequence = 0;

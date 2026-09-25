@@ -1,12 +1,12 @@
 package commands
 
 import (
-	"github.com/pulseaiclub/phi/internal/components/palette"
-	"github.com/pulseaiclub/phi/internal/session"
-	"github.com/pulseaiclub/phi/internal/tui/controller"
-	"github.com/pulseaiclub/phi/internal/tui/footer"
-	"github.com/pulseaiclub/phi/internal/tui/transcript"
-	"github.com/pulseaiclub/phi/internal/util/gitx"
+	"github.com/damien1141/a1/internal/components/palette"
+	"github.com/damien1141/a1/internal/session"
+	"github.com/damien1141/a1/internal/tui/controller"
+	"github.com/damien1141/a1/internal/tui/footer"
+	"github.com/damien1141/a1/internal/tui/transcript"
+	"github.com/damien1141/a1/internal/util/gitx"
 )
 
 // BuiltinComposer is the composer surface builtin domains need.

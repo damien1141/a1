@@ -4,14 +4,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pulseaiclub/phi/internal/components/chat"
-	"github.com/pulseaiclub/phi/internal/llm"
-	"github.com/pulseaiclub/phi/internal/session"
-	"github.com/pulseaiclub/phi/internal/tui/commands"
-	"github.com/pulseaiclub/phi/internal/tui/composer"
-	"github.com/pulseaiclub/phi/internal/tui/controller"
-	"github.com/pulseaiclub/phi/internal/tui/transcript"
-	imgutil "github.com/pulseaiclub/phi/internal/util/image"
+	"github.com/damien1141/a1/internal/components/chat"
+	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/session"
+	"github.com/damien1141/a1/internal/tui/commands"
+	"github.com/damien1141/a1/internal/tui/composer"
+	"github.com/damien1141/a1/internal/tui/controller"
+	"github.com/damien1141/a1/internal/tui/transcript"
+	imgutil "github.com/damien1141/a1/internal/util/image"
 )
 
 // Submitter owns submit / cancel / slash dispatch and coordinates bash runs.

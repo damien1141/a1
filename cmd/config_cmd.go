@@ -12,7 +12,7 @@ import (
 
 	cli "github.com/pulseaiclub/pli"
 
-	"github.com/pulseaiclub/phi/internal/project"
+	"github.com/damien1141/a1/internal/project"
 )
 
 var configCommand = cli.Command{
@@ -39,7 +39,7 @@ func runConfigEditor() error {
 	}
 	addr := ln.Addr().(*net.TCPAddr)
 	pageURL := fmt.Sprintf("http://127.0.0.1:%d/", addr.Port)
-	fmt.Fprintf(os.Stderr, "phi config: %s\n  config: %s\n  Ctrl-C to stop\n", pageURL, proj.Global().ConfigFile())
+	fmt.Fprintf(os.Stderr, "a1 config: %s\n  config: %s\n  Ctrl-C to stop\n", pageURL, proj.Global().ConfigFile())
 	openBrowser(ctx, pageURL)
 
 	srv := &http.Server{

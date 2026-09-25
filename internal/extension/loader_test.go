@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	ext "github.com/pulseaiclub/phi/ext/go"
-	"github.com/pulseaiclub/phi/ext/go/pxb"
-	"github.com/pulseaiclub/phi/internal/extension"
+	ext "github.com/damien1141/a1/ext/go"
+	"github.com/damien1141/a1/ext/go/pxb"
+	"github.com/damien1141/a1/internal/extension"
 )
 
 func TestDiscoverManifest(t *testing.T) {
@@ -66,8 +66,8 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/pulseaiclub/phi/ext/go"
-	"github.com/pulseaiclub/phi/ext/go/phi"
+	"github.com/damien1141/a1/ext/go"
+	"github.com/damien1141/a1/ext/go/phi"
 )
 
 func main() {
@@ -80,7 +80,7 @@ func main() {
 			Command string ` + "`json:\"command\"`" + `
 		}
 		_ = json.Unmarshal(ev.Input, &in)
-		if strings.Contains(in.Command, "phi-deny") {
+		if strings.Contains(in.Command, "a1-deny") {
 			return &ext.ToolCallResult{Block: true, Reason: "blocked by extension"}
 		}
 		return nil
@@ -96,7 +96,7 @@ func main() {
 	t.Cleanup(r.Close)
 	require.Len(t, r.Loaded(), 1)
 
-	input := json.RawMessage(`{"command":"echo phi-deny"}`)
+	input := json.RawMessage(`{"command":"echo a1-deny"}`)
 	_, blocked, reason, _ := r.PreTool(t.Context(), "bash", "1", input)
 	assert.True(t, blocked)
 	assert.Equal(t, "blocked by extension", reason)
@@ -114,8 +114,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/pulseaiclub/phi/ext/go"
-	"github.com/pulseaiclub/phi/ext/go/phi"
+	"github.com/damien1141/a1/ext/go"
+	"github.com/damien1141/a1/ext/go/phi"
 )
 
 func main() {
@@ -158,11 +158,11 @@ func main() {
 	require.Len(t, tools, 1)
 	assert.Equal(t, "greet", tools[0].Definition.Name)
 	require.NotNil(t, tools[0].DetailFromArgs)
-	assert.Equal(t, "phi", tools[0].DetailFromArgs(json.RawMessage(`{"name":"phi"}`)))
+	assert.Equal(t, "a1", tools[0].DetailFromArgs(json.RawMessage(`{"name":"a1"}`)))
 
-	res, err := tools[0].Run(t.Context(), json.RawMessage(`{"name":"phi"}`))
+	res, err := tools[0].Run(t.Context(), json.RawMessage(`{"name":"a1"}`))
 	require.NoError(t, err)
-	assert.Equal(t, "Hello, phi!", res.Content)
+	assert.Equal(t, "Hello, a1!", res.Content)
 }
 
 func TestRegisterToolTimeoutSecPropagates(t *testing.T) {
@@ -174,8 +174,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/pulseaiclub/phi/ext/go"
-	"github.com/pulseaiclub/phi/ext/go/phi"
+	"github.com/damien1141/a1/ext/go"
+	"github.com/damien1141/a1/ext/go/phi"
 )
 
 func main() {
@@ -212,8 +212,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/pulseaiclub/phi/ext/go"
-	"github.com/pulseaiclub/phi/ext/go/phi"
+	"github.com/damien1141/a1/ext/go"
+	"github.com/damien1141/a1/ext/go/phi"
 )
 
 func main() {
@@ -255,8 +255,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/pulseaiclub/phi/ext/go"
-	"github.com/pulseaiclub/phi/ext/go/phi"
+	"github.com/damien1141/a1/ext/go"
+	"github.com/damien1141/a1/ext/go/phi"
 )
 
 func main() {
@@ -289,8 +289,8 @@ func TestRegisterCommandNeedsArgsPropagates(t *testing.T) {
 	src := `package main
 
 import (
-	"github.com/pulseaiclub/phi/ext/go"
-	"github.com/pulseaiclub/phi/ext/go/phi"
+	"github.com/damien1141/a1/ext/go"
+	"github.com/damien1141/a1/ext/go/phi"
 )
 
 func main() {

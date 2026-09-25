@@ -10,10 +10,10 @@ import (
 
 	"github.com/pulseaiclub/xui"
 
-	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/tui/commands"
-	"github.com/pulseaiclub/phi/internal/tui/composer"
-	"github.com/pulseaiclub/phi/internal/tui/controller"
+	"github.com/damien1141/a1/internal/components"
+	"github.com/damien1141/a1/internal/tui/commands"
+	"github.com/damien1141/a1/internal/tui/composer"
+	"github.com/damien1141/a1/internal/tui/controller"
 )
 
 func TestEditorAppliesBranchLabel(t *testing.T) {

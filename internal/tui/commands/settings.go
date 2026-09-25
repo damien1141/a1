@@ -5,11 +5,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/components/palette"
-	"github.com/pulseaiclub/phi/internal/components/toast"
-	"github.com/pulseaiclub/phi/internal/llm"
-	"github.com/pulseaiclub/phi/internal/tui/controller"
+	"github.com/damien1141/a1/internal/components"
+	"github.com/damien1141/a1/internal/components/palette"
+	"github.com/damien1141/a1/internal/components/toast"
+	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/tui/controller"
 )
 
 // SettingsCommands owns settings-* palette commands (model, theme, permissions, agents).

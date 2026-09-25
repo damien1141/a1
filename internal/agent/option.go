@@ -1,12 +1,12 @@
 package agent
 
 import (
-	"github.com/pulseaiclub/phi/internal/extension"
-	"github.com/pulseaiclub/phi/internal/job"
-	llmclient "github.com/pulseaiclub/phi/internal/llm/client"
-	"github.com/pulseaiclub/phi/internal/mcp"
-	"github.com/pulseaiclub/phi/internal/permission"
-	"github.com/pulseaiclub/phi/internal/tools"
+	"github.com/damien1141/a1/internal/extension"
+	"github.com/damien1141/a1/internal/job"
+	llmclient "github.com/damien1141/a1/internal/llm/client"
+	"github.com/damien1141/a1/internal/mcp"
+	"github.com/damien1141/a1/internal/permission"
+	"github.com/damien1141/a1/internal/tools"
 )
 
 // EngineOption configures optional NewEngine dependencies.

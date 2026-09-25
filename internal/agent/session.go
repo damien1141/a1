@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pulseaiclub/phi/internal/llm"
-	"github.com/pulseaiclub/phi/internal/session"
+	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/session"
 )
 
 // Session owns the message store for the engine loop. It wraps a
@@ -36,7 +36,7 @@ func WithCwd(cwd string) SessionOption {
 	return func(c *sessionConfig) { c.cwd = cwd }
 }
 
-// WithSessionDir sets ~/.phi/session (required when Persist is true or resuming by id).
+// WithSessionDir sets ~/.a1/session (required when Persist is true or resuming by id).
 func WithSessionDir(dir string) SessionOption {
 	return func(c *sessionConfig) { c.sessionDir = dir }
 }

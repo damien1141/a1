@@ -12,8 +12,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/llm"
-	"github.com/pulseaiclub/phi/internal/llm/openai"
+	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/llm/openai"
 )
 
 func TestClientStreamAnthropicEndToEnd(t *testing.T) {

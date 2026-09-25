@@ -1,15 +1,41 @@
 package tools
 
 import (
-	"github.com/pulseaiclub/phi/internal/tools/agenttool"
-	"github.com/pulseaiclub/phi/internal/tools/bashtool"
-	"github.com/pulseaiclub/phi/internal/tools/findtool"
-	"github.com/pulseaiclub/phi/internal/tools/greptool"
-	"github.com/pulseaiclub/phi/internal/tools/lstool"
-	"github.com/pulseaiclub/phi/internal/tools/mcptool"
-	"github.com/pulseaiclub/phi/internal/tools/readtool"
-	"github.com/pulseaiclub/phi/internal/tools/tooldef"
-	"github.com/pulseaiclub/phi/internal/tools/writetool"
+	"github.com/damien1141/a1/internal/tools/agenttool"
+	"github.com/damien1141/a1/internal/tools/apidoc"
+	"github.com/damien1141/a1/internal/tools/apitool"
+	"github.com/damien1141/a1/internal/tools/bashtool"
+	"github.com/damien1141/a1/internal/tools/buildtool"
+	"github.com/damien1141/a1/internal/tools/contexttool"
+	"github.com/damien1141/a1/internal/tools/coveragetool"
+	"github.com/damien1141/a1/internal/tools/deadcode"
+	"github.com/damien1141/a1/internal/tools/depstool"
+	"github.com/damien1141/a1/internal/tools/doctool"
+	"github.com/damien1141/a1/internal/tools/errortool"
+	"github.com/damien1141/a1/internal/tools/errortrans"
+	"github.com/damien1141/a1/internal/tools/errpattern"
+	"github.com/damien1141/a1/internal/tools/findtool"
+	"github.com/damien1141/a1/internal/tools/gittool"
+	"github.com/damien1141/a1/internal/tools/greptool"
+	"github.com/damien1141/a1/internal/tools/impacttool"
+	"github.com/damien1141/a1/internal/tools/journaltool"
+	"github.com/damien1141/a1/internal/tools/lstool"
+	"github.com/damien1141/a1/internal/tools/mcptool"
+	"github.com/damien1141/a1/internal/tools/migrationtool"
+	"github.com/damien1141/a1/internal/tools/nplusonetool"
+	"github.com/damien1141/a1/internal/tools/propertytool"
+	"github.com/damien1141/a1/internal/tools/ranktool"
+	"github.com/damien1141/a1/internal/tools/readtool"
+	"github.com/damien1141/a1/internal/tools/scaffoldtool"
+	"github.com/damien1141/a1/internal/tools/secrettool"
+	"github.com/damien1141/a1/internal/tools/stacktool"
+	"github.com/damien1141/a1/internal/tools/testtool"
+	"github.com/damien1141/a1/internal/tools/todotool"
+	"github.com/damien1141/a1/internal/tools/tokentool"
+	"github.com/damien1141/a1/internal/tools/tooldef"
+	"github.com/damien1141/a1/internal/tools/vulntool"
+	"github.com/damien1141/a1/internal/tools/watchertool"
+	"github.com/damien1141/a1/internal/tools/writetool"
 )
 
 type (
@@ -77,7 +103,33 @@ func DefaultTools() []Tool {
 		lstool.LsTool(),
 		writetool.EditTool(),
 		findtool.FindTool(),
-	}
+		gittool.GitTool(),
+		todotool.TodoTool(),
+		watchertool.WatcherTool(),
+		stacktool.StackTool(),
+		testtool.TestTool(),
+		secrettool.SecretTool(),
+		errortool.ErrorTool(),
+		ranktool.RankTool(),
+		apitool.ApiTool(),
+		deadcode.DeadcodeTool(),
+		coveragetool.CoverageTool(),
+		impacttool.ImpactTool(),
+		depstool.DepsTool(),
+		migrationtool.MigrationTool(),
+		propertytool.PropertyTool(),
+		doctool.DocTool(),
+		nplusonetool.NplusoneTool(),
+	apidoc.ApidocTool(),
+	vulntool.VulnTool(),
+	errpattern.ErrPatternTool(),
+	scaffoldtool.ScaffoldTool(),
+	buildtool.BuildTool(),
+	tokentool.TokenTool(),
+	errortrans.ErrtransTool(),
+	contexttool.ContextTool(),
+	journaltool.JournalTool(),
+}
 }
 
 // ReadonlyTools returns exploration tools without write/edit.
@@ -90,5 +142,31 @@ func ReadonlyTools() []Tool {
 		greptool.GrepTool(),
 		lstool.LsTool(),
 		findtool.FindTool(),
-	}
+		gittool.GitTool(),
+		todotool.TodoTool(),
+		watchertool.WatcherTool(),
+		stacktool.StackTool(),
+		testtool.TestTool(),
+		secrettool.SecretTool(),
+		errortool.ErrorTool(),
+		ranktool.RankTool(),
+		apitool.ApiTool(),
+		deadcode.DeadcodeTool(),
+		coveragetool.CoverageTool(),
+		impacttool.ImpactTool(),
+		depstool.DepsTool(),
+		migrationtool.MigrationTool(),
+		propertytool.PropertyTool(),
+		doctool.DocTool(),
+		nplusonetool.NplusoneTool(),
+	apidoc.ApidocTool(),
+	vulntool.VulnTool(),
+	errpattern.ErrPatternTool(),
+	scaffoldtool.ScaffoldTool(),
+	buildtool.BuildTool(),
+	tokentool.TokenTool(),
+	errortrans.ErrtransTool(),
+	contexttool.ContextTool(),
+	journaltool.JournalTool(),
+}
 }

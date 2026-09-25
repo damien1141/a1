@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/llm"
-	"github.com/pulseaiclub/phi/internal/session"
+	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/session"
 )
 
 // sizedContent returns content of exactly `tokens` estimated tokens (4 chars

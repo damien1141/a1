@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/components/layout"
-	"github.com/pulseaiclub/phi/internal/components/text"
-	imgutil "github.com/pulseaiclub/phi/internal/util/image"
+	"github.com/damien1141/a1/internal/components"
+	"github.com/damien1141/a1/internal/components/layout"
+	"github.com/damien1141/a1/internal/components/text"
+	imgutil "github.com/damien1141/a1/internal/util/image"
 )
 
 func TestChatInputBorderLabels(t *testing.T) {

@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	ext "github.com/pulseaiclub/phi/ext/go"
-	"github.com/pulseaiclub/phi/ext/go/pxb"
+	ext "github.com/damien1141/a1/ext/go"
+	"github.com/damien1141/a1/ext/go/pxb"
 )
 
 func TestOversizeResponseFallbacks(t *testing.T) {

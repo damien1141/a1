@@ -1,6 +1,6 @@
 # Supported models
 
-phi talks to LLMs through an **explicit** `api` field on each config entry
+A1 talks to LLMs through an **explicit** `api` field on each config entry
 (`OpenAI` | `OpenAIResponses` | `Anthropic` | `Gemini`). Empty `api` means
 OpenAI-compatible `/chat/completions`. There is no name- or URL-based
 provider guessing.

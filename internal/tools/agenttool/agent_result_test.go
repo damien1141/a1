@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/tools"
+	"github.com/damien1141/a1/internal/tools"
 )
 
 func TestParseAgentResultSummary(t *testing.T) {

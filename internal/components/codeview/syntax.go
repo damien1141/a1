@@ -7,7 +7,7 @@ import (
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/pulseaiclub/xui"
 
-	"github.com/pulseaiclub/phi/internal/components"
+	"github.com/damien1141/a1/internal/components"
 )
 
 // highlightRowLimit caps chroma work on huge files. Beyond it the pane stays

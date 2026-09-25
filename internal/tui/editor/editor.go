@@ -8,24 +8,24 @@ import (
 
 	"github.com/pulseaiclub/xui"
 
-	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/components/app"
-	"github.com/pulseaiclub/phi/internal/components/chat"
-	"github.com/pulseaiclub/phi/internal/components/palette"
-	"github.com/pulseaiclub/phi/internal/components/toast"
-	"github.com/pulseaiclub/phi/internal/session"
-	"github.com/pulseaiclub/phi/internal/tui/codepane"
-	"github.com/pulseaiclub/phi/internal/tui/commands"
-	"github.com/pulseaiclub/phi/internal/tui/composer"
-	"github.com/pulseaiclub/phi/internal/tui/controller"
-	"github.com/pulseaiclub/phi/internal/tui/diffpane"
-	"github.com/pulseaiclub/phi/internal/tui/footer"
-	"github.com/pulseaiclub/phi/internal/tui/overlays"
-	"github.com/pulseaiclub/phi/internal/tui/pathutil"
-	"github.com/pulseaiclub/phi/internal/tui/submit"
-	"github.com/pulseaiclub/phi/internal/tui/transcript"
-	"github.com/pulseaiclub/phi/internal/util/update"
-	"github.com/pulseaiclub/phi/internal/version"
+	"github.com/damien1141/a1/internal/components"
+	"github.com/damien1141/a1/internal/components/app"
+	"github.com/damien1141/a1/internal/components/chat"
+	"github.com/damien1141/a1/internal/components/palette"
+	"github.com/damien1141/a1/internal/components/toast"
+	"github.com/damien1141/a1/internal/session"
+	"github.com/damien1141/a1/internal/tui/codepane"
+	"github.com/damien1141/a1/internal/tui/commands"
+	"github.com/damien1141/a1/internal/tui/composer"
+	"github.com/damien1141/a1/internal/tui/controller"
+	"github.com/damien1141/a1/internal/tui/diffpane"
+	"github.com/damien1141/a1/internal/tui/footer"
+	"github.com/damien1141/a1/internal/tui/overlays"
+	"github.com/damien1141/a1/internal/tui/pathutil"
+	"github.com/damien1141/a1/internal/tui/submit"
+	"github.com/damien1141/a1/internal/tui/transcript"
+	"github.com/damien1141/a1/internal/util/update"
+	"github.com/damien1141/a1/internal/version"
 )
 
 // Editor is the TUI root widget: layout composition and the UI-goroutine
@@ -82,7 +82,7 @@ func NewEditor(
 		composer: composer.NewComposerPane(theme, modelLabel, cwd),
 		footer:   footer.NewFooterChrome(theme, contextWindow),
 	}
-	e.transcript = transcript.NewTranscriptPane(theme, e.footer.Spinner(), "Phi "+version.Version)
+	e.transcript = transcript.NewTranscriptPane(theme, e.footer.Spinner(), "A1 "+version.Version)
 	e.transcript.SetUsageCallback(e.footer.UpdateTokenDisplay)
 	e.footer.BindComposer(e.composer)
 	e.footer.SetLabelContext(e.transcript.Snapshot)

@@ -16,12 +16,12 @@ import (
 
 	"github.com/pulseaiclub/xui"
 
-	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/components/chat"
-	"github.com/pulseaiclub/phi/internal/components/chrome"
-	"github.com/pulseaiclub/phi/internal/components/codeview"
-	"github.com/pulseaiclub/phi/internal/permission"
-	"github.com/pulseaiclub/phi/internal/util"
+	"github.com/damien1141/a1/internal/components"
+	"github.com/damien1141/a1/internal/components/chat"
+	"github.com/damien1141/a1/internal/components/chrome"
+	"github.com/damien1141/a1/internal/components/codeview"
+	"github.com/damien1141/a1/internal/permission"
+	"github.com/damien1141/a1/internal/util"
 )
 
 const (

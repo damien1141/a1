@@ -35,7 +35,7 @@ func NewPool(servers map[string]ServerConfig) *Pool {
 	}
 }
 
-// LoadPool loads config for projectConfigPath (e.g. <root>/.phi/mcp.json)
+// LoadPool loads config for projectConfigPath (e.g. <root>/.a1/mcp.json)
 // and returns a pool, or nil when disabled.
 func LoadPool(projectConfigPath string) (*Pool, error) {
 	if Disabled() {

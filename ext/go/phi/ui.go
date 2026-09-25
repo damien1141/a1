@@ -3,7 +3,7 @@ package phi
 import (
 	"slices"
 
-	ext "github.com/pulseaiclub/phi/ext/go"
+	ext "github.com/damien1141/a1/ext/go"
 )
 
 // extensionUI implements ext.UI over PXB host requests / notify frames.

@@ -31,11 +31,11 @@ func openLocked() error {
 	if file != nil {
 		return nil
 	}
-	path := os.Getenv("PHI_DEBUG_FILE")
+	path := os.Getenv("A1_DEBUG_FILE")
 	if path == "" {
-		path = "phi-debug.log"
+		path = "a1-debug.log"
 	}
-	//nolint:gosec // G703: path comes from PHI_DEBUG_FILE or a fixed default
+	//nolint:gosec // G703: path comes from A1_DEBUG_FILE or a fixed default
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		enabled = false

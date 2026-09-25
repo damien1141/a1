@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/pulseaiclub/phi/internal/job"
+	"github.com/damien1141/a1/internal/job"
 )
 
 // AgentResult is the UI-facing parse of agent_spawn / agent_wait JSON output.

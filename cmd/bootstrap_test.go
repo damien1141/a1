@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/permission"
-	"github.com/pulseaiclub/phi/internal/project"
+	"github.com/damien1141/a1/internal/permission"
+	"github.com/damien1141/a1/internal/project"
 )
 
 // testProject discovers a project under a temp HOME so tests never touch the

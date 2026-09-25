@@ -8,10 +8,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/components/layout"
-	"github.com/pulseaiclub/phi/internal/session"
-	"github.com/pulseaiclub/phi/internal/tui/controller"
+	"github.com/damien1141/a1/internal/components"
+	"github.com/damien1141/a1/internal/components/layout"
+	"github.com/damien1141/a1/internal/session"
+	"github.com/damien1141/a1/internal/tui/controller"
 )
 
 type stubComposer struct {

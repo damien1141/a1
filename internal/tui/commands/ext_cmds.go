@@ -6,11 +6,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/pulseaiclub/phi/internal/components/palette"
-	"github.com/pulseaiclub/phi/internal/components/toast"
-	"github.com/pulseaiclub/phi/internal/debuglog"
-	"github.com/pulseaiclub/phi/internal/extension"
-	"github.com/pulseaiclub/phi/internal/tui/controller"
+	"github.com/damien1141/a1/internal/components/palette"
+	"github.com/damien1141/a1/internal/components/toast"
+	"github.com/damien1141/a1/internal/debuglog"
+	"github.com/damien1141/a1/internal/extension"
+	"github.com/damien1141/a1/internal/tui/controller"
 )
 
 // extComposer updates the palette command list.

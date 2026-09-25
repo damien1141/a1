@@ -11,8 +11,8 @@ import (
 
 	cli "github.com/pulseaiclub/pli"
 
-	"github.com/pulseaiclub/phi/internal/mcp"
-	"github.com/pulseaiclub/phi/internal/project"
+	"github.com/damien1141/a1/internal/mcp"
+	"github.com/damien1141/a1/internal/project"
 )
 
 var (
@@ -31,7 +31,7 @@ See doc/mcp.md.`,
 	mcpAddCommand = cli.Command{
 		Name:    "add",
 		ArgsUse: "<name> -- <cmd> [args...]",
-		Desc:    "add a stdio server to ~/.phi/mcp.json",
+		Desc:    "add a stdio server to ~/.a1/mcp.json",
 	}
 
 	mcpRemoveCommand = cli.Command{
@@ -75,7 +75,7 @@ func mcpList() error {
 		return err
 	}
 	if len(servers) == 0 {
-		fmt.Println("(no servers — try: phi mcp add fetch -- npx -y @modelcontextprotocol/server-fetch)")
+		fmt.Println("(no servers — try: a1 mcp add fetch -- npx -y @modelcontextprotocol/server-fetch)")
 		return nil
 	}
 	for _, name := range sortedKeys(servers) {

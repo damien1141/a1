@@ -5,15 +5,15 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/components/status"
-	"github.com/pulseaiclub/phi/internal/session"
+	"github.com/damien1141/a1/internal/components"
+	"github.com/damien1141/a1/internal/components/status"
+	"github.com/damien1141/a1/internal/session"
 )
 
 func TestTranscriptPane_ApplySessionAndSync(t *testing.T) {
 	th := components.DefaultTheme()
 	spin := status.NewSpinner(th.ToolName)
-	pane := NewTranscriptPane(th, spin, "Phi test")
+	pane := NewTranscriptPane(th, spin, "A1 test")
 
 	pane.ApplySession(session.UserAppend{Text: "hello"})
 	pane.Sync()
@@ -25,7 +25,7 @@ func TestTranscriptPane_ApplySessionAndSync(t *testing.T) {
 func TestTranscriptPane_IsStreaming(t *testing.T) {
 	th := components.DefaultTheme()
 	spin := status.NewSpinner(th.ToolName)
-	pane := NewTranscriptPane(th, spin, "Phi test")
+	pane := NewTranscriptPane(th, spin, "A1 test")
 
 	require.False(t, pane.IsStreaming(), "empty pane should not stream")
 
@@ -45,7 +45,7 @@ func TestTranscriptPane_IsStreaming(t *testing.T) {
 func TestTranscriptPane_LoadReplayClearsWidgets(t *testing.T) {
 	th := components.DefaultTheme()
 	spin := status.NewSpinner(th.ToolName)
-	pane := NewTranscriptPane(th, spin, "Phi test")
+	pane := NewTranscriptPane(th, spin, "A1 test")
 
 	pane.ApplySession(session.UserAppend{Text: "x"})
 	pane.Sync()

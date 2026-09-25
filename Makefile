@@ -1,4 +1,4 @@
-BINARY   ?= phi
+BINARY   ?= a1
 MAIN_SRC  = ./cmd
 
 GOBIN    ?= $(shell go env GOBIN)

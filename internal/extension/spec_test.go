@@ -17,8 +17,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/extension"
-	"github.com/pulseaiclub/phi/internal/util/githubrelease"
+	"github.com/damien1141/a1/internal/extension"
+	"github.com/damien1141/a1/internal/util/githubrelease"
 )
 
 func TestParseSpec(t *testing.T) {
@@ -103,7 +103,7 @@ func TestInstallClonesWhenReleaseUnavailable(t *testing.T) {
 	assert.Equal(t, []string{"clone", "--depth", "1", "--branch", "v1", spec.CloneURL()}, sawArgs[:6])
 	assert.True(
 		t,
-		strings.HasPrefix(sawArgs[6], filepath.Join(dir, ".phi-clone-")),
+		strings.HasPrefix(sawArgs[6], filepath.Join(dir, ".a1-clone-")),
 		"clone into temp sibling of %s, got %s",
 		dir, sawArgs[6],
 	)

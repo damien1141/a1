@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/permission"
+	"github.com/damien1141/a1/internal/permission"
 )
 
 func TestExtractAgentAllow(t *testing.T) {

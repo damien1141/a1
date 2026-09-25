@@ -7,6 +7,6 @@
 //	m.RegisterTool(...)
 //	m.Run()
 //
-// Ship a phi.yaml next to the binary under ~/.phi/extensions/<name>/.
+// Ship a phi.yaml next to the binary under ~/.a1/extensions/<name>/.
 // See doc/extensions.md.
 package ext

@@ -3,8 +3,8 @@ package diffview
 import (
 	"github.com/pulseaiclub/xui"
 
-	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/util/diffreview"
+	"github.com/damien1141/a1/internal/components"
+	"github.com/damien1141/a1/internal/util/diffreview"
 )
 
 func rowStyle(th components.Theme, kind diffreview.RowKind) xui.Style {

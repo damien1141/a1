@@ -1,6 +1,6 @@
 # MCP
 
-phi connects to MCP the **mcptoon way**: configure as many servers as you want; **tool schemas never enter the model context**.
+A1 connects to MCP the **mcptoon way**: configure as many servers as you want; **tool schemas never enter the model context**.
 
 That is the main difference from hosts that dump every `tools/list` schema into the prompt — ten or a hundred servers will not burn tens of thousands of tokens before you ask a question.
 
@@ -35,8 +35,8 @@ Typical rhythm: pick a server from the prompt → `mcp_list(server=…)` → `mc
 ## Interaction flow
 
 ```text
-Start TUI / phi run
-  → load ~/.phi/mcp.json + <cwd>/.phi/mcp.json
+Start TUI / a1 run
+  → load ~/.a1/mcp.json + <cwd>/.phi/mcp.json
   → build Pool (no subprocess yet)
   → tool list += mcp_list / mcp_inspect / mcp_call
   → system prompt += MCP catalog (server names only)
@@ -51,7 +51,7 @@ User prompt
 Human CLI and the agent share the same `internal/mcp` stack:
 
 ```text
-phi mcp doctor|call  ──┐
+a1 mcp doctor|call  ──┐
                        ├──► Pool ──► Client (stdio JSON-RPC)
 model mcp_* ───────────┘
 ```
@@ -62,7 +62,7 @@ Sub-agents do **not** inherit MCP meta-tools by default. Disable with `PHI_MCP=o
 
 ## Quick start
 
-Config file: `~/.phi/mcp.json` (project `<cwd>/.phi/mcp.json` overrides same-named servers).
+Config file: `~/.a1/mcp.json` (project `<cwd>/.phi/mcp.json` overrides same-named servers).
 
 ```json
 {
@@ -84,9 +84,9 @@ Config file: `~/.phi/mcp.json` (project `<cwd>/.phi/mcp.json` overrides same-nam
 Or via CLI:
 
 ```sh
-phi mcp add browsermcp -- npx @browsermcp/mcp@latest
-phi mcp list
-phi mcp doctor
+a1 mcp add browsermcp -- npx @browsermcp/mcp@latest
+a1 mcp list
+a1 mcp doctor
 ```
 
 **Restart phi** after config changes (Pool loads at startup).
@@ -127,14 +127,14 @@ phi equivalent:
 ## CLI
 
 ```text
-phi mcp list                         list configured servers
-phi mcp add <name> -- <cmd> [args…]  write ~/.phi/mcp.json
-phi mcp remove <name>                remove from user config
-phi mcp call <server> <tool> [json]  call a tool directly
-phi mcp doctor                       check config + connectivity
+a1 mcp list                         list configured servers
+a1 mcp add <name> -- <cmd> [args…]  write ~/.a1/mcp.json
+a1 mcp remove <name>                remove from user config
+a1 mcp call <server> <tool> [json]  call a tool directly
+a1 mcp doctor                       check config + connectivity
 ```
 
-Logs: `~/.phi/logs/mcp/<name>.log` (override with `PHI_MCP_LOG_DIR`).
+Logs: `~/.a1/logs/mcp/<name>.log` (override with `PHI_MCP_LOG_DIR`).
 
 ---
 
@@ -154,4 +154,4 @@ Logs: `~/.phi/logs/mcp/<name>.log` (override with `PHI_MCP_LOG_DIR`).
 | `internal/mcp/` | config, Client, session, stdio/http transports, Pool |
 | `internal/tools/mcptool/` | `mcp_list` / `mcp_inspect` / `mcp_call` |
 | `internal/agent/engine.go` | `WithMCP` wires meta-tools |
-| `cmd/mcp.go` | `phi mcp` subcommand |
+| `cmd/mcp.go` | `a1 mcp` subcommand |

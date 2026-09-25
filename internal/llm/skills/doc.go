@@ -1,7 +1,7 @@
 // Package skills loads and parses SKILL.md files from skill directories.
 //
 // Each skill is a directory containing a SKILL.md file with YAML frontmatter
-// and a Markdown body. Skills are loaded from ~/.phi/skills/ (or a
+// and a Markdown body. Skills are loaded from ~/.a1/skills/ (or a
 // custom path set via skill_path in config or PHI_SKILL_PATH env var).
 //
 // A skill file looks like:

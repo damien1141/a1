@@ -15,7 +15,7 @@ import (
 	"github.com/yuin/goldmark/parser"
 	goldtext "github.com/yuin/goldmark/text"
 
-	"github.com/pulseaiclub/phi/internal/components"
+	"github.com/damien1141/a1/internal/components"
 )
 
 var rePathish = regexp.MustCompile(`\b[\w./-]+/(?:[\w./-]*/)?|\b[\w-]+\.(?:go|ts|js|md|json|zig)\b`)

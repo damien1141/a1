@@ -7,8 +7,8 @@ import (
 
 	cli "github.com/pulseaiclub/pli"
 
-	"github.com/pulseaiclub/phi/internal/util/update"
-	"github.com/pulseaiclub/phi/internal/version"
+	"github.com/damien1141/a1/internal/util/update"
+	"github.com/damien1141/a1/internal/version"
 )
 
 var updateCommand = cli.Command{

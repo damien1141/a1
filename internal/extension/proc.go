@@ -13,10 +13,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	ext "github.com/pulseaiclub/phi/ext/go"
-	"github.com/pulseaiclub/phi/ext/go/pxb"
-	"github.com/pulseaiclub/phi/internal/debuglog"
-	"github.com/pulseaiclub/phi/internal/version"
+	ext "github.com/damien1141/a1/ext/go"
+	"github.com/damien1141/a1/ext/go/pxb"
+	"github.com/damien1141/a1/internal/debuglog"
+	"github.com/damien1141/a1/internal/version"
 )
 
 const (

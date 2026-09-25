@@ -11,18 +11,18 @@ import (
 	"sync/atomic"
 	"time"
 
-	ext "github.com/pulseaiclub/phi/ext/go"
-	"github.com/pulseaiclub/phi/internal/agent"
-	"github.com/pulseaiclub/phi/internal/components/toast"
-	"github.com/pulseaiclub/phi/internal/debuglog"
-	"github.com/pulseaiclub/phi/internal/extension"
-	"github.com/pulseaiclub/phi/internal/job"
-	"github.com/pulseaiclub/phi/internal/llm"
-	"github.com/pulseaiclub/phi/internal/mcp"
-	"github.com/pulseaiclub/phi/internal/permission"
-	"github.com/pulseaiclub/phi/internal/project"
-	"github.com/pulseaiclub/phi/internal/project/model"
-	"github.com/pulseaiclub/phi/internal/session"
+	ext "github.com/damien1141/a1/ext/go"
+	"github.com/damien1141/a1/internal/agent"
+	"github.com/damien1141/a1/internal/components/toast"
+	"github.com/damien1141/a1/internal/debuglog"
+	"github.com/damien1141/a1/internal/extension"
+	"github.com/damien1141/a1/internal/job"
+	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/mcp"
+	"github.com/damien1141/a1/internal/permission"
+	"github.com/damien1141/a1/internal/project"
+	"github.com/damien1141/a1/internal/project/model"
+	"github.com/damien1141/a1/internal/session"
 )
 
 const defaultAskTimeoutSec = 120
@@ -264,7 +264,7 @@ func (c *EngineController) ListExtensions() ([]extension.Discovered, []extension
 	return extension.Discover(c.proj.Global().ExtensionsDir(), c.proj.ExtensionsDir())
 }
 
-// loadExtensions discovers ~/.phi/extensions and <cwd>/.phi/extensions.
+// loadExtensions discovers ~/.a1/extensions and <cwd>/.a1/extensions.
 // Load errors are non-fatal (fail-open: no extensions).
 func loadExtensions(proj *project.Project) *extension.Runner {
 	if proj == nil {

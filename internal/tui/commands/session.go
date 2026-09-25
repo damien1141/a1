@@ -3,11 +3,11 @@ package commands
 import (
 	"time"
 
-	"github.com/pulseaiclub/phi/internal/components/toast"
-	"github.com/pulseaiclub/phi/internal/session"
-	"github.com/pulseaiclub/phi/internal/tui/controller"
-	"github.com/pulseaiclub/phi/internal/tui/footer"
-	"github.com/pulseaiclub/phi/internal/tui/transcript"
+	"github.com/damien1141/a1/internal/components/toast"
+	"github.com/damien1141/a1/internal/session"
+	"github.com/damien1141/a1/internal/tui/controller"
+	"github.com/damien1141/a1/internal/tui/footer"
+	"github.com/damien1141/a1/internal/tui/transcript"
 )
 
 // SessionCommands owns /sessions and /clear UI side effects.

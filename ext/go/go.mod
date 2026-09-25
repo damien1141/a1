@@ -1,4 +1,4 @@
-module github.com/pulseaiclub/phi/ext/go
+module github.com/damien1141/a1/ext/go
 
 go 1.26.3
 

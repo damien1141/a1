@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pulseaiclub/phi/internal/util"
+	"github.com/damien1141/a1/internal/util"
 )
 
 // shellConfig describes how to launch the resolved shell.

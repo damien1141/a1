@@ -8,14 +8,14 @@ before:
     - go mod tidy
 
 builds:
-  - id: phi
+  - id: a1
     main: ./cmd
-    binary: phi
+    binary: a1
     env:
       - CGO_ENABLED=0
     ldflags:
       - -s -w
-      - -X github.com/pulseaiclub/phi/internal/version.Version=v{{.Version}}
+      - -X github.com/damien1141/a1/internal/version.Version=v{{.Version}}
     goos:
       - linux
       - darwin

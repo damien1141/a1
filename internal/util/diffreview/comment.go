@@ -11,7 +11,7 @@ import (
 )
 
 // DefaultFilePath is the project-local comment store.
-const DefaultFilePath = ".phi/review.json"
+const DefaultFilePath = ".a1/review.json"
 
 // Side identifies which side of a unified diff a comment anchors to.
 type Side string
@@ -45,7 +45,7 @@ type CommentFile struct {
 	Comments []CommentDraft `json:"comments"`
 }
 
-// CommentPath returns cwd/.phi/review.json.
+// CommentPath returns cwd/.a1/review.json.
 func CommentPath(cwd string) string {
 	if cwd == "" {
 		return DefaultFilePath

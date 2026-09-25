@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/mcp"
+	"github.com/damien1141/a1/internal/mcp"
 )
 
 func TestHTTPClientJSONAndSSE(t *testing.T) {
