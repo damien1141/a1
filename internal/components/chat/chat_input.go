@@ -87,6 +87,10 @@ type ChatInput struct {
 	// activate/deactivate a leading ? shortcut-help token.
 	OnQuestionChange func(active bool, query string)
 
+	// OnHistoryNav is called for Up/Down keys when no picker is open.
+	// If set and returning true, the key is consumed for history navigation.
+	OnHistoryNav func(delta int) bool
+
 	// MentionOpen is set by the editor while the @-file picker is visible.
 	// When true, Up/Down/Tab/Enter are left unconsumed so the picker can
 	// handle navigation (focus stays on the composer for typing).
@@ -366,12 +370,20 @@ func (c *ChatInput) Handle(ctx *components.EventContext, ev xui.Event) {
 			if c.completerOpen() {
 				return
 			}
+			if c.OnHistoryNav != nil && c.OnHistoryNav(-1) {
+				ctx.ConsumeAndRedraw()
+				return
+			}
 			c.moveVert(-1)
 			c.notifyCompleters()
 			ctx.ConsumeAndRedraw()
 			return
 		case xui.KeyDown:
 			if c.completerOpen() {
+				return
+			}
+			if c.OnHistoryNav != nil && c.OnHistoryNav(1) {
+				ctx.ConsumeAndRedraw()
 				return
 			}
 			c.moveVert(1)

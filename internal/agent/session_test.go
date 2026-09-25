@@ -3,12 +3,14 @@ package agent
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/session/memory"
 )
 
 func TestSessionPersistFlush(t *testing.T) {
@@ -94,4 +96,46 @@ func splitFirstJSONL(b []byte) []byte {
 		}
 	}
 	return b
+}
+
+func TestBuildContextInjectsMemoryOnce(t *testing.T) {
+	dir := t.TempDir()
+	sess, err := NewSession(WithCwd(dir), WithSessionDir(dir), WithPersist(true))
+	require.NoError(t, err)
+
+	bank, err := memory.OpenBank(sess.ID(), dir)
+	require.NoError(t, err)
+	require.NoError(t, bank.Append(memory.EntryContext, "remember this"))
+	sess.memoryBank = bank
+
+	first := sess.BuildContext()
+	require.True(t, len(first) > 0)
+	assert.Equal(t, llm.RoleSystem, first[0].Role)
+	assert.Contains(t, first[0].Content, "remember this")
+
+	second := sess.BuildContext()
+	assert.Equal(t, first, second)
+
+	systemCount := 0
+	for _, m := range second {
+		if m.Role == llm.RoleSystem && strings.Contains(m.Content, "Session memory") {
+			systemCount++
+		}
+	}
+	assert.Equal(t, 1, systemCount, "memory system message should appear exactly once")
+}
+
+func TestBuildContextSkipsMemoryWhenBankEmpty(t *testing.T) {
+	dir := t.TempDir()
+	sess, err := NewSession(WithCwd(dir), WithSessionDir(dir), WithPersist(true))
+	require.NoError(t, err)
+
+	bank, err := memory.OpenBank(sess.ID(), dir)
+	require.NoError(t, err)
+	sess.memoryBank = bank
+
+	ctx := sess.BuildContext()
+	for _, m := range ctx {
+		assert.NotEqual(t, llm.RoleSystem, m.Role, "no system memory message when bank is empty")
+	}
 }

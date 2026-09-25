@@ -4,6 +4,8 @@ A fork of [phi](https://github.com/pulseaiclub/phi) (e1079e0) with a different d
 
 **Docs:** [pulseaiclub.github.io](https://pulseaiclub.github.io/)
 
+**Recommended local models:** for local LLM inference, [el4/Agents-A1-ONYX-GGUF](https://huggingface.co/el4/Agents-A1-ONYX-GGUF); for embeddings, [nomic-ai/nomic-embed-text-v2-moe-GGUF](https://huggingface.co/nomic-ai/nomic-embed-text-v2-moe-GGUF).
+
 ## What changed from phi
 
 - **Rebranded identity:** CLI is `a1`, config dir is `~/.a1/`, env vars are `A1_*`.
@@ -14,6 +16,10 @@ A fork of [phi](https://github.com/pulseaiclub/phi) (e1079e0) with a different d
 - **Build semantics:** `build` understands Makefiles, CMake, Meson, Cargo, Go modules, npm scripts, and Gradle tasks.
 - **Stricter system doctrine:** the embedded system prompt now encodes operating mode, core principles, a 5-gate cognitive loop, workflow rules, deliverable standards, constraints, failure recovery, and ADHD-oriented reporting rules.
 - **Dark theme refresh:** default theme aligned to a new dark palette.
+- **Terminal history navigation:** Up/Down arrows in the composer browse prior submissions; history is reloaded from the memory bank when resuming old sessions.
+- **Session memory bank:** every session gets a JSONL-backed memory bank under `~/.a1/sessions/memory/`; successful and failed tool calls are journaled automatically, and recent memories are injected into the model context as a system message.
+- **Semantic code search:** optional local semantic search via Ollama embeddings + a file chunk index; enabled from the config UI or `~/.a1/config.yaml`, exposed as the `vector_search` tool.
+- **Call graph / dependency tracer:** `graph` tool builds a directed dependency graph from source imports. Default build uses lightweight parsers for Go, Python, Rust, and JS/TS; build with `-tags treesitter` to enable full tree-sitter grammar support for 40+ languages.
 
 Everything else is still phi under the hood: same TUI, same sub-agent model, same MCP meta-tool design, same extension protocol.
 
@@ -53,6 +59,8 @@ If you want the original phi without these additions, use [pulseaiclub/phi](http
 - Idle RSS: ~21 MB
 - Time to first frame: ~31 ms
 - Go source: ~51k LOC / 316 files / 97 packages
+- Session memory bank: `~/.a1/sessions/memory/<session_id>.jsonl`
+- Vector search index: workspace-local, created on demand when `vector_search` is used
 
 ## Tools
 
@@ -87,6 +95,8 @@ If you want the original phi without these additions, use [pulseaiclub/phi](http
 | `todo`         | TODO / FIXME collector                       |
 | `scaffold`     | Project scaffold aware tools                 |
 | `journal`      | Action journal / audit trail                 |
+| `graph`        | Dependency/call graph explorer via imports   |
+| `vector_search`| Local semantic code search via Ollama embeddings |
 | `agent_spawn`  | Start an isolated sub-agent job (async)      |
 | `agent_wait`   | Wait for a job; returns short summary only   |
 | `agent_list`   | List jobs                                    |

@@ -4,4 +4,4 @@ package version
 // `a1 update`. Override at build time with:
 //
 //	go build -ldflags="-X github.com/damien1141/a1/internal/version.Version=v0.2.0"
-var Version = "v0.28"
+var Version = "v0.28.1"

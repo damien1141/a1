@@ -255,3 +255,47 @@ func TestListAcceptHandlerIsNotSharedBetweenDomains(t *testing.T) {
 	assert.Equal(t, []string{"main"}, branches)
 	assert.Empty(t, sessions, "opening a second picker must replace the first accept path")
 }
+
+func TestComposerHistoryNavigation(t *testing.T) {
+	c := NewComposerPane(components.DefaultTheme(), "m", "/tmp")
+	bus := controller.NewBus(nil)
+	c.bus = bus
+	c.drainBus = func() {}
+	c.requestFocus = func(w components.Widget) {}
+
+	c.Chat.Value = "current input"
+	c.Chat.Cursor = len(c.Chat.Value)
+
+	// Simulate two prior submissions.
+	c.pushHistory("second entry")
+	c.pushHistory("first entry")
+
+	// Up from current/new position should load the most recent history entry.
+	c.Chat.Value = "new input"
+	c.Chat.Cursor = len(c.Chat.Value)
+	c.historyIdx = -1
+	c.navigateHistory(-1)
+	assert.Equal(t, "first entry", c.Chat.Value)
+	assert.Equal(t, 1, c.historyIdx)
+
+	// Up again should move to older entry.
+	c.navigateHistory(-1)
+	assert.Equal(t, "second entry", c.Chat.Value)
+	assert.Equal(t, 0, c.historyIdx)
+
+	// Up at oldest should stay.
+	c.navigateHistory(-1)
+	assert.Equal(t, "second entry", c.Chat.Value)
+	assert.Equal(t, 0, c.historyIdx)
+
+	// Down should move forward.
+	c.navigateHistory(1)
+	assert.Equal(t, "first entry", c.Chat.Value)
+	assert.Equal(t, 1, c.historyIdx)
+
+	// Down past newest should clear input.
+	c.navigateHistory(1)
+	assert.Equal(t, "", c.Chat.Value)
+	assert.Equal(t, -1, c.historyIdx)
+}
+

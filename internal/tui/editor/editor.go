@@ -14,6 +14,7 @@ import (
 	"github.com/damien1141/a1/internal/components/palette"
 	"github.com/damien1141/a1/internal/components/toast"
 	"github.com/damien1141/a1/internal/session"
+	"github.com/damien1141/a1/internal/session/memory"
 	"github.com/damien1141/a1/internal/tui/codepane"
 	"github.com/damien1141/a1/internal/tui/commands"
 	"github.com/damien1141/a1/internal/tui/composer"
@@ -57,6 +58,8 @@ type Editor struct {
 	sessions  *commands.SessionCommands
 	extCmds   *commands.ExtCommands
 	submitter *submit.Submitter
+
+	lastHistorySessionID string
 }
 
 // NewEditor builds the TUI panes and wires injected collaborators.
@@ -215,8 +218,44 @@ func NewEditor(
 		},
 	)
 
+	e.composer.SetHistoryStore(e.storeHistory)
+	e.loadInputHistory()
 	e.extCmds.Sync()
 	return e
+}
+
+func (e *Editor) storeHistory(text string) {
+	if e == nil || e.ctrl == nil || e.composer == nil {
+		return
+	}
+	sid := e.ctrl.SessionID()
+	if sid == "" {
+		return
+	}
+	bank, err := memory.OpenBank(sid, "")
+	if err != nil {
+		return
+	}
+	_ = bank.Append(memory.EntryInput, text)
+}
+
+func (e *Editor) loadInputHistory() {
+	if e == nil || e.ctrl == nil || e.composer == nil {
+		return
+	}
+	sid := e.ctrl.SessionID()
+	if sid == "" {
+		return
+	}
+	bank, err := memory.OpenBank(sid, "")
+	if err != nil {
+		return
+	}
+	entries, err := bank.RecentInputHistory(50)
+	if err != nil {
+		return
+	}
+	e.composer.LoadHistory(entries)
 }
 
 // Publish sends a message onto the bus from any goroutine / widget callback.
@@ -295,6 +334,12 @@ func (e *Editor) drainBus() {
 		e.footer.SyncFromSnap(e.transcript.Snapshot())
 		if atBottom {
 			e.transcript.StickToBottom()
+		}
+	}
+	if e.ctrl != nil && e.composer != nil {
+		if sid := e.ctrl.SessionID(); sid != "" && sid != e.lastHistorySessionID {
+			e.lastHistorySessionID = sid
+			e.loadInputHistory()
 		}
 	}
 }

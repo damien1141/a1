@@ -17,11 +17,12 @@ import (
 // All models live in one flat list under the models key; DefaultModel names
 // the entry used to start sessions (empty → the first entry).
 type Config struct {
-	Models       []llm.ModelConfig
-	DefaultModel string // name of the default model; "" → first entry
-	SkillPath    string
-	Permissions  permission.Policy
-	Agents       AgentsConfig
+	Models         []llm.ModelConfig
+	DefaultModel   string // name of the default model; "" → first entry
+	SkillPath      string
+	Permissions    permission.Policy
+	Agents         AgentsConfig
+	SemanticSearch SemanticSearchConfig
 }
 
 // AgentsConfig controls whether the main agent may spawn sub-agents
@@ -39,6 +40,13 @@ type AgentsRoleModels struct {
 	Explore string `yaml:"explore"`
 	Review  string `yaml:"review"`
 	Worker  string `yaml:"worker"`
+}
+
+// SemanticSearchConfig controls the local semantic code search index.
+type SemanticSearchConfig struct {
+	Enabled        bool   `yaml:"enabled"`
+	OllamaBaseURL  string `yaml:"ollama_base_url"`
+	EmbeddingModel string `yaml:"embedding_model"`
 }
 
 // Model returns the default model config with the skill path applied, ready
@@ -166,6 +174,13 @@ func parseConfigFile(path string) (*Config, error) {
 			}
 		}
 	}
+	if raw.SemanticSearch != nil {
+		cfg.SemanticSearch = SemanticSearchConfig{
+			Enabled:        raw.SemanticSearch.Enabled,
+			OllamaBaseURL:  strings.TrimSpace(raw.SemanticSearch.OllamaBaseURL),
+			EmbeddingModel: strings.TrimSpace(raw.SemanticSearch.EmbeddingModel),
+		}
+	}
 	return cfg, nil
 }
 
@@ -215,16 +230,23 @@ func modelEntryToConfig(m modelEntry) llm.ModelConfig {
 
 // fileConfig mirrors the YAML keys in ~/.a1/config.yaml.
 type fileConfig struct {
-	Models      []modelEntry  `yaml:"models"`
-	SkillPath   *string       `yaml:"skill_path"`
-	Permissions *permConfig   `yaml:"permissions"`
-	Agents      *agentsConfig `yaml:"agents"`
+	Models         []modelEntry          `yaml:"models"`
+	SkillPath      *string               `yaml:"skill_path"`
+	Permissions    *permConfig           `yaml:"permissions"`
+	Agents         *agentsConfig         `yaml:"agents"`
+	SemanticSearch *semanticSearchConfig `yaml:"semantic_search"`
 }
 
 type agentsConfig struct {
 	// Enabled is a pointer so omitting the key keeps the default (on).
 	Enabled *bool             `yaml:"enabled"`
 	Models  *AgentsRoleModels `yaml:"models"`
+}
+
+type semanticSearchConfig struct {
+	Enabled        bool   `yaml:"enabled"`
+	OllamaBaseURL  string `yaml:"ollama_base_url"`
+	EmbeddingModel string `yaml:"embedding_model"`
 }
 
 type modelEntry struct {

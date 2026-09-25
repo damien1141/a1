@@ -16,6 +16,7 @@ import (
 	"github.com/damien1141/a1/internal/tools/errpattern"
 	"github.com/damien1141/a1/internal/tools/findtool"
 	"github.com/damien1141/a1/internal/tools/gittool"
+	"github.com/damien1141/a1/internal/tools/graphtool"
 	"github.com/damien1141/a1/internal/tools/greptool"
 	"github.com/damien1141/a1/internal/tools/impacttool"
 	"github.com/damien1141/a1/internal/tools/journaltool"
@@ -33,6 +34,7 @@ import (
 	"github.com/damien1141/a1/internal/tools/todotool"
 	"github.com/damien1141/a1/internal/tools/tokentool"
 	"github.com/damien1141/a1/internal/tools/tooldef"
+	"github.com/damien1141/a1/internal/tools/vectortool"
 	"github.com/damien1141/a1/internal/tools/vulntool"
 	"github.com/damien1141/a1/internal/tools/watchertool"
 	"github.com/damien1141/a1/internal/tools/writetool"
@@ -121,15 +123,17 @@ func DefaultTools() []Tool {
 		doctool.DocTool(),
 		nplusonetool.NplusoneTool(),
 	apidoc.ApidocTool(),
-	vulntool.VulnTool(),
-	errpattern.ErrPatternTool(),
-	scaffoldtool.ScaffoldTool(),
-	buildtool.BuildTool(),
-	tokentool.TokenTool(),
-	errortrans.ErrtransTool(),
-	contexttool.ContextTool(),
-	journaltool.JournalTool(),
-}
+		vulntool.VulnTool(),
+		errpattern.ErrPatternTool(),
+		scaffoldtool.ScaffoldTool(),
+		buildtool.BuildTool(),
+		tokentool.TokenTool(),
+		errortrans.ErrtransTool(),
+		contexttool.ContextTool(),
+		journaltool.JournalTool(),
+		vectortool.VectorTool(),
+		graphtool.GraphTool(),
+	}
 }
 
 // ReadonlyTools returns exploration tools without write/edit.
@@ -160,13 +164,15 @@ func ReadonlyTools() []Tool {
 		doctool.DocTool(),
 		nplusonetool.NplusoneTool(),
 	apidoc.ApidocTool(),
-	vulntool.VulnTool(),
-	errpattern.ErrPatternTool(),
-	scaffoldtool.ScaffoldTool(),
-	buildtool.BuildTool(),
-	tokentool.TokenTool(),
-	errortrans.ErrtransTool(),
-	contexttool.ContextTool(),
-	journaltool.JournalTool(),
-}
+		vulntool.VulnTool(),
+		errpattern.ErrPatternTool(),
+		scaffoldtool.ScaffoldTool(),
+		buildtool.BuildTool(),
+		tokentool.TokenTool(),
+		errortrans.ErrtransTool(),
+		contexttool.ContextTool(),
+		journaltool.JournalTool(),
+		vectortool.VectorTool(),
+		graphtool.GraphTool(),
+	}
 }

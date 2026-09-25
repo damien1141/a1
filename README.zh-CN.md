@@ -4,6 +4,8 @@
 
 **文档：** [pulseaiclub.github.io](https://pulseaiclub.github.io/)
 
+- **推荐本地模型：** 本地 LLM 推理推荐 [el4/Agents-A1-ONYX-GGUF](https://huggingface.co/el4/Agents-A1-ONYX-GGUF)；嵌入模型推荐 [nomic-ai/nomic-embed-text-v2-moe-GGUF](https://huggingface.co/nomic-ai/nomic-embed-text-v2-moe-GGUF)。
+
 ## 与 phi 的区别
 
 - **身份重命名：** CLI 是 `a1`，配置目录是 `~/.a1/`，环境变量是 `A1_*`。
@@ -14,6 +16,10 @@
 - **构建语义感知：** `build` 理解 Makefile、CMake、Meson、Cargo、Go modules、npm scripts 和 Gradle tasks。
 - **更严格的系统 doctrine：** 嵌入式系统提示现在编码了运行模式、核心原则、5 门认知循环、工作流规则、交付标准、约束、失败恢复，以及面向 ADHD 的报告规则。
 - **默认主题刷新：** 默认主题对齐新的暗色调色板。
+- **终端历史导航：** 在输入框中用上/下箭头浏览历史提交；恢复旧会话时会从 memory bank 重新加载历史输入。
+- **会话记忆库：** 每个会话在 `~/.a1/sessions/memory/` 下获得一个 JSONL 记忆库；成功和失败的工具调用会自动记录，最近的记忆会以系统消息形式注入模型上下文。
+- **语义代码搜索：** 可选的本地语义搜索，基于 Ollama 嵌入 + 文件块索引；通过 config UI 或 `~/.a1/config.yaml` 启用，以 `vector_search` 工具暴露给模型。
+- **调用图 / 依赖追踪：** `graph` 工具从源码导入语句构建有向依赖图。默认构建使用轻量解析器支持 Go、Python、Rust 和 JS/TS；使用 `-tags treesitter` 构建可启用完整 tree-sitter 语法支持，覆盖 40+ 语言。
 
 底层仍然是 phi：相同的 TUI、相同的子代理模型、相同的 MCP 元工具设计、相同的扩展协议。
 
@@ -53,6 +59,8 @@ phi 已经是我用过的最精简、最实用的终端编码代理框架。这�
 - 空闲 RSS：~21 MB
 - 首帧时间：~31 ms
 - Go 源码：~51k LOC / 316 个文件 / 97 个包
+- 会话记忆库：`~/.a1/sessions/memory/<session_id>.jsonl`
+- 向量搜索索引：工作区本地，启用 `vector_search` 时按需创建
 
 ## 工具
 
@@ -87,6 +95,8 @@ phi 已经是我用过的最精简、最实用的终端编码代理框架。这�
 | `todo`          | TODO / FIXME 收集器                       |
 | `scaffold`      | 项目脚手架感知工具                        |
 | `journal`       | 操作日志 / 审计追踪                       |
+| `graph`         | 基于导入语句的依赖/调用图 explorer         |
+| `vector_search` | 基于 Ollama 嵌入的本地语义代码搜索         |
 | `agent_spawn`   | 启动隔离子代理任务（异步）                |
 | `agent_wait`    | 等待任务；仅返回简短总结                  |
 | `agent_list`    | 列出任务                                  |

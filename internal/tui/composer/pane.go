@@ -64,6 +64,10 @@ type ComposerPane struct {
 	requestFocus          func(components.Widget)
 	ctrlClose             func()
 	imageEnabled          func() bool
+
+	history    []string
+	historyIdx int // -1 when not browsing
+	onHistoryStore func(string)
 }
 
 // NewComposerPane builds composer widgets; call Wire before use.
@@ -134,6 +138,7 @@ func (c *ComposerPane) Wire(
 	c.palette.FocusReturn = &c.Chat
 	c.listPicker.FocusReturn = &c.Chat
 	c.Chat.OnSubmit = func(text string) {
+		c.pushHistory(text)
 		c.bus.Publish(controller.SubmitMsg{Text: text})
 		if c.drainBus != nil {
 			c.drainBus()
@@ -148,6 +153,13 @@ func (c *ComposerPane) Wire(
 	c.Chat.OnMentionChange = c.onMentionChange
 	c.Chat.OnSlashChange = c.onSlashChange
 	c.Chat.OnQuestionChange = c.onQuestionChange
+	c.Chat.OnHistoryNav = func(delta int) bool {
+		if c.Chat.MentionOpen || c.Chat.SlashOpen || c.Chat.QuestionOpen {
+			return false
+		}
+		c.navigateHistory(delta)
+		return true
+	}
 	c.mention.OnAccept = c.acceptMention
 	c.slash.OnAccept = c.acceptSlash
 	c.question.OnAccept = c.acceptQuestion
@@ -309,6 +321,22 @@ func (c *ComposerPane) PendingRefs() []chat.Ref {
 func (c *ComposerPane) ClearPendingRefs() {
 	if c != nil {
 		c.Chat.ClearPendingRefs()
+	}
+}
+
+// LoadHistory replaces the composer input history and resets the browse index.
+func (c *ComposerPane) LoadHistory(entries []string) {
+	if c == nil {
+		return
+	}
+	c.history = append([]string(nil), entries...)
+	c.historyIdx = -1
+}
+
+// SetHistoryStore sets a callback invoked after each successful input submission.
+func (c *ComposerPane) SetHistoryStore(store func(string)) {
+	if c != nil {
+		c.onHistoryStore = store
 	}
 }
 
@@ -677,6 +705,18 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 		if ev.Press && ev.Mods.Has(xui.ModCtrl) && ev.Code == xui.KeyRune && (ev.Rune == 'v' || ev.Rune == 'V') {
 			// Ctrl+V: attempt to attach an image from the system clipboard.
 			if c.tryAttachClipboardImage(ctx) {
+				return
+			}
+		}
+		if ev.Press && !c.Chat.MentionOpen && !c.Chat.SlashOpen && !c.Chat.QuestionOpen {
+			if ev.Code == xui.KeyUp {
+				c.navigateHistory(-1)
+				ctx.ConsumeAndRedraw()
+				return
+			}
+			if ev.Code == xui.KeyDown {
+				c.navigateHistory(1)
+				ctx.ConsumeAndRedraw()
 				return
 			}
 		}
@@ -1058,6 +1098,59 @@ func newChatInput(theme components.Theme, modelLabel, cwd string) chat.ChatInput
 			Text:  pathutil.PathWithBranch(cwd),
 			Style: footer.PathLabelStyle(theme),
 		},
+	}
+}
+
+func (c *ComposerPane) pushHistory(text string) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	if len(c.history) > 0 && c.history[len(c.history)-1] == text {
+		return
+	}
+	c.history = append(c.history, text)
+	c.historyIdx = -1
+	if c.onHistoryStore != nil {
+		c.onHistoryStore(text)
+	}
+}
+
+func (c *ComposerPane) navigateHistory(delta int) {
+	if len(c.history) == 0 {
+		return
+	}
+	if c.historyIdx == -1 {
+		if delta < 0 {
+			c.historyIdx = len(c.history) - 1
+		} else {
+			c.Chat.Value = ""
+			c.Chat.Cursor = 0
+			if c.Chat.OnChange != nil {
+				c.Chat.OnChange("")
+			}
+			return
+		}
+	} else {
+		c.historyIdx += delta
+	}
+	if c.historyIdx < 0 {
+		c.historyIdx = 0
+		return
+	}
+	if c.historyIdx >= len(c.history) {
+		c.Chat.Value = ""
+		c.Chat.Cursor = 0
+		c.historyIdx = -1
+		if c.Chat.OnChange != nil {
+			c.Chat.OnChange("")
+		}
+		return
+	}
+	c.Chat.Value = c.history[c.historyIdx]
+	c.Chat.Cursor = len(c.Chat.Value)
+	if c.Chat.OnChange != nil {
+		c.Chat.OnChange(c.Chat.Value)
 	}
 }
 

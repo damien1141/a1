@@ -32,11 +32,12 @@ var configHTML []byte
 // drive the editor API. Pointer fields preserve "key absent" across saves so
 // untouched sections are never rewritten.
 type configDoc struct {
-	Path        string     `yaml:"-"                     json:"path,omitempty"`
-	Models      []modelDoc `yaml:"models"                json:"models"`
-	SkillPath   *string    `yaml:"skill_path,omitempty"  json:"skillPath,omitempty"`
-	Permissions *permDoc   `yaml:"permissions,omitempty" json:"permissions,omitempty"`
-	Agents      *agentsDoc `yaml:"agents,omitempty"      json:"agents,omitempty"`
+	Path           string             `yaml:"-"                     json:"path,omitempty"`
+	Models         []modelDoc         `yaml:"models"                json:"models"`
+	SkillPath      *string            `yaml:"skill_path,omitempty"  json:"skillPath,omitempty"`
+	Permissions    *permDoc           `yaml:"permissions,omitempty" json:"permissions,omitempty"`
+	Agents         *agentsDoc         `yaml:"agents,omitempty"      json:"agents,omitempty"`
+	SemanticSearch *semanticSearchDoc `yaml:"semantic_search,omitempty" json:"semanticSearch,omitempty"`
 }
 
 type modelDoc struct {
@@ -75,9 +76,15 @@ type agentsDoc struct {
 }
 
 type agentsModelsDoc struct {
-	Explore string `yaml:"explore,omitempty" json:"explore,omitempty"`
-	Review  string `yaml:"review,omitempty"  json:"review,omitempty"`
-	Worker  string `yaml:"worker,omitempty"  json:"worker,omitempty"`
+	Explore string `yaml:"explore" json:"explore,omitempty"`
+	Review  string `yaml:"review"  json:"review,omitempty"`
+	Worker  string `yaml:"worker"  json:"worker,omitempty"`
+}
+
+type semanticSearchDoc struct {
+	Enabled        bool   `yaml:"enabled"         json:"enabled"`
+	OllamaBaseURL  string `yaml:"ollama_base_url" json:"ollamaBaseUrl"`
+	EmbeddingModel string `yaml:"embedding_model" json:"embeddingModel"`
 }
 
 type modelListRequest struct {

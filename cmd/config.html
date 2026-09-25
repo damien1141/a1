@@ -834,6 +834,36 @@
           </label>
         </div>
       </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title" data-i18n="semanticHeading">Semantic search</div>
+            <p class="panel-help" data-i18n="semanticHelp">Local code search via Ollama embeddings and a sqlite-vec index.</p>
+          </div>
+        </div>
+        <div class="panel-body toggle-list">
+          <label class="toggle-row">
+            <input id="semanticEnabled" type="checkbox">
+            <span>
+              <span class="toggle-title" data-i18n="semanticEnabledTitle">Enable semantic search</span>
+              <span class="toggle-help" data-i18n="semanticEnabledHelp">Index the workspace for meaning-based code search.</span>
+            </span>
+          </label>
+        </div>
+        <div class="panel-body settings-fields" id="semanticFields" hidden>
+          <div class="field field-full">
+            <label class="field-label" for="semanticOllamaBaseUrl" data-i18n="semanticOllamaBaseUrlLabel">Ollama base URL</label>
+            <div class="field-help" data-i18n="semanticOllamaBaseUrlHelp">Local Ollama API endpoint used for embeddings.</div>
+            <input id="semanticOllamaBaseUrl" type="text" data-i18n-placeholder="semanticOllamaBaseUrlPlaceholder" placeholder="http://localhost:11434" autocomplete="off">
+          </div>
+          <div class="field field-full">
+            <label class="field-label" for="semanticEmbeddingModel" data-i18n="semanticEmbeddingModelLabel">Embedding model</label>
+            <div class="field-help" data-i18n="semanticEmbeddingModelHelp">Ollama model that produces embeddings.</div>
+            <input id="semanticEmbeddingModel" type="text" data-i18n-placeholder="semanticEmbeddingModelPlaceholder" placeholder="e.g. nomic-embed-text" autocomplete="off">
+          </div>
+        </div>
+      </section>
     </div>
 
     <section class="section rules-section">
@@ -1023,6 +1053,16 @@ const I18N = {
     validatePositiveInt: "{label} must be an integer greater than 0.",
     validateContextLabel: "Model {n} context window",
     validateAskTimeoutLabel: "Approval timeout",
+    semanticHeading: "Semantic search",
+    semanticHelp: "Local code search via Ollama embeddings and a sqlite-vec index.",
+    semanticEnabledTitle: "Enable semantic search",
+    semanticEnabledHelp: "Index the workspace for meaning-based code search.",
+    semanticOllamaBaseUrlLabel: "Ollama base URL",
+    semanticOllamaBaseUrlHelp: "Local Ollama API endpoint used for embeddings.",
+    semanticOllamaBaseUrlPlaceholder: "http://localhost:11434",
+    semanticEmbeddingModelLabel: "Embedding model",
+    semanticEmbeddingModelHelp: "Ollama model that produces embeddings.",
+    semanticEmbeddingModelPlaceholder: "e.g. nomic-embed-text",
   },
   zh: {
     documentTitle: "A1 配置中心",
@@ -1149,6 +1189,16 @@ const I18N = {
     validatePositiveInt: "{label}必须是大于 0 的整数。",
     validateContextLabel: "模型 {n} 的上下文窗口",
     validateAskTimeoutLabel: "审批超时",
+    semanticHeading: "语义搜索",
+    semanticHelp: "基于 Ollama 嵌入和 sqlite-vec 索引的本地代码搜索。",
+    semanticEnabledTitle: "启用语义搜索",
+    semanticEnabledHelp: "为工作区建立索引，支持基于语义的代码搜索。",
+    semanticOllamaBaseUrlLabel: "Ollama 地址",
+    semanticOllamaBaseUrlHelp: "用于生成嵌入的本地 Ollama API endpoint。",
+    semanticOllamaBaseUrlPlaceholder: "http://localhost:11434",
+    semanticEmbeddingModelLabel: "嵌入模型",
+    semanticEmbeddingModelHelp: "用于生成嵌入的 Ollama 模型。",
+    semanticEmbeddingModelPlaceholder: "例如 nomic-embed-text",
   },
 };
 
@@ -1168,6 +1218,7 @@ const dirty = {
   daa: false,
   skillPath: false,
   bash: false,
+  semantic: false,
 };
 
 function detectLang() {
@@ -1771,6 +1822,12 @@ async function load(messageKey, expectedVersion) {
     $("bashDeny").value = (bash.deny || []).join("\n");
     setRuleVisibility("bashOn", "bashBody");
 
+    const semantic = doc.semanticSearch || {};
+    $("semanticEnabled").checked = !!semantic.enabled;
+    $("semanticOllamaBaseUrl").value = semantic.ollamaBaseUrl || "";
+    $("semanticEmbeddingModel").value = semantic.embeddingModel || "";
+    $("semanticFields").hidden = !$("semanticEnabled").checked;
+
     updateModeHint();
     resetDirty();
     if (messageKey) setStatusKey(messageKey, "success");
@@ -1803,6 +1860,11 @@ function buildPayload() {
       askTimeoutSec: dirty.askTimeout ? (readOptionalInteger($("askTimeout")) || null) : (permissions.askTimeoutSec != null ? permissions.askTimeoutSec : null),
       dangerouslyAllowAll: dirty.daa ? $("daa").checked : (permissions.dangerouslyAllowAll != null ? permissions.dangerouslyAllowAll : null),
     },
+    semanticSearch: dirty.semantic ? {
+      enabled: $("semanticEnabled").checked,
+      ollamaBaseUrl: $("semanticOllamaBaseUrl").value.trim() || null,
+      embeddingModel: $("semanticEmbeddingModel").value.trim() || null,
+    } : (orig && orig.semanticSearch != null ? orig.semanticSearch : null),
   };
 
   if (permissions.bash && !dirty.bash) {
@@ -1858,6 +1920,13 @@ wire("wow", "wow", "change");
 wire("daa", "daa", "change");
 wire("skillPath", "skillPath");
 wireRule("bashOn", "bashBody", "bash", "bashDefault", "bashAllow", "bashDeny");
+
+$("semanticEnabled").addEventListener("change", () => {
+  markDirty("semantic");
+  $("semanticFields").hidden = !$("semanticEnabled").checked;
+});
+$("semanticOllamaBaseUrl").addEventListener("input", () => markDirty("semantic"));
+$("semanticEmbeddingModel").addEventListener("input", () => markDirty("semantic"));
 
 applyLang();
 load();

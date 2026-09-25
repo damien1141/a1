@@ -12,6 +12,7 @@ import (
 	"github.com/damien1141/a1/internal/llm"
 	"github.com/damien1141/a1/internal/permission"
 	"github.com/damien1141/a1/internal/session"
+	"github.com/damien1141/a1/internal/session/memory"
 	"github.com/damien1141/a1/internal/tools"
 	"github.com/damien1141/a1/internal/util"
 )
@@ -26,16 +27,21 @@ const (
 
 // Executor runs model tool_calls against a tool registry and emits ToolData for the UI.
 type Executor struct {
-	registry  tools.Registry
-	gate      permission.Gate
-	ask       permission.AskFunc
-	ext       *extension.Runner // nil = disabled; methods are nil-safe no-ops
-	sessionID string
-	cwd       string
+	registry   tools.Registry
+	gate       permission.Gate
+	ask        permission.AskFunc
+	ext        *extension.Runner // nil = disabled; methods are nil-safe no-ops
+	sessionID  string
+	cwd        string
+	memoryBank sessionMemoryBank
 
 	// askMu serializes approval prompts: a concurrent read-only batch can
 	// otherwise pop multiple dialogs / interleave stdin reads at once.
 	askMu sync.Mutex
+}
+
+type sessionMemoryBank interface {
+	Append(entryType memory.EntryType, content string) error
 }
 
 // NewExecutor builds an executor. extRunner may be nil.
@@ -59,6 +65,14 @@ func (e *Executor) SetMeta(sessionID, cwd string) {
 	e.sessionID = sessionID
 	e.cwd = cwd
 	e.ext.SetMeta(sessionID, cwd)
+}
+
+// SetMemoryBank attaches a memory bank for tool-call journaling.
+func (e *Executor) SetMemoryBank(bank sessionMemoryBank) {
+	if e == nil {
+		return
+	}
+	e.memoryBank = bank
 }
 
 // Run executes tool calls and yields ToolData updates via emit.
@@ -273,6 +287,16 @@ func (e *Executor) runOne(
 		output = newContent
 	}
 	e.ext.EmitToolExecutionEnd(call.Function.Name, call.ID, err != nil)
+
+	if e.memoryBank != nil {
+		memType := memory.EntryContext
+		memContent := fmt.Sprintf("%s(%s) => %s", call.Function.Name, strings.TrimSpace(string(args)), strings.TrimSpace(content))
+		if err != nil {
+			memType = memory.EntryError
+			memContent = fmt.Sprintf("%s(%s) failed: %s", call.Function.Name, strings.TrimSpace(string(args)), errText)
+		}
+		_ = e.memoryBank.Append(memType, memContent)
+	}
 
 	modelContent := appendExtContext(content, joinExtContexts(preContext, postContext))
 

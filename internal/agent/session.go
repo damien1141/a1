@@ -6,7 +6,9 @@ import (
 	"strings"
 
 	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/project"
 	"github.com/damien1141/a1/internal/session"
+	"github.com/damien1141/a1/internal/session/memory"
 )
 
 // Session owns the message store for the engine loop. It wraps a
@@ -17,6 +19,8 @@ type Session struct {
 	manager           *session.Manager
 	contextCache      []llm.Message
 	contextCacheValid bool
+	memoryBank        *memory.Bank
+	memoryInjected    bool
 }
 
 // SessionOption configures NewSession.
@@ -146,6 +150,26 @@ func (s *Session) invalidateContextCache() {
 	s.contextCacheValid = false
 }
 
+// MemoryBank returns the session memory bank, opening it if needed.
+func (s *Session) MemoryBank() *memory.Bank {
+	if s == nil {
+		return nil
+	}
+	if s.memoryBank != nil {
+		return s.memoryBank
+	}
+	sid := s.ID()
+	if sid == "" {
+		return nil
+	}
+	bank, err := memory.OpenBank(sid, project.GetDefaultProject().Global().Root())
+	if err != nil {
+		return nil
+	}
+	s.memoryBank = bank
+	return bank
+}
+
 // Append records one or more messages.
 func (s *Session) Append(message ...llm.Message) error {
 	s.invalidateContextCache()
@@ -177,12 +201,29 @@ func (s *Session) PathEntries() []session.MessageEntry {
 
 // BuildContext returns the messages for LLM inference, oldest first.
 // Compaction entries are projected as user messages carrying the summary.
+// Memory bank entries are injected once per session as a system message.
 func (s *Session) BuildContext() []llm.Message {
 	if s.contextCacheValid {
 		return s.contextCache
 	}
 	entries := s.manager.BuildContext()
-	msgs := make([]llm.Message, 0, len(entries))
+	msgs := make([]llm.Message, 0, len(entries)+1)
+	if !s.memoryInjected {
+		if bank := s.MemoryBank(); bank != nil {
+			if recent, err := bank.Recent(10); err == nil && len(recent) > 0 {
+				var sb strings.Builder
+				sb.WriteString("Session memory (recent decisions, errors, context):\n")
+				for _, e := range recent {
+					sb.WriteString(fmt.Sprintf("- [%s] %s: %s\n", e.Timestamp.Format("2006-01-02T15:04:05Z"), e.Type, e.Content))
+				}
+				msgs = append(msgs, llm.Message{
+					Role:    llm.RoleSystem,
+					Content: sb.String(),
+				})
+				s.memoryInjected = true
+			}
+		}
+	}
 	for _, entry := range entries {
 		switch entry.GetType() {
 		case session.EntryCompaction:
