@@ -30,28 +30,28 @@ func GraphTool() tooldef.Tool {
 			Description: graphDescription,
 			Params: &llm.FunctionParameters{
 				Type: "object",
-				Properties: llm.Object{
-					"query": llm.Object{
-						"Type":        "string",
-						"Description": "Natural language query about dependencies. Example: \"Who imports auth.go?\"",
-					},
-					"path": llm.Object{
-						"Type":        "string",
-						"Description": "File or module path to inspect. Example: internal/auth/auth.go",
-					},
-					"direction": llm.Object{
-						"Type":        "string",
-						"Description": "Traversal direction: imports, imported_by, or both. Example: imported_by",
-					},
-					"limit": llm.Object{
-						"Type":        "integer",
-						"Description": fmt.Sprintf("Maximum results. Example: 20 (default: %d)", defaultLimit),
-					},
-					"rescan": llm.Object{
-						"Type":        "boolean",
-						"Description": "Rebuild the graph before querying.",
-					},
+			Properties: llm.Object{
+				"query": llm.Object{
+					"type":        "string",
+					"description": "Natural language query about dependencies. Example: \"Who imports auth.go?\"",
 				},
+				"path": llm.Object{
+					"type":        "string",
+					"description": "File or module path to inspect. Example: internal/auth/auth.go",
+				},
+				"direction": llm.Object{
+					"type":        "string",
+					"description": "Traversal direction: imports, imported_by, or both. Example: imported_by",
+				},
+				"limit": llm.Object{
+					"type":        "integer",
+					"description": fmt.Sprintf("Maximum results. Example: 20 (default: %d)", defaultLimit),
+				},
+				"rescan": llm.Object{
+					"type":        "boolean",
+					"description": "Rebuild the graph before querying.",
+				},
+			},
 				Required: []string{"query"},
 			},
 			Readable: true,
