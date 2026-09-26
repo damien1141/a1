@@ -32,6 +32,7 @@ import (
 	"github.com/damien1141/a1/internal/tools/secrettool"
 	"github.com/damien1141/a1/internal/tools/snapshottool"
 	"github.com/damien1141/a1/internal/tools/stacktool"
+	"github.com/damien1141/a1/internal/tools/testimpacttool"
 	"github.com/damien1141/a1/internal/tools/testtool"
 	"github.com/damien1141/a1/internal/tools/todotool"
 	"github.com/damien1141/a1/internal/tools/tokentool"
@@ -137,6 +138,7 @@ func DefaultTools() []Tool {
 		graphtool.GraphTool(),
 		batchtool.BatchTool(),
 		snapshottool.SnapshotTool(),
+		testimpacttool.TestImpactTool(),
 	}
 }
 
@@ -180,5 +182,6 @@ func ReadonlyTools() []Tool {
 		graphtool.GraphTool(),
 		batchtool.BatchTool(),
 		snapshottool.SnapshotTool(),
+		testimpacttool.TestImpactTool(),
 	}
 }
