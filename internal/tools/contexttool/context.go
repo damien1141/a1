@@ -37,8 +37,11 @@ func ContextTool() tooldef.Tool {
 						"description": "Directory to analyze. Example: .",
 					},
 					"limit": llm.Object{
-						"type":        "integer",
-						"description": fmt.Sprintf("Maximum results to return. Example: 20 (default: %d)", contextDefaultLimit),
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Maximum results to return. Example: 20 (default: %d)",
+							contextDefaultLimit,
+						),
 					},
 				},
 				Required: []string{},
@@ -64,12 +67,12 @@ type contextInput struct {
 }
 
 type contextEntry struct {
-	file     string
-	line     int
-	message  string
+	file       string
+	line       int
+	message    string
 	suggestion string
-	category string
-	tier string
+	category   string
+	tier       string
 }
 
 func runContext(ctx context.Context, input json.RawMessage) (tooldef.Result, error) {
@@ -138,7 +141,6 @@ func analyzeContext(root string, limit int) ([]contextEntry, error) {
 		}
 		return nil
 	})
-
 	if err != nil {
 		return nil, err
 	}
@@ -162,72 +164,72 @@ func analyzeFileContext(path string) ([]contextEntry, error) {
 	for i, line := range lines {
 		if strings.Contains(line, "context.WithValue") {
 			entries = append(entries, contextEntry{
-				file: path,
-				line: i + 1,
-				message: "context.WithValue usage detected",
+				file:       path,
+				line:       i + 1,
+				message:    "context.WithValue usage detected",
 				suggestion: "consider using typed context keys for better type safety",
-				category: "protected-zone",
-				tier: "tier-1",
+				category:   "protected-zone",
+				tier:       "tier-1",
 			})
 		}
 		if strings.Contains(line, "context.Background()") {
 			entries = append(entries, contextEntry{
-				file: path,
-				line: i + 1,
-				message: "context.Background() usage detected",
+				file:       path,
+				line:       i + 1,
+				message:    "context.Background() usage detected",
 				suggestion: "consider using context.WithTimeout for bounded operations",
-				category: "recent-zone",
-				tier: "tier-1",
+				category:   "recent-zone",
+				tier:       "tier-1",
 			})
 		}
 		if strings.Contains(line, "http.NewRequest") && !strings.Contains(line, "WithContext") {
 			entries = append(entries, contextEntry{
-				file: path,
-				line: i + 1,
-				message: "HTTP request without context",
+				file:       path,
+				line:       i + 1,
+				message:    "HTTP request without context",
 				suggestion: "use http.NewRequestWithContext with a timeout",
-				category: "growth-gate",
-				tier: "tier-2",
+				category:   "growth-gate",
+				tier:       "tier-2",
 			})
 		}
 		if strings.Contains(line, "context.WithTimeout") || strings.Contains(line, "context.WithDeadline") {
 			entries = append(entries, contextEntry{
-				file: path,
-				line: i + 1,
-				message: "bounded context detected",
+				file:       path,
+				line:       i + 1,
+				message:    "bounded context detected",
 				suggestion: "protected zone: timeout discipline confirmed",
-				category: "protected-zone",
-				tier: "tier-1",
+				category:   "protected-zone",
+				tier:       "tier-1",
 			})
 		}
 		if strings.Contains(line, "cancel") && strings.Contains(line, "defer") {
 			entries = append(entries, contextEntry{
-				file: path,
-				line: i + 1,
-				message: "cancellation cleanup detected",
+				file:       path,
+				line:       i + 1,
+				message:    "cancellation cleanup detected",
 				suggestion: "protected zone: cancel discipline confirmed",
-				category: "protected-zone",
-				tier: "tier-1",
+				category:   "protected-zone",
+				tier:       "tier-1",
 			})
 		}
 		if strings.Contains(line, "io.ReadAll") || strings.Contains(line, "ioutil.ReadAll") {
 			entries = append(entries, contextEntry{
-				file: path,
-				line: i + 1,
-				message: "unbounded read detected",
+				file:       path,
+				line:       i + 1,
+				message:    "unbounded read detected",
 				suggestion: "limit body reads or compress the result before adding to context",
-				category: "growth-gate",
-				tier: "tier-2",
+				category:   "growth-gate",
+				tier:       "tier-2",
 			})
 		}
 		if strings.Contains(line, "json.Marshal") || strings.Contains(line, "json.MarshalIndent") {
 			entries = append(entries, contextEntry{
-				file: path,
-				line: i + 1,
-				message: "JSON serialization detected",
+				file:       path,
+				line:       i + 1,
+				message:    "JSON serialization detected",
 				suggestion: "compress large payloads before adding to context",
-				category: "growth-gate",
-				tier: "tier-2",
+				category:   "growth-gate",
+				tier:       "tier-2",
 			})
 		}
 	}
@@ -269,16 +271,24 @@ func foldHealthSummary(entries []contextEntry) string {
 			tier2++
 		}
 	}
-	return fmt.Sprintf("protected-zone=%d growth-gate=%d recent-zone=%d tier-1=%d tier-2=%d total=%d", protected, growth, recent, tier1, tier2, len(entries))
+	return fmt.Sprintf(
+		"protected-zone=%d growth-gate=%d recent-zone=%d tier-1=%d tier-2=%d total=%d",
+		protected,
+		growth,
+		recent,
+		tier1,
+		tier2,
+		len(entries),
+	)
 }
 
 type foldReport struct {
-	entries     int
-	protected   int
-	growth      int
-	recent      int
-	tier1       int
-	tier2       int
+	entries   int
+	protected int
+	growth    int
+	recent    int
+	tier1     int
+	tier2     int
 }
 
 func buildFoldReport(entries []contextEntry) foldReport {
@@ -303,7 +313,15 @@ func buildFoldReport(entries []contextEntry) foldReport {
 }
 
 func renderFoldDetail(report foldReport) string {
-	return fmt.Sprintf("protected-zone=%d growth-gate=%d recent-zone=%d tier-1=%d tier-2=%d total=%d", report.protected, report.growth, report.recent, report.tier1, report.tier2, report.entries)
+	return fmt.Sprintf(
+		"protected-zone=%d growth-gate=%d recent-zone=%d tier-1=%d tier-2=%d total=%d",
+		report.protected,
+		report.growth,
+		report.recent,
+		report.tier1,
+		report.tier2,
+		report.entries,
+	)
 }
 
 func shouldSkipDir(name string) bool {

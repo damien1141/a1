@@ -16,6 +16,8 @@ import (
 type labelComposer interface {
 	SetBottomLeftLabel(layout.BorderLabel)
 	ClearBottomLeftLabel()
+	SetTopLeftLabel(layout.BorderLabel)
+	ClearTopLeftLabel()
 }
 
 // FooterChrome owns the composer status slot (activity ↔ tokens), spinner,
@@ -128,6 +130,16 @@ func (f *FooterChrome) UpdateTokenDisplay(usage session.TokenUsage) {
 	}
 	f.lastUsage = usage
 	f.syncStatusSlot()
+	if f.composer != nil {
+		if usage.TPS > 0 {
+			f.composer.SetTopLeftLabel(layout.BorderLabel{
+				Text:  fmt.Sprintf("%.0f tok/s", usage.TPS),
+				Style: f.theme.IdentityOrSuccess(),
+			})
+		} else {
+			f.composer.ClearTopLeftLabel()
+		}
+	}
 }
 
 // ClearTokenDisplay clears stored usage and refreshes the status slot.

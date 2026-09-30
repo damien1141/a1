@@ -177,6 +177,79 @@ func (c *EngineController) initGate(policy permission.Policy) {
 	c.gate = &permission.BypassGate{Inner: inner, Enabled: &c.allowAll}
 }
 
+func (c *EngineController) PermissionMode() permission.Mode {
+	if c.gate == nil || c.proj == nil {
+		return permission.ModeInteractive
+	}
+	return permission.ModeOf(c.gate)
+}
+
+func (c *EngineController) CyclePermissionMode() {
+	modes := []permission.Mode{
+		permission.ModeInteractive,
+		permission.ModeReadonly,
+		permission.ModeAutopilot,
+		permission.ModeHeadlessStrict,
+	}
+	current := c.PermissionMode()
+	idx := 0
+	for i, m := range modes {
+		if m == current {
+			idx = (i + 1) % len(modes)
+			break
+		}
+	}
+	c.SetPermissionMode(modes[idx])
+}
+
+func (c *EngineController) CycleThinkLevel() {
+	modes := []llm.ThinkMode{
+		llm.Off,
+		llm.Minimal,
+		llm.Low,
+		llm.Medium,
+		llm.High,
+		llm.XHigh,
+		llm.Max,
+	}
+	current := c.ThinkLevel()
+	idx := 0
+	for i, m := range modes {
+		if m == current {
+			idx = (i + 1) % len(modes)
+			break
+		}
+	}
+	c.SetThinkLevel(modes[idx])
+	c.publish(
+		ToastMsg{Message: "Thinking mode: " + string(modes[idx]), Kind: toast.ToastSuccess, Duration: 2 * time.Second},
+	)
+}
+
+func (c *EngineController) SetPermissionMode(mode permission.Mode) {
+	if c.proj == nil || c.gate == nil {
+		return
+	}
+	policy := c.proj.Config().Permissions
+	policy.Mode = mode
+	var inner permission.Gate
+	var err error
+	inner, err = permission.NewGate(policy, permission.WorkspaceRoot())
+	if err != nil {
+		inner, err = permission.NewGate(permission.DefaultPolicy(), permission.WorkspaceRoot())
+	}
+	if err != nil {
+		inner = permission.AllowAll{}
+	}
+	c.gate = &permission.BypassGate{Inner: inner, Enabled: &c.allowAll}
+	if c.engine != nil {
+		c.engine.SetPermission(c.gate, c.askPermission)
+	}
+	c.publish(
+		ToastMsg{Message: "Permission mode: " + string(mode), Kind: toast.ToastSuccess, Duration: 2 * time.Second},
+	)
+}
+
 func (c *EngineController) SetAllowAll(v bool) {
 	c.allowAll.Store(v)
 }

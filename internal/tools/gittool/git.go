@@ -227,7 +227,17 @@ func parseBlamePorcelain(out, absPath string) string {
 			if len(hash) < 7 {
 				hash = "unknown"
 			}
-			sb.WriteString(fmt.Sprintf("%s:%d#%s | %s | %s | %s\n", rel, lineNum, hash[:7], current.authorTime, current.author, current.line))
+			sb.WriteString(
+				fmt.Sprintf(
+					"%s:%d#%s | %s | %s | %s\n",
+					rel,
+					lineNum,
+					hash[:7],
+					current.authorTime,
+					current.author,
+					current.line,
+				),
+			)
 			continue
 		}
 

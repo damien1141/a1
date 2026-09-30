@@ -37,8 +37,11 @@ func JournalTool() tooldef.Tool {
 						"description": "Directory to analyze. Example: .",
 					},
 					"limit": llm.Object{
-						"type":        "integer",
-						"description": fmt.Sprintf("Maximum results to return. Example: 20 (default: %d)", journalDefaultLimit),
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Maximum results to return. Example: 20 (default: %d)",
+							journalDefaultLimit,
+						),
 					},
 				},
 				Required: []string{},
@@ -101,7 +104,11 @@ func runJournal(ctx context.Context, input json.RawMessage) (tooldef.Result, err
 	}
 
 	if len(entries) == 0 {
-		return tooldef.Result{Content: "No journal entries found", Detail: "0 entries", Output: "No journal entries found"}, nil
+		return tooldef.Result{
+			Content: "No journal entries found",
+			Detail:  "0 entries",
+			Output:  "No journal entries found",
+		}, nil
 	}
 
 	content := renderJournalResults(ctx, entries)
@@ -174,7 +181,16 @@ func renderJournalResults(ctx context.Context, entries []journalEntry) string {
 	var sb strings.Builder
 	for _, e := range entries {
 		rel := tooldef.RelToCwd(ctx, e.file)
-		sb.WriteString(fmt.Sprintf("%s\t%s\t%s:%d\t%s\n", e.timestamp.Format("2006-01-02 15:04:05"), e.action, rel, e.line, e.outcome))
+		sb.WriteString(
+			fmt.Sprintf(
+				"%s\t%s\t%s:%d\t%s\n",
+				e.timestamp.Format("2006-01-02 15:04:05"),
+				e.action,
+				rel,
+				e.line,
+				e.outcome,
+			),
+		)
 	}
 	return sb.String()
 }

@@ -101,9 +101,10 @@ func runTUI() error {
 	redraw.Bind(ui.RequestRedraw)
 	ui.StartUpdateCheck(proj.Global().Root())
 	ui.StartBranchWatch()
-	if err := application.Run(ui); err != nil {
+	appExitCode, err := application.Run(ui)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "a1:", err)
 		return exitCode(ExitError)
 	}
-	return nil
+	return exitCode(appExitCode)
 }

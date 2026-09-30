@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/damien1141/a1/internal/tools/tooldef"
-	"github.com/damien1141/a1/internal/llm"
 	"github.com/damien1141/a1/internal/graph"
+	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/tools/tooldef"
 )
 
 var testImpactDescription = `Find test files affected by a source file change.
@@ -119,7 +119,11 @@ func runTestImpact(ctx context.Context, input json.RawMessage) (tooldef.Result, 
 		}
 	}
 	if len(importedBy) == 0 {
-		return tooldef.Result{Content: "No files import " + relPath, Detail: "0 tests", Output: "No files import " + relPath}, nil
+		return tooldef.Result{
+			Content: "No files import " + relPath,
+			Detail:  "0 tests",
+			Output:  "No files import " + relPath,
+		}, nil
 	}
 
 	// Resolve import paths to actual file paths.
@@ -131,13 +135,21 @@ func runTestImpact(ctx context.Context, input json.RawMessage) (tooldef.Result, 
 		}
 	}
 	if len(resolvedFiles) == 0 {
-		return tooldef.Result{Content: "No files import " + relPath, Detail: "0 tests", Output: "No files import " + relPath}, nil
+		return tooldef.Result{
+			Content: "No files import " + relPath,
+			Detail:  "0 tests",
+			Output:  "No files import " + relPath,
+		}, nil
 	}
 
 	// Filter to test files only.
 	testFiles := filterTestFiles(resolvedFiles)
 	if len(testFiles) == 0 {
-		return tooldef.Result{Content: "No test files import " + relPath, Detail: "0 tests", Output: "No test files import " + relPath}, nil
+		return tooldef.Result{
+			Content: "No test files import " + relPath,
+			Detail:  "0 tests",
+			Output:  "No test files import " + relPath,
+		}, nil
 	}
 
 	content := renderTestImpactResults(relPath, testFiles)
@@ -204,4 +216,3 @@ func guessTestPackage(testFiles []string) string {
 	}
 	return "./" + dir
 }
-

@@ -101,7 +101,7 @@ func DefaultPolicy() Policy {
 		BashAllow:           defaultBashAllow,
 		BashDeny:            defaultBashDeny,
 		SensitivePathDeny:   defaultSensitivePaths(),
-		WorkspaceOnlyReads:  false,
+		WorkspaceOnlyReads:  true,
 	}
 }
 

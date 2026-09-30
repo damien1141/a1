@@ -155,13 +155,30 @@ func toAPIMessage(m llm.Message) apiMessage {
 // The system prompt is prepended as a system message, mirroring the previous
 // in-client behavior. Vendor-specific fields (e.g. DeepSeek extra_body) belong
 // on model presets via RequestInterceptor, not here.
+//
+// OpenAI requires the system message to be first. The session may inject a
+// RoleSystem message (e.g. session memory) in the middle of the messages
+// slice, so collect all system text and emit it once up front.
 func BuildRequest(cfg llm.ModelConfig, system string, messages []llm.Message, tools []llm.ToolDefinition) *Request {
-	msgs := make([]apiMessage, 0, len(messages)+1)
-	if strings.TrimSpace(system) != "" {
-		msgs = append(msgs, apiMessage{Role: llm.RoleSystem, Content: system})
+	var sb strings.Builder
+	if s := strings.TrimSpace(system); s != "" {
+		sb.WriteString(s)
 	}
+	msgs := make([]apiMessage, 0, len(messages)+1)
 	for _, m := range messages {
+		if m.Role == llm.RoleSystem {
+			if strings.TrimSpace(m.Content) != "" {
+				if sb.Len() > 0 {
+					sb.WriteString("\n\n")
+				}
+				sb.WriteString(strings.TrimSpace(m.Content))
+			}
+			continue
+		}
 		msgs = append(msgs, toAPIMessage(m))
+	}
+	if sb.Len() > 0 {
+		msgs = append([]apiMessage{{Role: llm.RoleSystem, Content: sb.String()}}, msgs...)
 	}
 
 	apiTools := make([]apiTool, len(tools))

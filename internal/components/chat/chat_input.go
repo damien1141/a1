@@ -357,12 +357,12 @@ func (c *ChatInput) Handle(ctx *components.EventContext, ev xui.Event) {
 			ctx.ConsumeAndRedraw()
 			return
 		case xui.KeyHome:
-			c.Cursor = lineStart(c.Value, c.Cursor)
+			c.Cursor = LineStart(c.Value, c.Cursor)
 			c.notifyCompleters()
 			ctx.ConsumeAndRedraw()
 			return
 		case xui.KeyEnd:
-			c.Cursor = lineEnd(c.Value, c.Cursor)
+			c.Cursor = LineEnd(c.Value, c.Cursor)
 			c.notifyCompleters()
 			ctx.ConsumeAndRedraw()
 			return
@@ -400,11 +400,11 @@ func (c *ChatInput) Handle(ctx *components.EventContext, ev xui.Event) {
 				switch e.Rune {
 				case 'a', 'A':
 					// Ctrl+A jumps to the start of the current line.
-					c.Cursor = lineStart(c.Value, c.Cursor)
+					c.Cursor = LineStart(c.Value, c.Cursor)
 					c.notifyCompleters()
 				case 'e', 'E':
 					// Ctrl+E jumps to the end of the current line.
-					c.Cursor = lineEnd(c.Value, c.Cursor)
+					c.Cursor = LineEnd(c.Value, c.Cursor)
 					c.notifyCompleters()
 				case 'u', 'U':
 					// Ctrl+U clears the composer, pending images, and pending skills.
@@ -563,7 +563,7 @@ func (c *ChatInput) ReplaceRange(start, end int, text string) {
 }
 
 func (c *ChatInput) moveVert(delta int) {
-	start := lineStart(c.Value, c.Cursor)
+	start := LineStart(c.Value, c.Cursor)
 	col := utf8.RuneCountInString(c.Value[start:c.Cursor])
 	if delta < 0 {
 		if start == 0 {
@@ -571,17 +571,17 @@ func (c *ChatInput) moveVert(delta int) {
 			return
 		}
 		prevEnd := start - 1 // newline
-		prevStart := lineStart(c.Value, prevEnd)
+		prevStart := LineStart(c.Value, prevEnd)
 		c.Cursor = runeIndex(c.Value[prevStart:prevEnd], col) + prevStart
 		return
 	}
-	end := lineEnd(c.Value, c.Cursor)
+	end := LineEnd(c.Value, c.Cursor)
 	if end >= len(c.Value) {
 		c.Cursor = len(c.Value)
 		return
 	}
 	nextStart := end + 1
-	nextEnd := lineEnd(c.Value, nextStart)
+	nextEnd := LineEnd(c.Value, nextStart)
 	c.Cursor = runeIndex(c.Value[nextStart:nextEnd], col) + nextStart
 }
 
@@ -833,7 +833,8 @@ func (c *ChatInput) paintPendingImages(s *components.Surface, x, y, width int, m
 	components.PaintSpans(s, x, y, lines[0], method)
 }
 
-func lineStart(s string, off int) int {
+// LineStart returns the byte offset of the start of the line containing off.
+func LineStart(s string, off int) int {
 	if off > len(s) {
 		off = len(s)
 	}
@@ -844,7 +845,8 @@ func lineStart(s string, off int) int {
 	return i + 1
 }
 
-func lineEnd(s string, off int) int {
+// LineEnd returns the byte offset just after the end of the line containing off.
+func LineEnd(s string, off int) int {
 	if off > len(s) {
 		off = len(s)
 	}

@@ -349,6 +349,7 @@
   .field-base { grid-column: span 6; }
   .field-key { grid-column: span 5; }
   .field-think { grid-column: span 3; }
+  .field-think-enabled { grid-column: span 2; }
   .field-context { grid-column: span 2; }
   .field-image { grid-column: span 2; }
 
@@ -522,6 +523,11 @@
     border-left: 1px solid var(--border);
     padding-right: 0;
     padding-left: 28px;
+  }
+
+  .panel.no-left-separator {
+    border-left: none;
+    padding-left: 0;
   }
 
   .panel-head { align-items: baseline; gap: 12px; }
@@ -700,6 +706,7 @@
     .field-name, .field-api, .field-base, .field-key, .field-think, .field-context, .field-image, .settings-fields .field-full, .rule-body .field-wide { grid-column: auto; }
     .panel { padding-right: 0; }
     .panel + .panel { margin-top: 26px; padding-top: 26px; padding-left: 0; border-top: 1px solid var(--border); border-left: 0; }
+    .panel.no-left-separator { border-top: none; padding-top: 0; margin-top: 0; }
     .rule-group + .rule-group { padding-top: 24px; padding-left: 0; border-top: 1px solid var(--border); border-left: 0; }
     .footer-inner { width: min(100% - 24px, 620px); min-height: 136px; align-items: stretch; gap: 8px; }
     .save-summary { flex-direction: column; align-items: flex-start; gap: 4px; }
@@ -739,6 +746,114 @@
     outline: 2px solid var(--blue);
     outline-offset: 2px;
   }
+
+  .stats-section {
+    padding: 24px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    margin-top: 18px;
+  }
+
+  .stat-card {
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+  }
+
+  .stat-value {
+    color: var(--text);
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  .stat-label {
+    margin-top: 4px;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .tool-usage {
+    margin-top: 22px;
+  }
+
+  .tool-usage-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .tool-usage-title {
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  .tool-usage-help {
+    margin-top: 4px;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+
+  .tool-list {
+    display: grid;
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  .tool-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    align-items: center;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+  }
+
+  .tool-name {
+    min-width: 0;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 650;
+    overflow-wrap: anywhere;
+  }
+
+  .tool-metric {
+    min-width: 0;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    text-align: right;
+  }
+
+  .tool-metric-value {
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .tool-metric-error .tool-metric-value { color: var(--red); }
+  .tool-metric-ok .tool-metric-value { color: var(--green); }
+
+  .stats-empty {
+    margin-top: 14px;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+
+  @media (max-width: 720px) {
+    .stats-grid { grid-template-columns: minmax(0, 1fr); }
+    .tool-row { grid-template-columns: minmax(0, 1fr) repeat(3, minmax(0, 1fr)); gap: 10px; }
+  }
 </style>
 </head>
 <body>
@@ -759,6 +874,20 @@
       <code id="path">Loading...</code>
     </div>
   </header>
+
+  <section class="section stats-section" id="statsSection">
+    <div class="section-head">
+      <div>
+        <div class="section-title-row">
+          <h2 data-i18n="statsHeading">Tool usage</h2>
+        </div>
+        <p class="section-help" data-i18n="statsHelp">Most-used tools during this session.</p>
+      </div>
+      <button class="button tertiary small" id="refreshStats" type="button" data-i18n="refreshStats">Refresh</button>
+    </div>
+    <div class="stats-grid" id="statsSummary"></div>
+    <div class="tool-usage" id="toolUsage"></div>
+  </section>
 
   <main id="editor" inert>
     <section class="section model-section">
@@ -835,7 +964,7 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel no-left-separator">
         <div class="panel-head">
           <div>
             <div class="panel-title" data-i18n="semanticHeading">Semantic search</div>
@@ -864,6 +993,49 @@
           </div>
         </div>
       </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title" data-i18n="judgeHeading">Judge</div>
+            <p class="panel-help" data-i18n="judgeHelp">Local judgment and evaluation via Ollama.</p>
+          </div>
+        </div>
+        <div class="panel-body settings-fields" id="judgeFields">
+          <div class="field field-full">
+            <label class="field-label" for="judgeOllamaBaseUrl" data-i18n="judgeOllamaBaseUrlLabel">Ollama base URL</label>
+            <div class="field-help" data-i18n="judgeOllamaBaseUrlHelp">Local Ollama API endpoint used for judgment.</div>
+            <input id="judgeOllamaBaseUrl" type="text" data-i18n-placeholder="judgeOllamaBaseUrlPlaceholder" placeholder="http://localhost:11434" autocomplete="off">
+          </div>
+          <div class="field field-full">
+            <label class="field-label" for="judgeModel" data-i18n="judgeModelLabel">Judge model</label>
+            <div class="field-help" data-i18n="judgeModelHelp">Ollama model used for local judgment/evaluation.</div>
+            <input id="judgeModel" type="text" data-i18n-placeholder="judgeModelPlaceholder" placeholder="llama3.2" autocomplete="off">
+          </div>
+        </div>
+      </section>
+
+      <section class="panel no-left-separator">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title" data-i18n="browserHeading">Browser</div>
+            <p class="panel-help" data-i18n="browserHelp">Browser profiles available to the agent.</p>
+          </div>
+        </div>
+        <div class="panel-body settings-fields" id="browserFields">
+          <div class="field field-full">
+            <label class="field-label" for="browserProfiles" data-i18n="browserProfilesLabel">Profiles</label>
+            <div class="field-help" data-i18n="browserProfilesHelp">One profile name per line. The default profile is always available.</div>
+            <textarea id="browserProfiles" rows="4" data-i18n-placeholder="browserProfilesPlaceholder" placeholder="work&#10;personal"></textarea>
+          </div>
+          <div class="field field-full">
+            <label class="field-label" for="browserProxy" data-i18n="browserProxyLabel">Proxy</label>
+            <div class="field-help" data-i18n="browserProxyHelp">Optional HTTP/HTTPS/SOCKS proxy for the browser, e.g. http://127.0.0.1:8885. Empty → no proxy. Takes effect on the next open after a close.</div>
+            <input id="browserProxy" type="text" data-i18n-placeholder="browserProxyPlaceholder" placeholder="http://127.0.0.1:8885" />
+          </div>
+        </div>
+      </section>
+
     </div>
 
     <section class="section rules-section">
@@ -1063,6 +1235,36 @@ const I18N = {
     semanticEmbeddingModelLabel: "Embedding model",
     semanticEmbeddingModelHelp: "Ollama model that produces embeddings.",
     semanticEmbeddingModelPlaceholder: "e.g. nomic-embed-text",
+    judgeHeading: "Judge",
+    judgeHelp: "Local judgment and evaluation via Ollama.",
+    judgeOllamaBaseUrlLabel: "Ollama base URL",
+    judgeOllamaBaseUrlHelp: "Local Ollama API endpoint used for judgment.",
+    judgeOllamaBaseUrlPlaceholder: "http://localhost:11434",
+    judgeModelLabel: "Judge model",
+    judgeModelHelp: "Ollama model used for local judgment/evaluation.",
+    judgeModelPlaceholder: "llama3.2",
+    browserHeading: "Browser",
+    browserHelp: "Browser profiles available to the agent.",
+    browserProfilesLabel: "Profiles",
+    browserProfilesHelp: "One profile name per line. The default profile is always available.",
+    browserProfilesPlaceholder: "work\npersonal",
+    browserProxyLabel: "Proxy",
+    browserProxyHelp: "Optional HTTP/HTTPS/SOCKS proxy for the browser, e.g. http://127.0.0.1:8885. Empty → no proxy. Takes effect on the next open after a close.",
+    browserProxyPlaceholder: "http://127.0.0.1:8885",
+    statsHeading: "Tool usage",
+    statsHelp: "Most-used tools during this session.",
+    refreshStats: "Refresh",
+    statsTotalCalls: "Total calls",
+    statsTotalOK: "Succeeded",
+    statsTotalErrors: "Errors",
+    toolUsageTitle: "Most used tools",
+    toolUsageHelp: "Sorted by call count.",
+    toolColumnCalls: "Calls",
+    toolColumnOK: "OK",
+    toolColumnErrors: "Errors",
+    noStats: "No tool usage recorded yet.",
+    thinkEnabledLabel: "Thinking enabled",
+    thinkEnabledHelp: "Allow this model to use extended thinking.",
   },
   zh: {
     documentTitle: "A1 配置中心",
@@ -1162,7 +1364,7 @@ const I18N = {
     fetchModels: "获取模型",
     fetchModelsTitle: "从当前 API 地址获取模型列表",
     selectModel: "选择模型",
-    chooseFromList: "从列表中选择模型",
+    chooseFromList: "从列表中选择",
     showKey: "显示",
     hideKey: "隐藏",
     toggleKeyTitle: "显示或隐藏 API Key",
@@ -1182,7 +1384,7 @@ const I18N = {
     statusSaving: "正在保存...",
     statusSaved: "配置已保存，旧文件已备份。",
     statusSavedPending: "已保存先前修改；当前仍有未保存的修改。",
-    statusSaveFailedPrefix: "保存失败：\n",
+    statusSaveFailedPrefix: "保存失败：",
     statusServerError: "服务器返回了错误。",
     validateModelName: "模型 {n} 需要填写模型名称。",
     validateDefaultKey: "启动模型需要填写 API Key。",
@@ -1199,6 +1401,36 @@ const I18N = {
     semanticEmbeddingModelLabel: "嵌入模型",
     semanticEmbeddingModelHelp: "用于生成嵌入的 Ollama 模型。",
     semanticEmbeddingModelPlaceholder: "例如 nomic-embed-text",
+    judgeHeading: "Judge",
+    judgeHelp: "基于 Ollama 的本地判断与评估。",
+    judgeOllamaBaseUrlLabel: "Ollama 地址",
+    judgeOllamaBaseUrlHelp: "用于本地判断的 Ollama API endpoint。",
+    judgeOllamaBaseUrlPlaceholder: "http://localhost:11434",
+    judgeModelLabel: "判断模型",
+    judgeModelHelp: "用于本地判断/评估的 Ollama 模型。",
+    judgeModelPlaceholder: "llama3.2",
+    browserHeading: "Browser",
+    browserHelp: "可供 agent 使用的浏览器配置文件。",
+    browserProfilesLabel: "配置文件",
+    browserProfilesHelp: "每行一个配置文件名称。default 配置文件始终可用。",
+    browserProfilesPlaceholder: "work\npersonal",
+    browserProxyLabel: "代理",
+    browserProxyHelp: "浏览器的可选 HTTP/HTTPS/SOCKS 代理，例如 http://127.0.0.1:8885。留空则不使用代理。关闭后重新打开浏览器时生效。",
+    browserProxyPlaceholder: "http://127.0.0.1:8885",
+    statsHeading: "工具使用情况",
+    statsHelp: "当前会话中最常用的工具。",
+    refreshStats: "刷新",
+    statsTotalCalls: "总调用",
+    statsTotalOK: "成功",
+    statsTotalErrors: "错误",
+    toolUsageTitle: "最常用工具",
+    toolUsageHelp: "按调用次数排序。",
+    toolColumnCalls: "调用",
+    toolColumnOK: "成功",
+    toolColumnErrors: "错误",
+    noStats: "暂无工具使用记录。",
+    thinkEnabledLabel: "启用思考",
+    thinkEnabledHelp: "允许该模型使用扩展思考。",
   },
 };
 
@@ -1219,6 +1451,8 @@ const dirty = {
   skillPath: false,
   bash: false,
   semantic: false,
+  judge: false,
+  browser: false,
 };
 
 function detectLang() {
@@ -1511,6 +1745,86 @@ function applyLang() {
   syncModelStates();
   updateDirtyState();
   refreshStatus();
+  renderStats(window._lastStats || null);
+}
+
+function renderStats(snapshot) {
+  window._lastStats = snapshot;
+  const summary = $("statsSummary");
+  const usage = $("toolUsage");
+  if (!summary || !usage) return;
+
+  if (!snapshot || (snapshot.totalCalls == null && Object.keys(snapshot.byTool || {}).length === 0)) {
+    summary.innerHTML = "";
+    usage.innerHTML = el("div", { class: "stats-empty" }, t("noStats"));
+    return;
+  }
+
+  const totalCalls = snapshot.totalCalls || 0;
+  const totalOK = snapshot.totalOK || 0;
+  const totalErrors = snapshot.totalErrors || 0;
+
+  summary.innerHTML = `
+    <div class="stat-card">
+      <div class="stat-value">${String(totalCalls)}</div>
+      <div class="stat-label">${t("statsTotalCalls")}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${String(totalOK)}</div>
+      <div class="stat-label">${t("statsTotalOK")}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${String(totalErrors)}</div>
+      <div class="stat-label">${t("statsTotalErrors")}</div>
+    </div>
+  `;
+
+  const byTool = snapshot.byTool || {};
+  const okByTool = snapshot.ok || {};
+  const errorsByTool = snapshot.errors || {};
+  const tools = Object.keys(byTool).sort((a, b) => (byTool[b] || 0) - (byTool[a] || 0));
+
+  if (tools.length === 0) {
+    usage.innerHTML = el("div", { class: "stats-empty" }, t("noStats"));
+    return;
+  }
+
+  const rows = tools.map(tool => {
+    const calls = byTool[tool] || 0;
+    const ok = okByTool[tool] || 0;
+    const errors = errorsByTool[tool] || 0;
+    return el("div", { class: "tool-row" },
+      el("div", { class: "tool-name" }, tool),
+      el("div", { class: "tool-metric" }, el("div", { class: "tool-metric-value" }, String(calls)), t("toolColumnCalls")),
+      el("div", { class: "tool-metric tool-metric-ok" }, el("div", { class: "tool-metric-value" }, String(ok)), t("toolColumnOK")),
+      el("div", { class: "tool-metric tool-metric-error" }, el("div", { class: "tool-metric-value" }, String(errors)), t("toolColumnErrors")),
+    );
+  });
+
+  usage.innerHTML = "";
+  const head = el("div", { class: "tool-usage-head" },
+    el("div", null,
+      el("div", { class: "tool-usage-title", "data-i18n": "toolUsageTitle" }, t("toolUsageTitle")),
+      el("div", { class: "tool-usage-help", "data-i18n": "toolUsageHelp" }, t("toolUsageHelp")),
+    ),
+  );
+  const list = el("div", { class: "tool-list" }, ...rows);
+  usage.appendChild(head);
+  usage.appendChild(list);
+}
+
+async function loadStats() {
+  try {
+    const res = await fetch("/api/stats", { method: "GET" });
+    const snapshot = await res.json();
+    if (!res.ok) {
+      console.error("Failed to load stats", snapshot);
+      return;
+    }
+    renderStats(snapshot);
+  } catch (err) {
+    console.error("loadStats failed", err);
+  }
 }
 
 function setLang(next) {
@@ -1558,6 +1872,11 @@ function addModelRow(model) {
     id: "model-think-" + id,
     "aria-label": t("thinkLevel"),
   });
+  const thinkEnabled = el("input", {
+    id: "model-think-enabled-" + id,
+    type: "checkbox",
+    "aria-label": t("thinkEnabledLabel"),
+  });
   const image = el("input", {
     id: "model-image-" + id,
     type: "checkbox",
@@ -1594,6 +1913,7 @@ function addModelRow(model) {
   if (value.baseUrl) base.value = value.baseUrl;
   if (value.contextWindow) context.value = value.contextWindow;
   if (value.imageEnabled) image.checked = true;
+  if (value.thinkEnabled != null) thinkEnabled.checked = value.thinkEnabled;
   if (value.default || (!model && modelRows.length === 0)) def.checked = true;
 
   const badge = el("span", { class: "model-badge", hidden: "hidden" }, t("startupModel"));
@@ -1605,10 +1925,13 @@ function addModelRow(model) {
     base,
     api,
     think,
+    thinkEnabled,
     context,
     image,
     imageTouched: false,
     origImageEnabled: value.imageEnabled != null ? value.imageEnabled : null,
+    thinkEnabledTouched: false,
+    origThinkEnabled: value.thinkEnabled != null ? value.thinkEnabled : null,
     def,
     fetchButton,
     modelPicker,
@@ -1642,6 +1965,7 @@ function addModelRow(model) {
     field("apiBase", "apiBaseHelp", base, "field-base", base.id),
     field("apiKey", "apiKeyHelp", keyShell, "field-key", key.id),
     field("thinkLevel", "thinkLevelHelp", think, "field-think", think.id),
+    field("thinkEnabled", "thinkEnabledHelp", thinkEnabled, "field-think-enabled", thinkEnabled.id),
     field("contextWindow", "contextWindowHelp", context, "field-context", context.id, "tokens"),
     field("imageEnabled", "imageEnabledHelp", image, "field-image", image.id),
   );
@@ -1678,6 +2002,7 @@ function addModelRow(model) {
   base.addEventListener("input", () => { clearModelOptions(row); markDirty("models"); });
   api.addEventListener("change", () => { clearModelOptions(row); markDirty("models"); });
   think.addEventListener("change", () => { markDirty("models"); });
+  thinkEnabled.addEventListener("change", () => { row.thinkEnabledTouched = true; markDirty("models"); });
   key.addEventListener("input", () => {
     key.setAttribute("aria-invalid", "false");
     clearModelOptions(row);
@@ -1828,6 +2153,14 @@ async function load(messageKey, expectedVersion) {
     $("semanticEmbeddingModel").value = semantic.embeddingModel || "";
     $("semanticFields").hidden = !$("semanticEnabled").checked;
 
+    const judge = doc.judge || {};
+    $("judgeOllamaBaseUrl").value = judge.ollamaBaseUrl || "";
+    $("judgeModel").value = judge.model || "";
+
+    const browser = doc.browser || {};
+    $("browserProfiles").value = (browser.profiles || []).join("\n");
+    $("browserProxy").value = browser.proxy || "";
+
     updateModeHint();
     resetDirty();
     if (messageKey) setStatusKey(messageKey, "success");
@@ -1847,6 +2180,7 @@ function buildPayload() {
       apiKey: row.key.value.trim(),
       baseUrl: row.base.value.trim(),
       api: row.api.value.trim() || null,
+      thinkEnabled: row.thinkEnabledTouched ? row.thinkEnabled.checked : row.origThinkEnabled,
       thinkLevel: row.think.value.trim() || null,
       contextWindow: readOptionalInteger(row.context),
       imageEnabled: row.imageTouched ? row.image.checked : row.origImageEnabled,
@@ -1865,6 +2199,14 @@ function buildPayload() {
       ollamaBaseUrl: $("semanticOllamaBaseUrl").value.trim() || null,
       embeddingModel: $("semanticEmbeddingModel").value.trim() || null,
     } : (orig && orig.semanticSearch != null ? orig.semanticSearch : null),
+    judge: dirty.judge ? {
+      model: $("judgeModel").value.trim() || null,
+      ollamaBaseUrl: $("judgeOllamaBaseUrl").value.trim() || null,
+    } : (orig && orig.judge != null ? orig.judge : null),
+    browser: dirty.browser ? {
+      profiles: $("browserProfiles").value.split("\n").map(s => s.trim()).filter(Boolean),
+      proxy: $("browserProxy").value.trim() || null,
+    } : (orig && orig.browser != null ? orig.browser : null),
   };
 
   if (permissions.bash && !dirty.bash) {
@@ -1914,6 +2256,7 @@ async function save() {
 $("langToggle").addEventListener("click", () => setLang(lang === "zh" ? "en" : "zh"));
 $("add").addEventListener("click", () => addModelRow(null));
 $("save").addEventListener("click", save);
+$("refreshStats").addEventListener("click", loadStats);
 wire("mode", "mode", "change");
 wire("askTimeout", "askTimeout");
 wire("wow", "wow", "change");
@@ -1928,8 +2271,15 @@ $("semanticEnabled").addEventListener("change", () => {
 $("semanticOllamaBaseUrl").addEventListener("input", () => markDirty("semantic"));
 $("semanticEmbeddingModel").addEventListener("input", () => markDirty("semantic"));
 
+$("judgeOllamaBaseUrl").addEventListener("input", () => markDirty("judge"));
+$("judgeModel").addEventListener("input", () => markDirty("judge"));
+
+$("browserProfiles").addEventListener("input", () => markDirty("browser"));
+$("browserProxy").addEventListener("input", () => markDirty("browser"));
+
 applyLang();
 load();
+loadStats();
 </script>
 </body>
 </html>

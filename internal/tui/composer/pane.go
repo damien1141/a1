@@ -63,10 +63,13 @@ type ComposerPane struct {
 	requestFocusEditor    func()
 	requestFocus          func(components.Widget)
 	ctrlClose             func()
+	cyclePermissionMode   func()
+	cycleThinkLevel       func()
 	imageEnabled          func() bool
 
 	history        []string
-	historyIdx     int // -1 when not browsing
+	historyIdx     int    // -1 when not browsing
+	draft          string // cached input before entering history browse mode
 	onHistoryStore func(string)
 }
 
@@ -114,6 +117,8 @@ func (c *ComposerPane) Wire(
 	requestFocusEditor func(),
 	requestFocus func(components.Widget),
 	ctrlClose func(),
+	cyclePermissionMode func(),
+	cycleThinkLevel func(),
 ) {
 	if c == nil {
 		return
@@ -134,6 +139,8 @@ func (c *ComposerPane) Wire(
 	c.requestFocusEditor = requestFocusEditor
 	c.requestFocus = requestFocus
 	c.ctrlClose = ctrlClose
+	c.cyclePermissionMode = cyclePermissionMode
+	c.cycleThinkLevel = cycleThinkLevel
 
 	c.palette.FocusReturn = &c.Chat
 	c.listPicker.FocusReturn = &c.Chat
@@ -157,7 +164,34 @@ func (c *ComposerPane) Wire(
 		if c.Chat.MentionOpen || c.Chat.SlashOpen || c.Chat.QuestionOpen {
 			return false
 		}
+		if c.historyIdx == -1 {
+			// Not currently browsing history.
+			if c.draft == "" {
+				c.draft = c.Chat.Value
+			}
+			// Always allow vertical cursor movement within multi-line input first.
+			if canMoveCursor(c.Chat.Value, c.Chat.Cursor, delta) {
+				return false
+			}
+			// Cursor is at the top/bottom edge: switch to history navigation.
+			c.navigateHistory(delta)
+			return true
+		}
+		// Already browsing history.
+		// Allow cursor movement within the current history entry first.
+		if canMoveCursor(c.Chat.Value, c.Chat.Cursor, delta) {
+			return false
+		}
 		c.navigateHistory(delta)
+		// If we landed outside history (back to empty/new), restore the draft.
+		if c.historyIdx == -1 && c.draft != "" {
+			c.Chat.Value = c.draft
+			c.Chat.Cursor = len(c.draft)
+			c.draft = ""
+			if c.Chat.OnChange != nil {
+				c.Chat.OnChange(c.Chat.Value)
+			}
+		}
 		return true
 	}
 	c.mention.OnAccept = c.acceptMention
@@ -445,6 +479,20 @@ func (c *ComposerPane) ClearBottomLeftLabel() {
 	}
 }
 
+// SetTopLeftLabel sets the composer top-left label (e.g. TPS).
+func (c *ComposerPane) SetTopLeftLabel(label layout.BorderLabel) {
+	if c != nil {
+		c.Chat.TopLeftLabel = label
+	}
+}
+
+// ClearTopLeftLabel clears the composer top-left label.
+func (c *ComposerPane) ClearTopLeftLabel() {
+	if c != nil {
+		c.Chat.TopLeftLabel = layout.BorderLabel{}
+	}
+}
+
 // SetBottomLeftLabel sets the composer status slot (activity or tokens).
 func (c *ComposerPane) SetBottomLeftLabel(label layout.BorderLabel) {
 	if c != nil {
@@ -667,6 +715,13 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 			ctx.ConsumeAndRedraw()
 			return
 		}
+		if ev.Press && ev.Mods.Has(xui.ModShift) && ev.Code == xui.KeyTab {
+			if c.cyclePermissionMode != nil {
+				c.cyclePermissionMode()
+			}
+			ctx.ConsumeAndRedraw()
+			return
+		}
 		if c.palette.Open {
 			c.palette.Handle(ctx, ev)
 			if !c.palette.Open {
@@ -696,6 +751,13 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 			}
 			return
 		}
+		if ev.Press && ev.Code == xui.KeyTab {
+			if c.cycleThinkLevel != nil {
+				c.cycleThinkLevel()
+			}
+			ctx.ConsumeAndRedraw()
+			return
+		}
 		if ev.Code == xui.KeyPageUp || ev.Code == xui.KeyPageDown {
 			if c.transcript != nil {
 				c.transcript.HandlePageKey(ctx, ev)
@@ -705,18 +767,6 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 		if ev.Press && ev.Mods.Has(xui.ModCtrl) && ev.Code == xui.KeyRune && (ev.Rune == 'v' || ev.Rune == 'V') {
 			// Ctrl+V: attempt to attach an image from the system clipboard.
 			if c.tryAttachClipboardImage(ctx) {
-				return
-			}
-		}
-		if ev.Press && !c.Chat.MentionOpen && !c.Chat.SlashOpen && !c.Chat.QuestionOpen {
-			if ev.Code == xui.KeyUp {
-				c.navigateHistory(-1)
-				ctx.ConsumeAndRedraw()
-				return
-			}
-			if ev.Code == xui.KeyDown {
-				c.navigateHistory(1)
-				ctx.ConsumeAndRedraw()
 				return
 			}
 		}
@@ -1111,6 +1161,7 @@ func (c *ComposerPane) pushHistory(text string) {
 	}
 	c.history = append(c.history, text)
 	c.historyIdx = -1
+	c.draft = ""
 	if c.onHistoryStore != nil {
 		c.onHistoryStore(text)
 	}
@@ -1126,6 +1177,7 @@ func (c *ComposerPane) navigateHistory(delta int) {
 		} else {
 			c.Chat.Value = ""
 			c.Chat.Cursor = 0
+			c.draft = ""
 			if c.Chat.OnChange != nil {
 				c.Chat.OnChange("")
 			}
@@ -1139,12 +1191,22 @@ func (c *ComposerPane) navigateHistory(delta int) {
 		return
 	}
 	if c.historyIdx >= len(c.history) {
-		c.Chat.Value = ""
-		c.Chat.Cursor = 0
-		c.historyIdx = -1
-		if c.Chat.OnChange != nil {
-			c.Chat.OnChange("")
+		// Restore the draft when scrolling past the newest history entry.
+		if c.draft != "" {
+			c.Chat.Value = c.draft
+			c.Chat.Cursor = len(c.draft)
+			c.draft = ""
+			if c.Chat.OnChange != nil {
+				c.Chat.OnChange(c.Chat.Value)
+			}
+		} else {
+			c.Chat.Value = ""
+			c.Chat.Cursor = 0
+			if c.Chat.OnChange != nil {
+				c.Chat.OnChange("")
+			}
 		}
+		c.historyIdx = -1
 		return
 	}
 	c.Chat.Value = c.history[c.historyIdx]
@@ -1152,6 +1214,16 @@ func (c *ComposerPane) navigateHistory(delta int) {
 	if c.Chat.OnChange != nil {
 		c.Chat.OnChange(c.Chat.Value)
 	}
+}
+
+// canMoveCursor reports whether the cursor can still move vertically by delta
+// within the current input. It mirrors ChatInput.moveVert so ComposerPane can
+// defer to cursor movement before falling back to history navigation.
+func canMoveCursor(value string, cursor, delta int) bool {
+	if delta < 0 {
+		return chat.LineStart(value, cursor) > 0
+	}
+	return chat.LineEnd(value, cursor) < len(value)
 }
 
 func mentionNavKey(e xui.KeyEvent) bool {

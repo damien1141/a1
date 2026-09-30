@@ -60,6 +60,8 @@ func NewBuiltinRegistry(
 	}
 	diff := &DiffCommands{Open: openDiff}
 	code := &CodeCommands{Open: openCode}
+	browser := &BrowserCommands{}
+	snapshot := &SnapshotCommands{}
 
 	sessions.Register(r)
 	branches.Register(r)
@@ -68,6 +70,8 @@ func NewBuiltinRegistry(
 	skills.Register(r)
 	diff.Register(r)
 	code.Register(r)
+	browser.Register(r)
+	snapshot.Register(r)
 
 	return &Builtin{Registry: r, Sessions: sessions, Branches: branches, Ext: ext}
 }

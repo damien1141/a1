@@ -9,7 +9,7 @@
 ## 与 phi 的区别
 
 - **身份重命名：** CLI 是 `a1`，配置目录是 `~/.a1/`，环境变量是 `A1_*`。
-- **工具集扩展：** `context`、`tokenbudget`、`errtrans`、`build`、`deadcode`、`coverage`、`doc`、`apidoc`、`vuln`、`nplusone`、`secret`、`error`、`test`、`rank`、`impact`、`deps`、`migration`、`property`、`stack`、`todo`、`scaffold`、`journal`。
+- **工具集扩展：** `context`、`tokenbudget`、`errtrans`、`build`、`deadcode`、`coverage`、`doc`、`apidoc`、`vuln`、`nplusone`、`secret`、`error`、`test`、`rank`、`impact`、`deps`、`migration`、`property`、`stack`、`todo`、`scaffold`、`journal`、`judge`、`scratchpad`、`config_validate`、`fetch`、`runtime`、`browser`。
 - **Fold 感知的上下文分析：** `context` 报告受保护区域、最近区纪律、增长门控压缩和分层统计，而不是泛化的预算警告。
 - **任务感知的预算分配：** `tokenbudget` 按任务类型在工具间分配上下文预算，优先保障高价值分析通道。
 - **错误归一化：** `errtrans` 把 Rust、Python、Bash、Lua、TypeScript、Go 和构建系统的编译器/运行时/Shell 错误映射为可操作修复。
@@ -21,6 +21,9 @@
 - **语义代码搜索：** 可选的本地语义搜索，基于 Ollama 嵌入 + 文件块索引；通过 config UI 或 `~/.a1/config.yaml` 启用，以 `vector_search` 工具暴露给模型。
 - **调用图 / 依赖追踪：** `graph` 工具从源码导入语句构建有向依赖图。默认构建使用轻量解析器支持 Go、Python、Rust 和 JS/TS；使用 `-tags treesitter` 构建可启用完整 tree-sitter 语法支持，覆盖 40+ 语言。
 - **批量编辑器与依赖排序：** `batch` 工具使用拓扑排序对文件进行依赖排序，确保先编辑依赖项再编辑被依赖项。
+- **测试影响选择器：** `testimpact` 工具反转调用图，查找导入已变更源文件的测试文件，从而只运行受影响的测试。
+- **环境快照 / 回滚：** `snapshot` 工具在 risky changes 前创建临时 git 分支，事后可回滚或删除。
+- **权限层：** 默认模式限制读写仅在项目目录内；提供 yolo 模式和按需目录授权提示。
 
 底层仍然是 phi：相同的 TUI、相同的子代理模型、相同的 MCP 元工具设计、相同的扩展协议。
 
@@ -98,7 +101,15 @@ phi 已经是我用过的最精简、最实用的终端编码代理框架。这�
 | `journal`       | 操作日志 / 审计追踪                       |
 | `graph`         | 基于导入语句的依赖/调用图 explorer         |
 | `batch`         | 依赖排序的批量文件编辑                     |
+| `testimpact`    | 源文件变更影响的测试文件                   |
+| `snapshot`      | 基于 git 的快照与回滚，保障安全编辑         |
 | `vector_search` | 基于 Ollama 嵌入的本地语义代码搜索         |
+| `judge`         | 基于 Ollama 的本地判断/评估                 |
+| `scratchpad`    | 在 ~/.a1/scratchpad 下做笔记 CRUD          |
+| `config_validate` | 校验 ~/.a1/config.yaml 与环境变量         |
+| `fetch`         | 沙箱化 HTTP GET/POST 网页获取器            |
+| `runtime`       | 解析 `go test -json` 失败与堆栈信息        |
+| `browser`       | 通过 Playwright 控制实时浏览器              |
 | `agent_spawn`   | 启动隔离子代理任务（异步）                |
 | `agent_wait`    | 等待任务；仅返回简短总结                  |
 | `agent_list`    | 列出任务                                  |

@@ -63,23 +63,26 @@ type contentPart struct {
 // System text uses role "developer" when thinking is enabled (OpenAI Responses behavior).
 func BuildRequest(cfg llm.ModelConfig, system string, messages []llm.Message, tools []llm.ToolDefinition) *Request {
 	input := make([]InputItem, 0, len(messages)+1)
+
+	// OpenAI requires system/developer messages at the beginning of the
+	// input. The session may inject a RoleSystem message (e.g. session
+	// memory) in the middle of the conversation; collect all system text and
+	// emit it once up front instead of interleaving it.
+	var extraSystem strings.Builder
 	if s := strings.TrimSpace(system); s != "" {
-		role := "system"
-		if cfg.Think.Enabled {
-			role = "developer"
-		}
-		input = append(input, InputItem{Role: role, Content: s})
+		extraSystem.WriteString(s)
 	}
 
 	msgIndex := 0
 	for _, m := range messages {
 		switch m.Role {
 		case llm.RoleSystem:
-			role := "system"
-			if cfg.Think.Enabled {
-				role = "developer"
+			if strings.TrimSpace(m.Content) != "" {
+				if extraSystem.Len() > 0 {
+					extraSystem.WriteString("\n\n")
+				}
+				extraSystem.WriteString(strings.TrimSpace(m.Content))
 			}
-			input = append(input, InputItem{Role: role, Content: m.Content})
 		case llm.RoleUser:
 			input = append(input, userItem(m))
 		case llm.RoleAssistant:
@@ -92,6 +95,16 @@ func BuildRequest(cfg llm.ModelConfig, system string, messages []llm.Message, to
 			})
 		}
 		msgIndex++
+	}
+
+	// Prepend the consolidated system message so it sits before every user
+	// and assistant turn, as OpenAI requires.
+	if extraSystem.Len() > 0 {
+		role := "system"
+		if cfg.Think.Enabled {
+			role = "developer"
+		}
+		input = append([]InputItem{{Role: role, Content: extraSystem.String()}}, input...)
 	}
 
 	apiTools := make([]Tool, len(tools))

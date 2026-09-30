@@ -30,24 +30,24 @@ func VectorTool() tooldef.Tool {
 			Description: vectorDescription,
 			Params: &llm.FunctionParameters{
 				Type: "object",
-			Properties: llm.Object{
-				"query": llm.Object{
-					"type":        "string",
-					"description": "Natural language search query. Example: \"how is authentication implemented\"",
+				Properties: llm.Object{
+					"query": llm.Object{
+						"type":        "string",
+						"description": "Natural language search query. Example: \"how is authentication implemented\"",
+					},
+					"path": llm.Object{
+						"type":        "string",
+						"description": "Directory to search. Example: ./internal",
+					},
+					"limit": llm.Object{
+						"type":        "integer",
+						"description": fmt.Sprintf("Maximum results. Example: 20 (default: %d)", vectorDefaultLimit),
+					},
+					"reindex": llm.Object{
+						"type":        "boolean",
+						"description": "Force rebuild the index before searching.",
+					},
 				},
-				"path": llm.Object{
-					"type":        "string",
-					"description": "Directory to search. Example: ./internal",
-				},
-				"limit": llm.Object{
-					"type":        "integer",
-					"description": fmt.Sprintf("Maximum results. Example: 20 (default: %d)", vectorDefaultLimit),
-				},
-				"reindex": llm.Object{
-					"type":        "boolean",
-					"description": "Force rebuild the index before searching.",
-				},
-			},
 				Required: []string{"query"},
 			},
 			Readable: true,

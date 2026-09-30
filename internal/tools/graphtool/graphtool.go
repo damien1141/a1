@@ -104,7 +104,11 @@ func runGraph(ctx context.Context, input json.RawMessage) (tooldef.Result, error
 	}
 	if target == "" {
 		// Fallback: show top imported files as an overview.
-		return tooldef.Result{Content: renderOverview(g), Detail: fmt.Sprintf("%d files indexed", g.Len()), Output: renderOverview(g)}, nil
+		return tooldef.Result{
+			Content: renderOverview(g),
+			Detail:  fmt.Sprintf("%d files indexed", g.Len()),
+			Output:  renderOverview(g),
+		}, nil
 	}
 
 	direction := strings.ToLower(strings.TrimSpace(in.Direction))
@@ -155,7 +159,11 @@ func runGraph(ctx context.Context, input json.RawMessage) (tooldef.Result, error
 	}
 
 	if len(deduped) == 0 {
-		return tooldef.Result{Content: "No dependency edges found for " + target, Detail: "0 results", Output: "No dependency edges found for " + target}, nil
+		return tooldef.Result{
+			Content: "No dependency edges found for " + target,
+			Detail:  "0 results",
+			Output:  "No dependency edges found for " + target,
+		}, nil
 	}
 
 	content := renderGraphResults(target, direction, deduped)

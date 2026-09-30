@@ -6,7 +6,9 @@ import (
 	"github.com/damien1141/a1/internal/tools/apitool"
 	"github.com/damien1141/a1/internal/tools/bashtool"
 	"github.com/damien1141/a1/internal/tools/batchtool"
+	"github.com/damien1141/a1/internal/tools/browsertool"
 	"github.com/damien1141/a1/internal/tools/buildtool"
+	"github.com/damien1141/a1/internal/tools/configvalidatortool"
 	"github.com/damien1141/a1/internal/tools/contexttool"
 	"github.com/damien1141/a1/internal/tools/coveragetool"
 	"github.com/damien1141/a1/internal/tools/deadcode"
@@ -15,12 +17,14 @@ import (
 	"github.com/damien1141/a1/internal/tools/errortool"
 	"github.com/damien1141/a1/internal/tools/errortrans"
 	"github.com/damien1141/a1/internal/tools/errpattern"
+	"github.com/damien1141/a1/internal/tools/fetchtool"
 	"github.com/damien1141/a1/internal/tools/findtool"
 	"github.com/damien1141/a1/internal/tools/gittool"
 	"github.com/damien1141/a1/internal/tools/graphtool"
 	"github.com/damien1141/a1/internal/tools/greptool"
 	"github.com/damien1141/a1/internal/tools/impacttool"
 	"github.com/damien1141/a1/internal/tools/journaltool"
+	"github.com/damien1141/a1/internal/tools/judgetool"
 	"github.com/damien1141/a1/internal/tools/lstool"
 	"github.com/damien1141/a1/internal/tools/mcptool"
 	"github.com/damien1141/a1/internal/tools/migrationtool"
@@ -28,7 +32,9 @@ import (
 	"github.com/damien1141/a1/internal/tools/propertytool"
 	"github.com/damien1141/a1/internal/tools/ranktool"
 	"github.com/damien1141/a1/internal/tools/readtool"
+	"github.com/damien1141/a1/internal/tools/runtimetool"
 	"github.com/damien1141/a1/internal/tools/scaffoldtool"
+	"github.com/damien1141/a1/internal/tools/scratchpadtool"
 	"github.com/damien1141/a1/internal/tools/secrettool"
 	"github.com/damien1141/a1/internal/tools/snapshottool"
 	"github.com/damien1141/a1/internal/tools/stacktool"
@@ -125,20 +131,26 @@ func DefaultTools() []Tool {
 		propertytool.PropertyTool(),
 		doctool.DocTool(),
 		nplusonetool.NplusoneTool(),
-	apidoc.ApidocTool(),
+		apidoc.ApidocTool(),
 		vulntool.VulnTool(),
 		errpattern.ErrPatternTool(),
 		scaffoldtool.ScaffoldTool(),
 		buildtool.BuildTool(),
 		tokentool.TokenTool(),
 		errortrans.ErrtransTool(),
+		fetchtool.FetchTool(),
+		browsertool.BrowserTool(),
 		contexttool.ContextTool(),
 		journaltool.JournalTool(),
+		configvalidatortool.ConfigValidatorTool(),
+		runtimetool.RuntimeTool(),
 		vectortool.VectorTool(),
 		graphtool.GraphTool(),
 		batchtool.BatchTool(),
 		snapshottool.SnapshotTool(),
 		testimpacttool.TestImpactTool(),
+		judgetool.JudgeTool(),
+		scratchpadtool.ScratchpadTool(),
 	}
 }
 
@@ -169,19 +181,24 @@ func ReadonlyTools() []Tool {
 		propertytool.PropertyTool(),
 		doctool.DocTool(),
 		nplusonetool.NplusoneTool(),
-	apidoc.ApidocTool(),
+		apidoc.ApidocTool(),
 		vulntool.VulnTool(),
 		errpattern.ErrPatternTool(),
 		scaffoldtool.ScaffoldTool(),
 		buildtool.BuildTool(),
 		tokentool.TokenTool(),
 		errortrans.ErrtransTool(),
+		fetchtool.FetchTool(),
 		contexttool.ContextTool(),
 		journaltool.JournalTool(),
+		configvalidatortool.ConfigValidatorTool(),
+		runtimetool.RuntimeTool(),
 		vectortool.VectorTool(),
 		graphtool.GraphTool(),
 		batchtool.BatchTool(),
 		snapshottool.SnapshotTool(),
 		testimpacttool.TestImpactTool(),
+		judgetool.JudgeTool(),
+		scratchpadtool.ScratchpadTool(),
 	}
 }

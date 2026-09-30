@@ -20,6 +20,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/damien1141/a1/internal/telemetry"
 	"github.com/damien1141/a1/internal/util"
 )
 
@@ -32,12 +33,14 @@ var configHTML []byte
 // drive the editor API. Pointer fields preserve "key absent" across saves so
 // untouched sections are never rewritten.
 type configDoc struct {
-	Path           string             `yaml:"-"                     json:"path,omitempty"`
-	Models         []modelDoc         `yaml:"models"                json:"models"`
-	SkillPath      *string            `yaml:"skill_path,omitempty"  json:"skillPath,omitempty"`
-	Permissions    *permDoc           `yaml:"permissions,omitempty" json:"permissions,omitempty"`
-	Agents         *agentsDoc         `yaml:"agents,omitempty"      json:"agents,omitempty"`
+	Path           string             `yaml:"-"                         json:"path,omitempty"`
+	Models         []modelDoc         `yaml:"models"                    json:"models"`
+	SkillPath      *string            `yaml:"skill_path,omitempty"      json:"skillPath,omitempty"`
+	Permissions    *permDoc           `yaml:"permissions,omitempty"     json:"permissions,omitempty"`
+	Agents         *agentsDoc         `yaml:"agents,omitempty"          json:"agents,omitempty"`
 	SemanticSearch *semanticSearchDoc `yaml:"semantic_search,omitempty" json:"semanticSearch,omitempty"`
+	Judge          *judgeDoc          `yaml:"judge,omitempty"           json:"judge,omitempty"`
+	Browser        *browserDoc        `yaml:"browser,omitempty"         json:"browser,omitempty"`
 }
 
 type modelDoc struct {
@@ -47,11 +50,11 @@ type modelDoc struct {
 	ContextWindow *int   `yaml:"context_window,omitempty" json:"contextWindow,omitempty"`
 	// ImageEnabled is a pointer so the editor can omit the key until the user
 	// toggles it (absent vs false). Runtime parse treats absence as false.
-	ImageEnabled *bool  `yaml:"image_enabled,omitempty" json:"imageEnabled,omitempty"`
-	API          string `yaml:"api,omitempty"           json:"api,omitempty"` // OpenAI | OpenAIResponses | Anthropic | Gemini
-	ThinkEnabled *bool  `yaml:"think_enabled,omitempty" json:"thinkEnabled,omitempty"`
-	ThinkLevel   string `yaml:"think_level,omitempty"   json:"thinkLevel,omitempty"`
-	Default      bool   `yaml:"default,omitempty"       json:"default"`
+	ImageEnabled *bool  `yaml:"image_enabled,omitempty"  json:"imageEnabled,omitempty"`
+	API          string `yaml:"api,omitempty"            json:"api,omitempty"` // OpenAI | OpenAIResponses | Anthropic | Gemini
+	ThinkEnabled *bool  `yaml:"think_enabled,omitempty"  json:"thinkEnabled,omitempty"`
+	ThinkLevel   string `yaml:"think_level,omitempty"    json:"thinkLevel,omitempty"`
+	Default      bool   `yaml:"default,omitempty"        json:"default"`
 }
 
 type permDoc struct {
@@ -87,6 +90,15 @@ type semanticSearchDoc struct {
 	EmbeddingModel string `yaml:"embedding_model" json:"embeddingModel"`
 }
 
+type judgeDoc struct {
+	Model         string `yaml:"model"           json:"model"`
+	OllamaBaseURL string `yaml:"ollama_base_url" json:"ollamaBaseUrl"`
+}
+
+type browserDoc struct {
+	Profiles []string `yaml:"profiles" json:"profiles"`
+}
+
 type modelListRequest struct {
 	BaseURL string `json:"baseUrl"`
 	APIKey  string `json:"apiKey"`
@@ -118,7 +130,7 @@ type configHandler struct {
 }
 
 func (h *configHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if (r.URL.Path == "/api/config" || r.URL.Path == "/api/models") && !isLoopbackHost(r.Host) {
+	if (r.URL.Path == "/api/config" || r.URL.Path == "/api/models" || r.URL.Path == "/api/stats") && !isLoopbackHost(r.Host) {
 		writeConfigErr(w, http.StatusForbidden, errors.New("request origin is not allowed"))
 		return
 	}
@@ -131,6 +143,8 @@ func (h *configHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleConfig(w, r)
 	case "/api/models":
 		h.handleModels(w, r)
+	case "/api/stats":
+		h.handleStats(w, r)
 	default:
 		http.NotFound(w, r)
 	}
@@ -257,6 +271,24 @@ func (*configHandler) handleModels(w http.ResponseWriter, r *http.Request) {
 	writeConfigJSON(w, struct {
 		Models []string `json:"models"`
 	}{Models: models})
+}
+
+func (h *configHandler) handleStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !isLoopbackHost(r.Host) {
+		writeConfigErr(w, http.StatusForbidden, errors.New("request origin is not allowed"))
+		return
+	}
+
+	rec := telemetry.GlobalRecorder()
+	snapshot := telemetry.Snapshot{}
+	if rec != nil {
+		snapshot = rec.Snapshot()
+	}
+	writeConfigJSON(w, snapshot)
 }
 
 func modelListHTTPClient() *http.Client {

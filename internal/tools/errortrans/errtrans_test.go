@@ -26,7 +26,9 @@ func TestRunErrtrans_RustBorrowChecker(t *testing.T) {
 }
 
 func TestRunErrtrans_PythonImport(t *testing.T) {
-	raw, _ := json.Marshal(errtransInput{Text: "ModuleNotFoundError: No module named 'requests'", Lang: "python", Limit: 5})
+	raw, _ := json.Marshal(
+		errtransInput{Text: "ModuleNotFoundError: No module named 'requests'", Lang: "python", Limit: 5},
+	)
 	out, err := runErrtrans(t.Context(), raw)
 	require.NoError(t, err)
 	assert.Contains(t, out.Content, "python")
@@ -69,7 +71,9 @@ func TestRunErrtrans_AutoDetectLanguage(t *testing.T) {
 }
 
 func TestRunErrtrans_Limit(t *testing.T) {
-	raw, _ := json.Marshal(errtransInput{Text: "ModuleNotFoundError: No module named 'requests'", Lang: "python", Limit: 2})
+	raw, _ := json.Marshal(
+		errtransInput{Text: "ModuleNotFoundError: No module named 'requests'", Lang: "python", Limit: 2},
+	)
 	out, err := runErrtrans(t.Context(), raw)
 	require.NoError(t, err)
 	lines := strings.Split(strings.TrimSpace(out.Content), "\n")

@@ -86,6 +86,13 @@ func TestProjectDirs(t *testing.T) {
 	assert.Equal(t, filepath.Join(p.Root(), ".a1", "mcp.json"), p.MCPConfigFile())
 }
 
+func TestMemoryDir(t *testing.T) {
+	p := discoverInTempHome(t)
+	// The memory bank lives under ~/.a1/sessions/memory/<session>.jsonl, so the
+	// directory must be separate from the session JSONL store (~/.a1/session).
+	assert.Equal(t, filepath.Join(p.Global().Root(), "sessions", "memory"), p.Global().MemoryDir())
+}
+
 func TestLoadConfigDefaults(t *testing.T) {
 	p := discoverInTempHome(t)
 	require.NoError(t, os.WriteFile(p.Global().ConfigFile(), []byte(`

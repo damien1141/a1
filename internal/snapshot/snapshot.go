@@ -37,22 +37,24 @@ func (m *Manager) Create(ctx context.Context) (string, error) {
 	return name, nil
 }
 
-// Rollback resets the current working tree to the snapshot branch, discarding
-// all changes since the snapshot was taken.
+// Rollback switches the working tree to the snapshot branch so the agent can
+// inspect or continue from the captured state. The snapshot branch is left
+// intact; call Delete when the snapshot is no longer needed.
 func (m *Manager) Rollback(ctx context.Context, snapshotBranch string) error {
 	if m == nil {
 		return fmt.Errorf("snapshot: manager is nil")
 	}
-	if strings.TrimSpace(snapshotBranch) == "" {
+	branch := strings.TrimSpace(snapshotBranch)
+	if branch == "" {
 		return fmt.Errorf("snapshot: branch name is empty")
 	}
 	// Verify the snapshot branch exists.
-	if _, err := execGit(ctx, m.cwd, "rev-parse", "--verify", snapshotBranch); err != nil {
+	if _, err := execGit(ctx, m.cwd, "rev-parse", "--verify", branch); err != nil {
 		return fmt.Errorf("snapshot branch not found: %w", err)
 	}
-	// Reset current branch to snapshot branch, discarding all changes.
-	if _, err := execGit(ctx, m.cwd, "reset", "--hard", snapshotBranch); err != nil {
-		return fmt.Errorf("reset to snapshot: %w", err)
+	// Force checkout the snapshot branch, discarding any uncommitted changes.
+	if _, err := execGit(ctx, m.cwd, "checkout", "-f", branch); err != nil {
+		return fmt.Errorf("checkout snapshot: %w", err)
 	}
 	return nil
 }

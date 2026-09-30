@@ -150,18 +150,24 @@ func BuildRequest(
 ) GeminiRequest {
 	var req GeminiRequest
 
+	// Gemini carries the system prompt in SystemInstruction, not as a
+	// conversation turn. The session may inject a RoleSystem message (e.g.
+	// session memory) in the middle of the messages slice; collect all system
+	// text and merge it into SystemInstruction so nothing is dropped.
+	var systemText strings.Builder
 	if strings.TrimSpace(system) != "" {
-		req.SystemInstruction = &content{
-			Parts: []part{
-				{
-					Text: system,
-				},
-			},
-		}
+		systemText.WriteString(system)
 	}
 
 	for _, m := range messages {
 		switch m.Role {
+		case llm.RoleSystem:
+			if strings.TrimSpace(m.Content) != "" {
+				if systemText.Len() > 0 {
+					systemText.WriteString("\n\n")
+				}
+				systemText.WriteString(strings.TrimSpace(m.Content))
+			}
 		case llm.RoleUser:
 			parts := make([]part, 0, len(m.Images)+1)
 			if m.Content != "" {
@@ -197,6 +203,12 @@ func BuildRequest(
 	req.Tools = []struct {
 		FunctionDeclarations []functionDeclaration `json:"functionDeclarations"`
 	}{{FunctionDeclarations: toToolMessage(tools)}}
+
+	if systemText.Len() > 0 {
+		req.SystemInstruction = &content{
+			Parts: []part{{Text: systemText.String()}},
+		}
+	}
 	return req
 }
 

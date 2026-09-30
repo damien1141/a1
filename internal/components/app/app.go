@@ -23,6 +23,8 @@ type App struct {
 	// pending is a single push-back slot used when coalesceWheel peeks past a
 	// non-wheel event (must not Post to the end of the queue — that reorders).
 	pending xui.Event
+	// exitCode is set by widgets to request a specific process exit code.
+	exitCode int
 }
 
 // NewApp creates an App around an existing Vaxis.
@@ -43,14 +45,15 @@ func (a *App) RequestRedraw() {
 }
 
 // Run starts the event loop and drives root until quit.
-func (a *App) Run(root components.Widget) error {
+// It returns the exit code set via SetExitCode, or 0 on normal quit.
+func (a *App) Run(root components.Widget) (int, error) {
 	a.root = root
 	a.loop = xui.NewLoop(a.vx)
 	a.loop.Start()
 	defer a.loop.Stop()
 
 	if err := a.vx.EnterAltScreen(); err != nil {
-		return err
+		return a.exitCode, err
 	}
 	a.vx.NotifyWinsize(a.loop)
 	a.vx.QueryTerminal(500 * time.Millisecond)
@@ -64,7 +67,7 @@ func (a *App) Run(root components.Widget) error {
 	}
 	a.redraw = true
 	if err := a.draw(); err != nil {
-		return err
+		return a.exitCode, err
 	}
 	a.redraw = false
 
@@ -85,7 +88,7 @@ func (a *App) Run(root components.Widget) error {
 				}
 				if a.redraw {
 					if err := a.draw(); err != nil {
-						return err
+						return a.exitCode, err
 					}
 					a.redraw = false
 				}
@@ -94,11 +97,11 @@ func (a *App) Run(root components.Widget) error {
 		}
 		ev = a.coalesceWheel(ev)
 		if a.handleEvent(ev) {
-			return nil
+			return a.exitCode, nil
 		}
 		if a.redraw {
 			if err := a.draw(); err != nil {
-				return err
+				return a.exitCode, err
 			}
 			a.redraw = false
 		}
@@ -253,6 +256,21 @@ func (a *App) RequestFocus(w components.Widget) {
 	a.redraw = true
 }
 
+// SetExitCode requests a specific exit code when the app quits.
+func (a *App) SetExitCode(code int) {
+	if a != nil {
+		a.exitCode = code
+	}
+}
+
+// ExitCode returns the requested exit code, or 0 if none was set.
+func (a *App) ExitCode() int {
+	if a == nil {
+		return 0
+	}
+	return a.exitCode
+}
+
 // acceptsKeyboardFocus reports whether a mouse-press target should become the
 // keyboard focus. Message-list rows handle clicks (expand/select) but typing
 // must stay on the composer / palette / text fields.
@@ -281,5 +299,8 @@ func (a *App) draw() error {
 	} else {
 		a.vx.Screen().ClearCursor()
 	}
-	return a.vx.Render()
+	if err := a.vx.Render(); err != nil {
+		return err
+	}
+	return nil
 }

@@ -2,11 +2,11 @@ package extension
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 
 	ext "github.com/damien1141/a1/ext/go"
-	"github.com/damien1141/a1/internal/debuglog"
 )
 
 // Load discovers PXB extensions and spawns each subprocess.
@@ -27,7 +27,8 @@ func Load(userDir, projectDir string) (*Runner, []Warning, error) {
 		proc, err := StartProc(context.Background(), d.Manifest, d.Path, logDir, cwd, "")
 		if err != nil {
 			warns = append(warns, Warning{Path: d.Path, Message: err.Error()})
-			debuglog.Logf("extension: load %s: %v", d.Path, err)
+			msg := fmt.Sprintf("extension: load %s: %v", d.Path, err)
+			fmt.Fprintln(os.Stderr, msg)
 			continue
 		}
 		api := ext.NewAPI()

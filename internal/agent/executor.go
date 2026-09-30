@@ -7,12 +7,14 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/damien1141/a1/internal/extension"
 	"github.com/damien1141/a1/internal/llm"
 	"github.com/damien1141/a1/internal/permission"
 	"github.com/damien1141/a1/internal/session"
 	"github.com/damien1141/a1/internal/session/memory"
+	"github.com/damien1141/a1/internal/telemetry"
 	"github.com/damien1141/a1/internal/tools"
 	"github.com/damien1141/a1/internal/util"
 )
@@ -34,6 +36,7 @@ type Executor struct {
 	sessionID  string
 	cwd        string
 	memoryBank sessionMemoryBank
+	telemetry  *telemetry.Recorder
 
 	// askMu serializes approval prompts: a concurrent read-only batch can
 	// otherwise pop multiple dialogs / interleave stdin reads at once.
@@ -54,7 +57,15 @@ func NewExecutor(
 	if gate == nil {
 		gate = permission.AllowAll{}
 	}
-	return &Executor{registry: registry, gate: gate, ask: ask, ext: extRunner}
+	rec := telemetry.NewRecorder()
+	telemetry.SetGlobalRecorder(rec)
+	return &Executor{
+		registry:  registry,
+		gate:      gate,
+		ask:       ask,
+		ext:       extRunner,
+		telemetry: rec,
+	}
 }
 
 // SetMeta attaches session identity used in extension Event payloads.
@@ -73,6 +84,14 @@ func (e *Executor) SetMemoryBank(bank sessionMemoryBank) {
 		return
 	}
 	e.memoryBank = bank
+}
+
+// Telemetry returns the telemetry recorder for this executor.
+func (e *Executor) Telemetry() *telemetry.Recorder {
+	if e == nil {
+		return nil
+	}
+	return e.telemetry
 }
 
 // Run executes tool calls and yields ToolData updates via emit.
@@ -237,7 +256,17 @@ func (e *Executor) runOne(
 		return msg, false, ""
 	}
 
+	if e.telemetry != nil {
+		e.telemetry.Record(telemetry.Event{Kind: telemetry.EventToolCall, Tool: call.Function.Name, CallID: call.ID, When: time.Now()})
+	}
+
 	result, err := tool.Run(tools.WithToolCallID(ctx, call.ID), args)
+
+	if e.telemetry != nil {
+		if err != nil {
+			e.telemetry.Record(telemetry.Event{Kind: telemetry.EventToolErr, Tool: call.Function.Name, CallID: call.ID, When: time.Now(), Err: err.Error()})
+		}
+	}
 
 	var (
 		errText string
@@ -290,7 +319,12 @@ func (e *Executor) runOne(
 
 	if e.memoryBank != nil {
 		memType := memory.EntryContext
-		memContent := fmt.Sprintf("%s(%s) => %s", call.Function.Name, strings.TrimSpace(string(args)), strings.TrimSpace(content))
+		memContent := fmt.Sprintf(
+			"%s(%s) => %s",
+			call.Function.Name,
+			strings.TrimSpace(string(args)),
+			strings.TrimSpace(content),
+		)
 		if err != nil {
 			memType = memory.EntryError
 			memContent = fmt.Sprintf("%s(%s) failed: %s", call.Function.Name, strings.TrimSpace(string(args)), errText)
@@ -306,6 +340,9 @@ func (e *Executor) runOne(
 	}
 	run := e.toolRun(call, session.ToolDone, detail, "", output)
 	run.Expanded = result.Expanded
+	if e.telemetry != nil {
+		e.telemetry.Record(telemetry.Event{Kind: telemetry.EventToolOK, Tool: call.Function.Name, CallID: call.ID, When: time.Now()})
+	}
 	_ = emit(session.ToolData{Run: run})
 	return e.toolMessage(call.ID, modelContent), postStop, postReason
 }

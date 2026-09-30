@@ -54,7 +54,11 @@ func (g GlobalLayout) SkillsDir() string { return filepath.Join(g.root, "skills"
 func (g GlobalLayout) ExtensionsDir() string { return filepath.Join(g.root, "extensions") }
 
 // SessionBase returns the root directory for persisted sessions.
-func (g GlobalLayout) SessionBase() string { return filepath.Join(g.root, "session") }
+	func (g GlobalLayout) SessionBase() string { return filepath.Join(g.root, "session") }
+
+	// MemoryDir returns the root directory for session memory banks
+	// (~/.a1/sessions/memory).
+	func (g GlobalLayout) MemoryDir() string { return filepath.Join(g.root, "sessions", "memory") }
 
 // JobsDir returns the directory for sub-agent job artifacts.
 func (g GlobalLayout) JobsDir() string { return filepath.Join(g.root, "jobs") }
@@ -69,6 +73,9 @@ func (p *Project) SessionDir() string {
 func (p *Project) JobsDir() string {
 	return p.global.JobsDir()
 }
+
+// ScratchpadDir returns ~/.a1/scratchpad for agent notes.
+func (g GlobalLayout) ScratchpadDir() string { return filepath.Join(g.root, "scratchpad") }
 
 // ExtensionsDir returns <root>/.a1/extensions, the per-project extensions
 // directory (user extensions live under Global().ExtensionsDir()).
@@ -111,7 +118,8 @@ func (p *Project) LoadConfig() error {
 }
 
 // ensureGlobalDirs creates the global phi home directories. It is what makes
-// ~/.a1/{bin,skills,extensions,session,jobs} exist from the very first startup.
+// ~/.a1/{bin,skills,extensions,session,jobs,sessions/memory} exist from the
+// very first startup.
 func ensureGlobalDirs(global GlobalLayout) error {
 	dirs := []string{
 		global.Root(),
@@ -120,6 +128,7 @@ func ensureGlobalDirs(global GlobalLayout) error {
 		global.ExtensionsDir(),
 		global.SessionBase(),
 		global.JobsDir(),
+		global.MemoryDir(),
 	}
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0o755); err != nil {

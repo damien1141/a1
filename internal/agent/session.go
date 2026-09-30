@@ -162,7 +162,7 @@ func (s *Session) MemoryBank() *memory.Bank {
 	if sid == "" {
 		return nil
 	}
-	bank, err := memory.OpenBank(sid, project.GetDefaultProject().Global().Root())
+	bank, err := memory.OpenBank(sid, project.GetDefaultProject().Global().MemoryDir())
 	if err != nil {
 		return nil
 	}
@@ -214,7 +214,9 @@ func (s *Session) BuildContext() []llm.Message {
 				var sb strings.Builder
 				sb.WriteString("Session memory (recent decisions, errors, context):\n")
 				for _, e := range recent {
-					sb.WriteString(fmt.Sprintf("- [%s] %s: %s\n", e.Timestamp.Format("2006-01-02T15:04:05Z"), e.Type, e.Content))
+					sb.WriteString(
+						fmt.Sprintf("- [%s] %s: %s\n", e.Timestamp.Format("2006-01-02T15:04:05Z"), e.Type, e.Content),
+					)
 				}
 				msgs = append(msgs, llm.Message{
 					Role:    llm.RoleSystem,

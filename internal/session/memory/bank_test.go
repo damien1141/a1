@@ -89,7 +89,11 @@ func TestOpenBankDefaultDir(t *testing.T) {
 	bank, err := OpenBank("sess-default", "")
 	require.NoError(t, err)
 	require.NotNil(t, bank)
-	assert.Contains(t, bank.Path(), "sessions"+string(filepath.Separator)+"memory"+string(filepath.Separator)+"sess-default.jsonl")
+	assert.Contains(
+		t,
+		bank.Path(),
+		"sessions"+string(filepath.Separator)+"memory"+string(filepath.Separator)+"sess-default.jsonl",
+	)
 }
 
 func TestMemoryEntryTimestamp(t *testing.T) {

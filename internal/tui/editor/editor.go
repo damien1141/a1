@@ -216,6 +216,16 @@ func NewEditor(
 				e.ctrl.Close()
 			}
 		},
+		func() {
+			if e.ctrl != nil {
+				e.ctrl.CyclePermissionMode()
+			}
+		},
+		func() {
+			if e.ctrl != nil {
+				e.ctrl.CycleThinkLevel()
+			}
+		},
 	)
 
 	e.composer.SetHistoryStore(e.storeHistory)

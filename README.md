@@ -9,7 +9,7 @@ A fork of [phi](https://github.com/pulseaiclub/phi) (e1079e0) with a different d
 ## What changed from phi
 
 - **Rebranded identity:** CLI is `a1`, config dir is `~/.a1/`, env vars are `A1_*`.
-- **Expanded tool surface:** `context`, `tokenbudget`, `errtrans`, `build`, `deadcode`, `coverage`, `doc`, `apidoc`, `vuln`, `nplusone`, `secret`, `error`, `test`, `rank`, `impact`, `deps`, `migration`, `property`, `stack`, `todo`, `scaffold`, `journal`.
+- **Expanded tool surface:** `context`, `tokenbudget`, `errtrans`, `build`, `deadcode`, `coverage`, `doc`, `apidoc`, `vuln`, `nplusone`, `secret`, `error`, `test`, `rank`, `impact`, `deps`, `migration`, `property`, `stack`, `todo`, `scaffold`, `journal`, `judge`, `scratchpad`, `config_validate`, `fetch`, `runtime`, `browser`.
 - **Fold-aware context analysis:** `context` reports protected zones, recent-zone discipline, growth-gated compression, and tier accounting instead of generic budget warnings.
 - **Task-aware budget allocation:** `tokenbudget` distributes context budget across tools by task type so high-value passes run first.
 - **Error normalization:** `errtrans` maps compiler, runtime, and shell errors from Rust, Python, Bash, Lua, TypeScript, Go, and build systems to actionable fixes.
@@ -21,6 +21,11 @@ A fork of [phi](https://github.com/pulseaiclub/phi) (e1079e0) with a different d
 - **Semantic code search:** optional local semantic search via Ollama embeddings + a file chunk index; enabled from the config UI or `~/.a1/config.yaml`, exposed as the `vector_search` tool.
 - **Call graph / dependency tracer:** `graph` tool builds a directed dependency graph from source imports. Default build uses lightweight parsers for Go, Python, Rust, and JS/TS; build with `-tags treesitter` to enable full tree-sitter grammar support for 40+ languages.
 - **Batch editor with dependency ordering:** `batch` tool sorts files by dependency order using topological sort, so dependencies are edited before dependents.
+- **Test impact selector:** `testimpact` tool inverts the call graph to find test files that import a changed source file, so only affected tests run.
+- **Environment snapshot / rollback:** `snapshot` tool creates temporary git branches before risky changes and can roll back or delete them afterward.
+- **Live browser control:** `browser` tool spawns a visible Chromium window via Playwright and exposes navigation, clicking, typing, screenshots, and page inspection. Supports multiple isolated browser profiles. Use `/browser` to open a URL, then `browser_*` tools to interact with it. `content` returns trimmed visible text (not raw HTML) so a single page cannot blow past the context window. `close` releases the Playwright driver so a subsequent `open` can spawn a new one.
+- **Browser proxy:** `browser.proxy` in `~/.a1/config.yaml` or `/browser proxy <url>` sets an HTTP/HTTPS/SOCKS proxy for the next launch. Toggle forms `/browser proxy on` and `/browser proxy off` re-enable or disable the last-used URL without retyping. Takes effect on the next `open` after a `close`.
+- **Permission layer:** default mode limits read/write to the project directory; a yolo mode and per-request directory prompts are available.
 
 Everything else is still phi under the hood: same TUI, same sub-agent model, same MCP meta-tool design, same extension protocol.
 
@@ -98,7 +103,15 @@ If you want the original phi without these additions, use [pulseaiclub/phi](http
 | `journal`      | Action journal / audit trail                 |
 | `graph`        | Dependency/call graph explorer via imports   |
 | `batch`        | Dependency-ordered batch file editing        |
+| `testimpact`   | Test files affected by a source file change  |
+| `snapshot`     | Git-based snapshot and rollback for safe edits |
 | `vector_search`| Local semantic code search via Ollama embeddings |
+| `judge`        | Local judgment/evaluation via Ollama           |
+| `scratchpad`   | Agent notes CRUD under ~/.a1/scratchpad        |
+| `config_validate` | Validate ~/.a1/config.yaml and env         |
+| `fetch`        | Sandboxed HTTP GET/POST web fetcher            |
+| `runtime`      | Parse `go test -json` failures and stack traces |
+| `browser`      | Live browser control via Playwright              |
 | `agent_spawn`  | Start an isolated sub-agent job (async)      |
 | `agent_wait`   | Wait for a job; returns short summary only   |
 | `agent_list`   | List jobs                                    |

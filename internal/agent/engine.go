@@ -475,6 +475,7 @@ func (engine *Engine) streamTurn(
 	var thinking, text string
 	var final llm.Message
 	gotDone := false
+	start := time.Now()
 
 	for event, err := range engine.client.Stream(ctx, messages) {
 		if err != nil {
@@ -534,13 +535,17 @@ func (engine *Engine) streamTurn(
 	if len(final.ToolCalls) > 0 {
 		reason = session.StopToolUse
 	}
+	usage := session.TokenUsageFrom(final.Usage)
+	if elapsed := time.Since(start).Seconds(); elapsed > 0 && usage.CompletionTokens > 0 {
+		usage.TPS = float64(usage.CompletionTokens) / elapsed
+	}
 	complete := session.AssistantMessageUpdate{Message: session.ProjectAssistant(
 		id,
 		final,
 		func(name, args string) string { return engine.ToolDetail(name, args) },
 		session.StateComplete,
 		reason,
-		session.TokenUsageFrom(final.Usage),
+		usage,
 	)}
 	return final, complete, nil
 }

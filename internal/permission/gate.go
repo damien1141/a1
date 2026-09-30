@@ -112,7 +112,7 @@ func (g *StaticGate) checkWrite(req Request) (Decision, string) {
 			return Deny, "write to sensitive path denied: " + p
 		}
 		if g.Policy.WorkspaceOnlyWrites && !InWorkspace(p, g.Workspace) {
-			return Deny, "write outside workspace denied: " + p
+			return Ask, "write outside workspace: " + p
 		}
 	}
 	return Allow, ""
@@ -128,7 +128,7 @@ func (g *StaticGate) checkRead(req Request) (Decision, string) {
 			return Deny, "read of sensitive path denied: " + p
 		}
 		if g.Policy.WorkspaceOnlyReads && !InWorkspace(p, g.Workspace) {
-			return Deny, "read outside workspace denied: " + p
+			return Ask, "read outside workspace: " + p
 		}
 	}
 	return Allow, ""

@@ -23,6 +23,8 @@ type Config struct {
 	Permissions    permission.Policy
 	Agents         AgentsConfig
 	SemanticSearch SemanticSearchConfig
+	Judge          JudgeConfig
+	Browser        BrowserConfig
 }
 
 // AgentsConfig controls whether the main agent may spawn sub-agents
@@ -49,8 +51,21 @@ type SemanticSearchConfig struct {
 	EmbeddingModel string `yaml:"embedding_model"`
 }
 
-// Model returns the default model config with the skill path applied, ready
-// for agent.NewEngine.
+// JudgeConfig controls the local judgment/evaluation tool.
+type JudgeConfig struct {
+	Model         string `yaml:"model"`
+	OllamaBaseURL string `yaml:"ollama_base_url"`
+}
+
+// BrowserConfig controls browser tool behavior and profiles.
+type BrowserConfig struct {
+	Profiles []string `yaml:"profiles"`
+	// Proxy is an optional HTTP/HTTPS/SOCKS proxy URL used by the browser, e.g.
+	// "http://127.0.0.1:8885". Empty → no proxy. Set at launch time, so the
+	// browser must be closed and reopened for a change to take effect.
+	Proxy string `yaml:"proxy,omitempty"`
+}
+
 func (c *Config) Model() llm.ModelConfig {
 	m := *c.defaultEntry()
 	if m.SkillPath == "" {
@@ -181,6 +196,18 @@ func parseConfigFile(path string) (*Config, error) {
 			EmbeddingModel: strings.TrimSpace(raw.SemanticSearch.EmbeddingModel),
 		}
 	}
+	if raw.Judge != nil {
+		cfg.Judge = JudgeConfig{
+			Model:         strings.TrimSpace(raw.Judge.Model),
+			OllamaBaseURL: strings.TrimSpace(raw.Judge.OllamaBaseURL),
+		}
+	}
+	if raw.Browser != nil {
+		cfg.Browser = BrowserConfig{
+			Profiles: append([]string(nil), raw.Browser.Profiles...),
+			Proxy:    strings.TrimSpace(raw.Browser.Proxy),
+		}
+	}
 	return cfg, nil
 }
 
@@ -235,6 +262,8 @@ type fileConfig struct {
 	Permissions    *permConfig           `yaml:"permissions"`
 	Agents         *agentsConfig         `yaml:"agents"`
 	SemanticSearch *semanticSearchConfig `yaml:"semantic_search"`
+	Judge          *judgeConfig          `yaml:"judge"`
+	Browser        *browserConfig        `yaml:"browser"`
 }
 
 type agentsConfig struct {
@@ -247,6 +276,16 @@ type semanticSearchConfig struct {
 	Enabled        bool   `yaml:"enabled"`
 	OllamaBaseURL  string `yaml:"ollama_base_url"`
 	EmbeddingModel string `yaml:"embedding_model"`
+}
+
+type judgeConfig struct {
+	Model         string `yaml:"model"`
+	OllamaBaseURL string `yaml:"ollama_base_url"`
+}
+
+type browserConfig struct {
+	Profiles []string `yaml:"profiles"`
+	Proxy    string   `yaml:"proxy,omitempty"`
 }
 
 type modelEntry struct {
@@ -370,6 +409,10 @@ func applyEnvOverrides(c *Config) {
 		entry := c.defaultEntry()
 		entry.Think.Mode = llm.ThinkMode(v)
 		entry.Think.Enabled = (v != string(llm.Off))
+	}
+	if v := firstEnv("PHI_THINK_ENABLED"); v != "" {
+		entry := c.defaultEntry()
+		entry.Think.Enabled = v == "true" || v == "1" || v == "yes"
 	}
 }
 

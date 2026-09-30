@@ -63,6 +63,9 @@ func TestManagerRollback(t *testing.T) {
 	testExecGit(t, dir, "commit", "-m", "initial")
 
 	mgr := NewManager(dir)
+	originalBranch, err := currentBranch(context.Background(), dir)
+	require.NoError(t, err)
+
 	name, err := mgr.Create(context.Background())
 	require.NoError(t, err)
 
@@ -71,12 +74,21 @@ func TestManagerRollback(t *testing.T) {
 	content := readFile(t, dir, "main.txt")
 	assert.Equal(t, "main changed", content)
 
-	// Rollback should restore original content.
+	// Rollback should switch to the snapshot branch and restore original content.
 	err = mgr.Rollback(context.Background(), name)
 	require.NoError(t, err)
 
 	content = readFile(t, dir, "main.txt")
 	assert.Equal(t, "hello", content)
+
+	// After rollback, we should be on the snapshot branch.
+	branch, err := currentBranch(context.Background(), dir)
+	require.NoError(t, err)
+	assert.Equal(t, name, branch)
+
+	// The original branch should still exist.
+	_, err = execGit(context.Background(), dir, "rev-parse", "--verify", originalBranch)
+	require.NoError(t, err)
 }
 
 func TestManagerDelete(t *testing.T) {

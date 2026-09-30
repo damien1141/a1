@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/damien1141/a1/internal/tools/tooldef"
 	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/tools/tooldef"
 )
 
 const (
@@ -29,24 +29,30 @@ func TokenTool() tooldef.Tool {
 		Definition: llm.ToolDefinition{
 			Name:        "tokenbudget",
 			Description: tokenDescription,
-		Params: &llm.FunctionParameters{
-			Type: "object",
-			Properties: llm.Object{
-				"task": llm.Object{
-					"type":        "string",
-					"description": "Short task description used to weight allocations. Example: rust borrow-checker failure",
+			Params: &llm.FunctionParameters{
+				Type: "object",
+				Properties: llm.Object{
+					"task": llm.Object{
+						"type":        "string",
+						"description": "Short task description used to weight allocations. Example: rust borrow-checker failure",
+					},
+					"total": llm.Object{
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Total token budget to allocate. Example: 4000 (default: %d)",
+							tokenDefaultTotal,
+						),
+					},
+					"limit": llm.Object{
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Maximum allocations to return. Example: 10 (default: %d)",
+							tokenDefaultLimit,
+						),
+					},
 				},
-				"total": llm.Object{
-					"type":        "integer",
-					"description": fmt.Sprintf("Total token budget to allocate. Example: 4000 (default: %d)", tokenDefaultTotal),
-				},
-				"limit": llm.Object{
-					"type":        "integer",
-					"description": fmt.Sprintf("Maximum allocations to return. Example: 10 (default: %d)", tokenDefaultLimit),
-				},
+				Required: []string{},
 			},
-			Required: []string{},
-		},
 			Readable: true,
 		},
 		DetailFromArgs: func(input json.RawMessage) string {
@@ -100,7 +106,11 @@ func runToken(ctx context.Context, input json.RawMessage) (tooldef.Result, error
 	}
 
 	if len(allocations) == 0 {
-		return tooldef.Result{Content: "No allocations produced", Detail: "0 allocations", Output: "No allocations produced"}, nil
+		return tooldef.Result{
+			Content: "No allocations produced",
+			Detail:  "0 allocations",
+			Output:  "No allocations produced",
+		}, nil
 	}
 
 	content := renderTokenResults(ctx, allocations)
@@ -129,9 +139,9 @@ func allocateTokens(task string, total, limit int) ([]tokenAllocation, error) {
 			rawTokens = 1
 		}
 		allocations = append(allocations, tokenAllocation{
-			Tool:   w.Tool,
-			Tokens: rawTokens,
-			Share:  math.Round(float64(rawTokens)/float64(total)*10000) / 100,
+			Tool:      w.Tool,
+			Tokens:    rawTokens,
+			Share:     math.Round(float64(rawTokens)/float64(total)*10000) / 100,
 			Reasoning: w.Reasoning,
 		})
 	}
@@ -280,12 +290,12 @@ func normalizeAllocations(allocations []tokenAllocation, total int) []tokenAlloc
 
 	if diff > 0 {
 		allocations[0].Tokens += diff
-		allocations[0].Share = math.Round(float64(allocations[0].Tokens) / float64(total) * 100) / 100
+		allocations[0].Share = math.Round(float64(allocations[0].Tokens)/float64(total)*100) / 100
 		return allocations
 	}
 
 	for i := 0; i < len(allocations)-1; i++ {
-		if allocations[i].Tokens + diff < 1 {
+		if allocations[i].Tokens+diff < 1 {
 			continue
 		}
 		allocations[i].Tokens += diff
