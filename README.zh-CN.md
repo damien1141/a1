@@ -12,9 +12,9 @@
 
 phi 已经是我用过的最精简、最实用的终端编码代理框架。这个 fork 保留原有核心，并新增了真正改变工作方式的三件事：
 
-1. **能扩容的上下文管理** — `context` 把会话视为可折叠的对象，而非待截断的对象。Fold-based 压缩配合增长门控，避免短暂峰值触发昂贵的摘要调用。KEEP/DROP 原则和模型拒绝权内嵌于压缩提示中，结果是：代理可以在数小时的工作后继续推理，而不是每隔几轮就把一切忘掉。
-2. **实时 APPA 权限控制** — Shift-Tab 在 `interactive`、`readonly`、`autopilot`、`headless-strict` 之间循环切换，无需重启。内置 `permission` 工具可查看当前模式、会话 allow-all 状态、pre-check/admit 决策和 admission 检查，代理可以自行检查信任等级。这不是一个你必须离开会话去改的配置面板，而是一个透明的控制平面。
-3. **终端里的实时浏览器** — `browser` 启动一个可见的 Chromium 窗口。用 `/browser` 导航，再用 `browser_*` 工具交互。`content` 返回修剪后的可见文本而非原始 HTML，避免单个页面撑爆上下文窗口。隔离 profile、代理支持、以及 `close`/`open` 生命周期管理，让网页交互成为代理循环的一部分。
+1. **能扩容的上下文管理** - `context` 把会话视为可折叠的对象，而非待截断的对象。Fold-based 压缩配合增长门控，避免短暂峰值触发昂贵的摘要调用。KEEP/DROP 原则和模型拒绝权内嵌于压缩提示中，结果是：代理可以在数小时的工作后继续推理，而不是每隔几轮就把一切忘掉。
+2. **实时 APPA 权限控制** - Shift-Tab 在 `interactive`、`readonly`、`autopilot`、`headless-strict` 之间循环切换，无需重启。内置 `permission` 工具可查看当前模式、会话 allow-all 状态、pre-check/admit 决策和 admission 检查，代理可以自行检查信任等级。这不是一个你必须离开会话去改的配置面板，而是一个透明的控制平面。
+3. **终端里的实时浏览器** - `browser` 启动一个可见的 Chromium 窗口。用 `/browser` 导航，再用 `browser_*` 工具交互。`content` 返回修剪后的可见文本而非原始 HTML，避免单个页面撑爆上下文窗口。隔离 profile、代理支持、以及 `close`/`open` 生命周期管理，让网页交互成为代理循环的一部分。
 
 此外还有 30+ 分析工具、语义代码搜索、依赖图、按导入拓扑排序的批量编辑、测试影响选择、快照/回滚、多语言错误归一化、构建系统感知，以及一个让模型默认“证据优先、叙述其次”的系统 doctrine。
 
@@ -26,7 +26,7 @@ phi 已经是我用过的最精简、最实用的终端编码代理框架。这�
 
 这就是为什么 30+ 工具感觉轻盈而非沉重。上下文管理的边际成本几乎为零，能力的边际价值很高。有了基于折叠的压缩和增长门控的压缩，添加一个工具的成本几乎为零；而当一个冷门工具真正被触发时，它会为整个工具面带来回报。
 
-同样的哲学也适用于权限系统。APPA 集成不是禁用工具 —— 它标记信任、记录效果、执行 admission 检查，并使整个状态可查。安全不是靠移除能力实现的，而是靠让能力可见、可审计来实现的。
+同样的哲学也适用于权限系统。APPA 集成不是禁用工具 -- 它标记信任、记录效果、执行 admission 检查，并使整个状态可查。安全不是靠移除能力实现的，而是靠让能力可见、可审计来实现的。
 
 设计目标：
 
@@ -39,7 +39,7 @@ phi 已经是我用过的最精简、最实用的终端编码代理框架。这�
 
 ### Fold-based 上下文管理
 
-长会话不必死于截断。`context` 报告受保护区域、最近区纪律、增长门控压缩和分层统计。压缩仅在上下文超过窗口的地板比例 且 自上次压缩以来增长超过阈值时触发 —— 因此短暂峰值不会浪费 token 做摘要。
+长会话不必死于截断。`context` 报告受保护区域、最近区纪律、增长门控压缩和分层统计。压缩仅在上下文超过窗口的地板比例 且 自上次压缩以来增长超过阈值时触发 -- 因此短暂峰值不会浪费 token 做摘要。
 
 KEEP/DROP 原则和模型的拒绝权被嵌入压缩提示。结果：代理可以在数小时的工作后继续推理，而不是每隔几轮就把上下文忘掉。
 
@@ -51,7 +51,7 @@ Shift-Tab 在 `interactive`、`readonly`、`autopilot` 和 `headless-strict` 之
 - Pre-check / admit 决策
 - Admission 检查
 
-这不是你必须离开会话去改的配置菜单。代理可以阅读自身的约束，并解释为什么做或不做某事。信任、授权和轨迹限制 —— 可查、可审计、可恢复。
+这不是你必须离开会话去改的配置菜单。代理可以阅读自身的约束，并解释为什么做或不做某事。信任、授权和轨迹限制 -- 可查、可审计、可恢复。
 
 ### 实时浏览器控制
 
@@ -63,12 +63,12 @@ Shift-Tab 在 `interactive`、`readonly`、`autopilot` 和 `headless-strict` 之
 
 34 个预置技能随 a1 内嵌，首次运行时自动安装到 `~/.a1/skills/`。每个技能是一个 `SKILL.md`，带 YAML frontmatter、结构化操作循环，以及 `references/` 深度文档目录。框架将它们加载进系统提示，并按关键词触发路由。
 
-- **基座技能** — `rigorous-coding`（5 门循环、VERIFIED vs ASSUMED 标签）、`agent-orchestration`（委派契约、输出强制、红队批判）、`spec-driven-development`（EARS 需求、PROGRESS.md、ADR）、`debugging-wizard`（系统化方法、bug 分类、无责复盘）
-- **语言技能** — `golang-pro`、`rust-pro`、`python-pro`、`typescript-pro`、`cpp-pro`、`dotnet-pro`、`swift-pro`、`jvm-pro`、`php-pro`、`ruby-pro`、`lua-pro`
-- **框架技能** — `react-pro`、`astro-pro`（110 个设计模板、4 种设计原型）、`vue-pro`、`angular-pro`、`htmx-pro`、`alpine-pro`
-- **领域技能** — `system-architecture`（DDD、微服务、Strangler Fig）、`api-design`（REST、gRPC、GraphQL、WebSocket）、`cloud-native`（K8s、GitOps、服务网格）、`sre-reliability`（SLO、可观测性、混沌工程）、`data-engineering`、`llm-engineering`、`testing-master`、`code-reviewer`（OWASP、SAST、CVSS）
+- **基座技能** - `rigorous-coding`（5 门循环、VERIFIED vs ASSUMED 标签）、`agent-orchestration`（委派契约、输出强制、红队批判）、`spec-driven-development`（EARS 需求、PROGRESS.md、ADR）、`debugging-wizard`（系统化方法、bug 分类、无责复盘）
+- **语言技能** - `golang-pro`、`rust-pro`、`python-pro`、`typescript-pro`、`cpp-pro`、`dotnet-pro`、`swift-pro`、`jvm-pro`、`php-pro`、`ruby-pro`、`lua-pro`
+- **框架技能** - `react-pro`、`astro-pro`（110 个设计模板、4 种设计原型）、`vue-pro`、`angular-pro`、`htmx-pro`、`alpine-pro`
+- **领域技能** - `system-architecture`（DDD、微服务、Strangler Fig）、`api-design`（REST、gRPC、GraphQL、WebSocket）、`cloud-native`（K8s、GitOps、服务网格）、`sre-reliability`（SLO、可观测性、混沌工程）、`data-engineering`、`llm-engineering`、`testing-master`、`code-reviewer`（OWASP、SAST、CVSS）
 
-技能是约束和捷径，而非建议。当任务匹配时，先读 `SKILL.md` 再遵循其操作循环——跳过步骤是 bug 的最常见来源。
+将技能视为必须遵循的操作手册。任务匹配到技能时，先读它的 `SKILL.md`，然后严格按照操作循环执行。跳过步骤是 bug 的最常见来源。
 
 ## 技术栈
 
@@ -93,8 +93,8 @@ Shift-Tab 在 `interactive`、`readonly`、`autopilot` 和 `headless-strict` 之
 
 ## 参考资料
 
-- 上下文管理：面向长生命周期 coding agents 的无训练多代压缩 — [billion-context-pi](https://github.com/ranxianglei/billion-context-pi/blob/master/paper/model-driven-incremental-hierarchical-compression-training-free-multi-generational-context-management-for-long-lived-coding-agents.md)
-- APPA：可恢复信息流控制 — [arXiv:2607.24625](https://arxiv.org/abs/2607.24625)
+- 上下文管理：面向长生命周期 coding agents 的无训练多代压缩 - [billion-context-pi](https://github.com/ranxianglei/billion-context-pi/blob/master/paper/model-driven-incremental-hierarchical-compression-training-free-multi-generational-context-management-for-long-lived-coding-agents.md)
+- APPA：可恢复信息流控制 - [arXiv:2607.24625](https://arxiv.org/abs/2607.24625)
 
 ## 资源占用
 

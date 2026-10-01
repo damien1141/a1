@@ -12,9 +12,9 @@ Fork of [phi](https://github.com/pulseaiclub/phi) with fold-based context manage
 
 phi is already the leanest practical terminal coding-agent harness available. This fork keeps that core and adds three things that change how you actually work:
 
-1. **Context management that scales** — `context` treats the session as something foldable, not truncatable. Fold-based compression with a growth gate so noisy overshoots do not trigger costly summarization. KEEP/DROP doctrine embedded in prompts; the model learns what survives compaction.
-2. **Live APPA permissions** — shift-tab cycles `interactive`, `readonly`, `autopilot`, and `headless-strict` without restarting. The `permission` tool exposes mode, allow-all state, pre-check/admit decisions, and admission checks so the agent can inspect its own trust level. Not a black box — a legible control plane.
-3. **Live browser in the terminal** — `browser` spawns a visible Chromium via Playwright. Navigate, click, type, screenshot, and read page content without leaving the session. Isolated profiles, proxy support, and trimmed output so one page never blows the context window.
+1. **Context management that scales** - `context` treats the session as something foldable, not truncatable. Fold-based compression with a growth gate so noisy overshoots do not trigger costly summarization. KEEP/DROP doctrine embedded in prompts; the model learns what survives compaction.
+2. **Live APPA permissions** - shift-tab cycles `interactive`, `readonly`, `autopilot`, and `headless-strict` without restarting. The `permission` tool exposes mode, allow-all state, pre-check/admit decisions, and admission checks so the agent can inspect its own trust level. Not a black box - a legible control plane.
+3. **Live browser in the terminal** - `browser` spawns a visible Chromium via Playwright. Navigate, click, type, screenshot, and read page content without leaving the session. Isolated profiles, proxy support, and trimmed output so one page never blows the context window.
 
 On top of that, 30+ analysis tools, semantic code search, dependency graphs, batch edits ordered by import topology, test-impact selection, snapshot/rollback, multi-language error normalization, build-system awareness, and a system doctrine that biases toward evidence over narration.
 
@@ -26,7 +26,7 @@ Most agent harnesses restrict the tool surface to keep the model from doing harm
 
 That is why 30+ tools feel light instead of heavy. Context management is cheap; capability is expensive. With fold-based compression and growth-gated compaction, the marginal cost of adding a tool is near zero. When a rare tool does fire, it pays for the entire surface.
 
-The same philosophy applies to permissions. The APPA integration does not disable tools — it labels trust, logs effects, enforces admission checks, and makes the entire state inspectable. You do not get safety by removing power; you get it by making power legible and auditable.
+The same philosophy applies to permissions. The APPA integration does not disable tools - it labels trust, logs effects, enforces admission checks, and makes the entire state inspectable. You do not get safety by removing power; you get it by making power legible and auditable.
 
 Design goals:
 
@@ -39,7 +39,7 @@ Design goals:
 
 ### Fold-based context management
 
-Long sessions do not have to die to truncation. `context` reports protected zones, recent-zone discipline, growth-gated compression, and tier accounting. Compaction triggers only when context exceeds a floor fraction of the window AND has grown by a threshold since last compression — so brief spikes do not burn tokens on summarization.
+Long sessions do not have to die to truncation. `context` reports protected zones, recent-zone discipline, growth-gated compression, and tier accounting. Compaction triggers only when context exceeds a floor fraction of the window AND has grown by a threshold since last compression - so brief spikes do not burn tokens on summarization.
 
 The KEEP/DROP doctrine and the model's right to refuse are embedded in compression prompts. Result: the agent keeps reasoning over hours of work instead of forgetting everything every few turns.
 
@@ -51,7 +51,7 @@ Shift-tab between `interactive`, `readonly`, `autopilot`, and `headless-strict` 
 - Pre-check / admit decisions
 - Admission checks
 
-This is not a settings menu you have to leave the session to edit. The agent can read its own constraints and explain why it is or is not doing something. Trust, authority, and trajectory confinement — inspectable, auditable, recoverable.
+This is not a settings menu you have to leave the session to edit. The agent can read its own constraints and explain why it is or is not doing something. Trust, authority, and trajectory confinement - inspectable, auditable, recoverable.
 
 ### Live browser control
 
@@ -63,12 +63,12 @@ Real web interaction inside the agent loop: auth flows, dashboards, docs, any su
 
 34 pre-built skills ship with a1 and install to `~/.a1/skills/` on first run. Each is a `SKILL.md` with YAML frontmatter, a structured operating loop, and a `references/` directory of deep-dive docs. The harness loads them into the system prompt and routes by keyword trigger.
 
-- **Keel skills** — `rigorous-coding` (5-gate loop, VERIFIED vs ASSUMED labels), `agent-orchestration` (delegation contracts, output enforcement, red-team critique), `spec-driven-development` (EARS requirements, PROGRESS.md, ADRs), `debugging-wizard` (systematic method, bug taxonomies, blameless postmortems)
-- **Language skills** — `golang-pro`, `rust-pro`, `python-pro`, `typescript-pro`, `cpp-pro`, `dotnet-pro`, `swift-pro`, `jvm-pro`, `php-pro`, `ruby-pro`, `lua-pro`
-- **Framework skills** — `react-pro`, `astro-pro` (110 design templates, 4 archetypes), `vue-pro`, `angular-pro`, `htmx-pro`, `alpine-pro`
-- **Domain skills** — `system-architecture` (DDD, microservices, strangler fig), `api-design` (REST, gRPC, GraphQL, WebSocket), `cloud-native` (K8s, GitOps, service mesh), `sre-reliability` (SLOs, observability, chaos), `data-engineering`, `llm-engineering`, `testing-master`, `code-reviewer` (OWASP, SAST, CVSS)
+- **Keel skills** - `rigorous-coding` (5-gate loop, VERIFIED vs ASSUMED labels), `agent-orchestration` (delegation contracts, output enforcement, red-team critique), `spec-driven-development` (EARS requirements, PROGRESS.md, ADRs), `debugging-wizard` (systematic method, bug taxonomies, blameless postmortems)
+- **Language skills** - `golang-pro`, `rust-pro`, `python-pro`, `typescript-pro`, `cpp-pro`, `dotnet-pro`, `swift-pro`, `jvm-pro`, `php-pro`, `ruby-pro`, `lua-pro`
+- **Framework skills** - `react-pro`, `astro-pro` (110 design templates, 4 archetypes), `vue-pro`, `angular-pro`, `htmx-pro`, `alpine-pro`
+- **Domain skills** - `system-architecture` (DDD, microservices, strangler fig), `api-design` (REST, gRPC, GraphQL, WebSocket), `cloud-native` (K8s, GitOps, service mesh), `sre-reliability` (SLOs, observability, chaos), `data-engineering`, `llm-engineering`, `testing-master`, `code-reviewer` (OWASP, SAST, CVSS)
 
-Skills are constraints and shortcuts, not suggestions. When a task matches, read the `SKILL.md` first and follow its operating loop — skipping steps is the most common source of bugs.
+Treat skills as binding playbooks. When a task matches a skill, read its `SKILL.md` first and follow the operating loop exactly. Skipping steps is the most common source of bugs.
 
 ## The stack
 
@@ -93,8 +93,8 @@ What changed:
 
 ## References
 
-- Context management: training-free multi-generational compression for long-lived coding agents — [billion-context-pi](https://github.com/ranxianglei/billion-context-pi/blob/master/paper/model-driven-incremental-hierarchical-compression-training-free-multi-generational-context-management-for-long-lived-coding-agents.md)
-- APPA: Recoverable Information-Flow Control — [arXiv:2607.24625](https://arxiv.org/abs/2607.24625)
+- Context management: training-free multi-generational compression for long-lived coding agents - [billion-context-pi](https://github.com/ranxianglei/billion-context-pi/blob/master/paper/model-driven-incremental-hierarchical-compression-training-free-multi-generational-context-management-for-long-lived-coding-agents.md)
+- APPA: Recoverable Information-Flow Control - [arXiv:2607.24625](https://arxiv.org/abs/2607.24625)
 
 ## Footprint
 
