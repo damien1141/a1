@@ -1,4 +1,4 @@
-# A1
+# A1 v1.0.0
 
 A fork of [phi](https://github.com/pulseaiclub/phi) (e1079e0) with a different direction: tighter UX defaults, fold-based context tooling, task-aware tool allocation, multi-language error translation, build-system awareness, and a stricter operating doctrine baked into the system prompt.
 
@@ -9,7 +9,7 @@ A fork of [phi](https://github.com/pulseaiclub/phi) (e1079e0) with a different d
 ## What changed from phi
 
 - **Rebranded identity:** CLI is `a1`, config dir is `~/.a1/`, env vars are `A1_*`.
-- **Expanded tool surface:** `context`, `tokenbudget`, `errtrans`, `build`, `deadcode`, `coverage`, `doc`, `apidoc`, `vuln`, `nplusone`, `secret`, `error`, `test`, `rank`, `impact`, `deps`, `migration`, `property`, `stack`, `todo`, `scaffold`, `journal`, `judge`, `scratchpad`, `config_validate`, `fetch`, `runtime`, `browser`.
+- **Expanded tool surface:** `context`, `tokenbudget`, `errtrans`, `build`, `deadcode`, `coverage`, `doc`, `apidoc`, `vuln`, `nplusone`, `secret`, `error`, `test`, `rank`, `impact`, `deps`, `migration`, `property`, `stack`, `todo`, `scaffold`, `journal`, `judge`, `scratchpad`, `config_validate`, `fetch`, `runtime`, `browser`, `permission`.
 - **Fold-aware context analysis:** `context` reports protected zones, recent-zone discipline, growth-gated compression, and tier accounting instead of generic budget warnings. Compaction triggers on a growth gate (billion-context §3.4): a nudge fires only when context exceeds a floor fraction of the window AND has grown by at least a threshold since the last compression, so short overshoots above the threshold do not trigger a costly summarization call. The §4 KEEP/DROP doctrine and the model's right to refuse are embedded in the summary prompts.
 - **Task-aware budget allocation:** `tokenbudget` distributes context budget across tools by task type so high-value passes run first.
 - **Error normalization:** `errtrans` maps compiler, runtime, and shell errors from Rust, Python, Bash, Lua, TypeScript, Go, and build systems to actionable fixes.
@@ -26,9 +26,14 @@ A fork of [phi](https://github.com/pulseaiclub/phi) (e1079e0) with a different d
 - **Live browser control:** `browser` tool spawns a visible Chromium window via Playwright and exposes navigation, clicking, typing, screenshots, and page inspection. Supports multiple isolated browser profiles. Use `/browser` to open a URL, then `browser_*` tools to interact with it. `content` returns trimmed visible text (not raw HTML) so a single page cannot blow past the context window. `close` releases the Playwright driver so a subsequent `open` can spawn a new one.
 - **Browser proxy:** `browser.proxy` in `~/.a1/config.yaml` or `/browser proxy <url>` sets an HTTP/HTTPS/SOCKS proxy for the next launch. Toggle forms `/browser proxy on` and `/browser proxy off` re-enable or disable the last-used URL without retyping. Takes effect on the next `open` after a `close`.
 - **Kilo Gateway provider:** the `kilo` model preset wires the harness to the OpenRouter-compatible Kilo Gateway (`https://api.kilo.ai/api/gateway`). The TypeScript provider extension is vendored under `.temp/kilo-pi-provider/` (gitignored) for browser auth and usage popups; the Go side needs only the preset and an API key.
-- **Permission layer:** default mode limits read/write to the project directory; a yolo mode and per-request directory prompts are available.
+- **Live APPA permission mode:** shift-tab cycles between `interactive`, `readonly`, `autopilot`, and `headless-strict`; the built-in `permission` tool exposes live mode, session allow-all state, pre-check/admit decisions, and admission checks.
 
 Everything else is still phi under the hood: same TUI, same sub-agent model, same MCP meta-tool design, same extension protocol.
+
+## References
+
+- Context management: training-free multi-generational compression for long-lived coding agents — [billion-context-pi](https://github.com/ranxianglei/billion-context-pi/blob/master/paper/model-driven-incremental-hierarchical-compression-training-free-multi-generational-context-management-for-long-lived-coding-agents.md)
+- APPA: Recoverable Information-Flow Control — [arXiv:2607.24625](https://arxiv.org/abs/2607.24625)
 
 ## Quick start
 
@@ -57,15 +62,34 @@ phi is already the leanest practical terminal coding agent harness I have used. 
 1. More built-in analysis tools so the agent stays inside the terminal instead of switching to shell one-liners.
 2. Context tooling that treats the session as something foldable, not just something to truncate.
 3. A stricter operating doctrine in the system prompt so the model defaults to evidence-first behavior instead of narration-first behavior.
+4. APPA-style permission observability wired into the runtime: mode switching, session-level allow-all toggles, pre-check/admission gates, labels/trust, authority, and trajectory confinement — exposed through a `permission` tool the model can inspect itself.
 
 If you want the original phi without these additions, use [pulseaiclub/phi](https://github.com/pulseaiclub/phi).
+
+## Philosophy
+
+**Capability first, control second.**
+
+The goal is to build a harness that feels light and enjoyable for both the human operator and the LLM running inside it.
+
+Most agent harnesses restrict the tool surface to keep the model from doing harm. This project takes the opposite stance: give the model every useful tool, then manage risk through permission policy and observability.
+
+That is why 30+ tools feel light instead of heavy. Context management is cheap; capability is expensive. With fold-based compression and growth-gated compaction, the marginal cost of adding a tool is near zero. When a rare tool does fire, it pays for the entire surface.
+
+The same philosophy applies to the permission system. The APPA integration does not disable tools — it labels trust, logs effects, enforces admission checks, and makes the entire state inspectable. You do not get safety by removing power; you get it by making power legible and auditable.
+
+Design goals:
+- **Breadth over restriction:** tools and features should accumulate, not collapse.
+- **Observability over prevention:** see what is happening, then decide.
+- **Model-in-the-loop permission:** the agent can inspect its own permission state via the `permission` tool.
+- **Low-friction switching:** shift-tab cycles permission modes live, without restarting.
 
 ## Footprint
 
 - Release binary: ~15 MB
 - Idle RSS: ~21 MB
 - Time to first frame: ~31 ms
-- Go source: ~51k LOC / 316 files / 97 packages
+- Go source: ~82.7k LOC / 551 files / 115 packages
 - Session memory bank: `~/.a1/sessions/memory/<session_id>.jsonl`
 - Vector search index: workspace-local, created on demand when `vector_search` is used
 

@@ -1,4 +1,4 @@
-# A1
+# A1 v1.0.0
 
 这是 [phi](https://github.com/pulseaiclub/phi) (e1079e0) 的一个 fork，方向不同：更紧凑的 UX 默认值、fold-based 上下文工具、任务感知的工具分配、多语言错误翻译、构建系统感知，以及更严格的内嵌系统 doctrine。
 
@@ -9,7 +9,7 @@
 ## 与 phi 的区别
 
 - **身份重命名：** CLI 是 `a1`，配置目录是 `~/.a1/`，环境变量是 `A1_*`。
-- **工具集扩展：** `context`、`tokenbudget`、`errtrans`、`build`、`deadcode`、`coverage`、`doc`、`apidoc`、`vuln`、`nplusone`、`secret`、`error`、`test`、`rank`、`impact`、`deps`、`migration`、`property`、`stack`、`todo`、`scaffold`、`journal`、`judge`、`scratchpad`、`config_validate`、`fetch`、`runtime`、`browser`。
+- **工具集扩展：** `context`、`tokenbudget`、`errtrans`、`build`、`deadcode`、`coverage`、`doc`、`apidoc`、`vuln`、`nplusone`、`secret`、`error`、`test`、`rank`、`impact`、`deps`、`migration`、`property`、`stack`、`todo`、`scaffold`、`journal`、`judge`、`scratchpad`、`config_validate`、`fetch`、`runtime`、`browser`、`permission`。
 - **Fold 感知的上下文分析：** `context` 报告受保护区域、最近区纪律、增长门控压缩和分层统计，而不是泛化的预算警告。压缩通过增长门控触发（billion-context §3.4）：仅当上下文超过窗口的地板比例，且自上次压缩以来增长超过阈值时，才会触发压缩指令，这样超过阈值的短时波动不会触发代价高昂的摘要调用。§4 的 KEEP/DROP 教条以及模型的拒绝权已嵌入摘要提示中。
 - **任务感知的预算分配：** `tokenbudget` 按任务类型在工具间分配上下文预算，优先保障高价值分析通道。
 - **错误归一化：** `errtrans` 把 Rust、Python、Bash、Lua、TypeScript、Go 和构建系统的编译器/运行时/Shell 错误映射为可操作修复。
@@ -26,9 +26,14 @@
 - **实时浏览器控制：** `browser` 工具通过 Playwright 启动一个可见的 Chromium 窗口，提供导航、点击、输入、截图和页面检查能力。支持多个隔离的浏览器配置文件。用 `/browser` 打开 URL，再用 `browser_*` 工具与其交互。`content` 返回裁剪后的可见文本（非原始 HTML），避免单个页面撑爆上下文窗口。`close` 会释放 Playwright 驱动，以便后续的 `open` 能重新启动一个新浏览器。
 - **浏览器代理：** `~/.a1/config.yaml` 中的 `browser.proxy`，或 `/browser proxy <url>`，为下次启动设置 HTTP/HTTPS/SOCKS 代理。`/browser proxy on` 和 `/browser proxy off` 两种形式无需重新输入 URL 即可启用或禁用上次使用的代理。在 `close` 后的下一次 `open` 时生效。
 - **Kilo Gateway 提供者：** `kilo` 模型预设将 harness 连接到与 OpenRouter 兼容的 Kilo Gateway（`https://api.kilo.ai/api/gateway`）。TypeScript 提供者扩展以 vendored 形式存放于 `.temp/kilo-pi-provider/`（已加入 gitignore），用于浏览器认证和用量弹窗；Go 侧只需预设和 API 密钥即可。
-- **权限层：** 默认模式限制读写仅在项目目录内；提供 yolo 模式和按需目录授权提示。
+- **实时 APPA 权限模式：** 使用 Shift-Tab 在 `interactive`、`readonly`、`autopilot`、`headless-strict` 之间切换；内置 `permission` 工具可查看当前模式、会话 allow-all 状态、pre-check/admit 决策和 admission 检查结果。
 
 底层仍然是 phi：相同的 TUI、相同的子代理模型、相同的 MCP 元工具设计、相同的扩展协议。
+
+## 参考文献
+
+- 上下文管理：面向长生命周期 coding agents 的无训练多代压缩 — [billion-context-pi](https://github.com/ranxianglei/billion-context-pi/blob/master/paper/model-driven-incremental-hierarchical-compression-training-free-multi-generational-context-management-for-long-lived-coding-agents.md)
+- APPA：可恢复信息流控制 — [arXiv:2607.24625](https://arxiv.org/abs/2607.24625)
 
 ## 快速开始
 
@@ -57,15 +62,34 @@ phi 已经是我用过的最精简、最实用的终端编码代理框架。这�
 1. 更多内置分析工具，让 agent 留在终端内，而不是不停切到 shell 一行命令。
 2. 上下文工具把会话当成可折叠的东西，而不是只当成要截断的东西。
 3. 系统提示里更严格的操作 doctrine，让模型默认证据优先，而不是叙述优先。
+4. 运行时接入 APPA 风格权限可观测性：实时模式切换、会话级 allow-all 切换、pre-check/admission gate、label/trust、authority、trajectory confinement —— 并通过 `permission` 工具让模型自身可查。
 
 如果你想要没有这些 additions 的原始 phi，使用 [pulseaiclub/phi](https://github.com/pulseaiclub/phi)。
+
+## 哲学
+
+**能力优先，控制次之。**
+
+目标是打造一个对人类操作者和内部 LLM 都同样轻量、愉悦的 harness。
+
+大多数 agent harness 通过限制工具面来防止模型做坏事。这个项目反其道而行：给模型所有有用的工具，然后通过权限策略和可观测性来管理风险。
+
+这就是为什么 30+ 工具感觉轻盈而不是沉重。上下文管理的边际成本几乎为零，而能力的边际价值很高。有了基于折叠的压缩和增长门控的压缩，添加一个工具的成本几乎为零；而当一个冷门工具真正被触发时，它会为整个工具面带来回报。
+
+同样的哲学也适用于权限系统。APPA 集成不是禁用工具 —— 它标记信任、记录效果、执行 admission 检查，并使整个状态可查。安全不是靠移除能力实现的，而是靠让能力可见、可审计实现的。
+
+设计目标：
+- **广度优于限制：** 工具和功能应该累加，而不是坍缩。
+- **可观测性优于预防：** 先看见正在发生什么，再决定怎么做。
+- **模型在环权限：** agent 可以通过 `permission` 工具检查自身的权限状态。
+- **低摩擦切换：** Shift-Tab 实时循环权限模式，无需重启。
 
 ## 资源占用
 
 - 发布二进制：~15 MB
 - 空闲 RSS：~21 MB
 - 首帧时间：~31 ms
-- Go 源码：~51k LOC / 316 个文件 / 97 个包
+- Go 源码：~82.7k LOC / 551 个文件 / 115 个包
 - 会话记忆库：`~/.a1/sessions/memory/<session_id>.jsonl`
 - 向量搜索索引：工作区本地，启用 `vector_search` 时按需创建
 
