@@ -1,88 +1,89 @@
 # A1 v1.0.0
 
-A fork of [phi](https://github.com/pulseaiclub/phi) (e1079e0) with a different direction: tighter UX defaults, fold-based context tooling, task-aware tool allocation, multi-language error translation, build-system awareness, and a stricter operating doctrine baked into the system prompt.
+A terminal coding-agent harness for people who want an agent that can actually reason over long sessions, inspect its own permissions, and browse the web without leaving the shell.
+
+Fork of [phi](https://github.com/pulseaiclub/phi) with fold-based context management, live APPA permission control, and Playwright-driven browser automation baked in.
 
 **Docs:** [pulseaiclub.github.io](https://pulseaiclub.github.io/)
 
 **Recommended local models:** for local LLM inference, [el4/Agents-A1-ONYX-GGUF](https://huggingface.co/el4/Agents-A1-ONYX-GGUF); for embeddings, [nomic-ai/nomic-embed-text-v2-moe-GGUF](https://huggingface.co/nomic-ai/nomic-embed-text-v2-moe-GGUF).
 
-## What changed from phi
+## Why use this
 
-- **Rebranded identity:** CLI is `a1`, config dir is `~/.a1/`, env vars are `A1_*`.
-- **Expanded tool surface:** `context`, `tokenbudget`, `errtrans`, `build`, `deadcode`, `coverage`, `doc`, `apidoc`, `vuln`, `nplusone`, `secret`, `error`, `test`, `rank`, `impact`, `deps`, `migration`, `property`, `stack`, `todo`, `scaffold`, `journal`, `judge`, `scratchpad`, `config_validate`, `fetch`, `runtime`, `browser`, `permission`.
-- **Fold-aware context analysis:** `context` reports protected zones, recent-zone discipline, growth-gated compression, and tier accounting instead of generic budget warnings. Compaction triggers on a growth gate (billion-context §3.4): a nudge fires only when context exceeds a floor fraction of the window AND has grown by at least a threshold since the last compression, so short overshoots above the threshold do not trigger a costly summarization call. The §4 KEEP/DROP doctrine and the model's right to refuse are embedded in the summary prompts.
-- **Task-aware budget allocation:** `tokenbudget` distributes context budget across tools by task type so high-value passes run first.
-- **Error normalization:** `errtrans` maps compiler, runtime, and shell errors from Rust, Python, Bash, Lua, TypeScript, Go, and build systems to actionable fixes.
-- **Build semantics:** `build` understands Makefiles, CMake, Meson, Cargo, Go modules, npm scripts, and Gradle tasks.
-- **Stricter system doctrine:** the embedded system prompt now encodes operating mode, core principles, a 5-gate cognitive loop, workflow rules, deliverable standards, constraints, failure recovery, and ADHD-oriented reporting rules.
-- **Dark theme refresh:** default theme aligned to a new dark palette.
-- **Terminal history navigation:** Up/Down arrows in the composer browse prior submissions; history is reloaded from the memory bank when resuming old sessions.
-- **Session memory bank:** every session gets a JSONL-backed memory bank under `~/.a1/sessions/memory/`; successful and failed tool calls are journaled automatically, and recent memories are injected into the model context as a system message.
-- **Semantic code search:** optional local semantic search via Ollama embeddings + a file chunk index; enabled from the config UI or `~/.a1/config.yaml`, exposed as the `vector_search` tool.
-- **Call graph / dependency tracer:** `graph` tool builds a directed dependency graph from source imports. Default build uses lightweight parsers for Go, Python, Rust, and JS/TS; build with `-tags treesitter` to enable full tree-sitter grammar support for 40+ languages.
-- **Batch editor with dependency ordering:** `batch` tool sorts files by dependency order using topological sort, so dependencies are edited before dependents.
-- **Test impact selector:** `testimpact` tool inverts the call graph to find test files that import a changed source file, so only affected tests run.
-- **Environment snapshot / rollback:** `snapshot` tool creates temporary git branches before risky changes and can roll back or delete them afterward.
-- **Live browser control:** `browser` tool spawns a visible Chromium window via Playwright and exposes navigation, clicking, typing, screenshots, and page inspection. Supports multiple isolated browser profiles. Use `/browser` to open a URL, then `browser_*` tools to interact with it. `content` returns trimmed visible text (not raw HTML) so a single page cannot blow past the context window. `close` releases the Playwright driver so a subsequent `open` can spawn a new one.
-- **Browser proxy:** `browser.proxy` in `~/.a1/config.yaml` or `/browser proxy <url>` sets an HTTP/HTTPS/SOCKS proxy for the next launch. Toggle forms `/browser proxy on` and `/browser proxy off` re-enable or disable the last-used URL without retyping. Takes effect on the next `open` after a `close`.
-- **Kilo Gateway provider:** the `kilo` model preset wires the harness to the OpenRouter-compatible Kilo Gateway (`https://api.kilo.ai/api/gateway`). The TypeScript provider extension is vendored under `.temp/kilo-pi-provider/` (gitignored) for browser auth and usage popups; the Go side needs only the preset and an API key.
-- **Live APPA permission mode:** shift-tab cycles between `interactive`, `readonly`, `autopilot`, and `headless-strict`; the built-in `permission` tool exposes live mode, session allow-all state, pre-check/admit decisions, and admission checks.
+phi is already the leanest practical terminal coding-agent harness available. This fork keeps that core and adds three things that change how you actually work:
 
-Everything else is still phi under the hood: same TUI, same sub-agent model, same MCP meta-tool design, same extension protocol.
+1. **Context management that scales** — `context` treats the session as something foldable, not truncatable. Fold-based compression with a growth gate so noisy overshoots do not trigger costly summarization. KEEP/DROP doctrine embedded in prompts; the model learns what survives compaction.
+2. **Live APPA permissions** — shift-tab cycles `interactive`, `readonly`, `autopilot`, and `headless-strict` without restarting. The `permission` tool exposes mode, allow-all state, pre-check/admit decisions, and admission checks so the agent can inspect its own trust level. Not a black box — a legible control plane.
+3. **Live browser in the terminal** — `browser` spawns a visible Chromium via Playwright. Navigate, click, type, screenshot, and read page content without leaving the session. Isolated profiles, proxy support, and trimmed output so one page never blows the context window.
 
-## References
-
-- Context management: training-free multi-generational compression for long-lived coding agents — [billion-context-pi](https://github.com/ranxianglei/billion-context-pi/blob/master/paper/model-driven-incremental-hierarchical-compression-training-free-multi-generational-context-management-for-long-lived-coding-agents.md)
-- APPA: Recoverable Information-Flow Control — [arXiv:2607.24625](https://arxiv.org/abs/2607.24625)
-
-## Quick start
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/damien1141/a1/main/scripts/install.sh | bash
-```
-
-```sh
-a1 config
-a1 run -p "fix the failing test in internal/tools"
-```
-
-Build from source:
-
-```sh
-make build          # produces ./a1
-make install        # build and install into $GOBIN
-```
-
-On first start, A1 creates `~/.a1/{bin,skills,hooks,session}`. Search tools (`fd`, `rg`) download into `~/.a1/bin` when missing.
-
-## Why this exists
-
-phi is already the leanest practical terminal coding agent harness I have used. This fork does not try to rewrite that core. It adds:
-
-1. More built-in analysis tools so the agent stays inside the terminal instead of switching to shell one-liners.
-2. Context tooling that treats the session as something foldable, not just something to truncate.
-3. A stricter operating doctrine in the system prompt so the model defaults to evidence-first behavior instead of narration-first behavior.
-4. APPA-style permission observability wired into the runtime: mode switching, session-level allow-all toggles, pre-check/admission gates, labels/trust, authority, and trajectory confinement — exposed through a `permission` tool the model can inspect itself.
-
-If you want the original phi without these additions, use [pulseaiclub/phi](https://github.com/pulseaiclub/phi).
+On top of that, 30+ analysis tools, semantic code search, dependency graphs, batch edits ordered by import topology, test-impact selection, snapshot/rollback, multi-language error normalization, build-system awareness, and a system doctrine that biases toward evidence over narration.
 
 ## Philosophy
 
 **Capability first, control second.**
 
-The goal is to build a harness that feels light and enjoyable for both the human operator and the LLM running inside it.
-
 Most agent harnesses restrict the tool surface to keep the model from doing harm. This project takes the opposite stance: give the model every useful tool, then manage risk through permission policy and observability.
 
 That is why 30+ tools feel light instead of heavy. Context management is cheap; capability is expensive. With fold-based compression and growth-gated compaction, the marginal cost of adding a tool is near zero. When a rare tool does fire, it pays for the entire surface.
 
-The same philosophy applies to the permission system. The APPA integration does not disable tools — it labels trust, logs effects, enforces admission checks, and makes the entire state inspectable. You do not get safety by removing power; you get it by making power legible and auditable.
+The same philosophy applies to permissions. The APPA integration does not disable tools — it labels trust, logs effects, enforces admission checks, and makes the entire state inspectable. You do not get safety by removing power; you get it by making power legible and auditable.
 
 Design goals:
+
 - **Breadth over restriction:** tools and features should accumulate, not collapse.
 - **Observability over prevention:** see what is happening, then decide.
-- **Model-in-the-loop permission:** the agent can inspect its own permission state via the `permission` tool.
+- **Model-in-the-loop permissions:** the agent can inspect its own permission state via the `permission` tool.
 - **Low-friction switching:** shift-tab cycles permission modes live, without restarting.
+
+## Standout features
+
+### Fold-based context management
+
+Long sessions do not have to die to truncation. `context` reports protected zones, recent-zone discipline, growth-gated compression, and tier accounting. Compaction triggers only when context exceeds a floor fraction of the window AND has grown by a threshold since last compression — so brief spikes do not burn tokens on summarization.
+
+The KEEP/DROP doctrine and the model's right to refuse are embedded in compression prompts. Result: the agent keeps reasoning over hours of work instead of forgetting everything every few turns.
+
+### APPA permission mode
+
+Shift-tab between `interactive`, `readonly`, `autopilot`, and `headless-strict` live. The built-in `permission` tool exposes:
+
+- Current mode and session allow-all state
+- Pre-check / admit decisions
+- Admission checks
+
+This is not a settings menu you have to leave the session to edit. The agent can read its own constraints and explain why it is or is not doing something. Trust, authority, and trajectory confinement — inspectable, auditable, recoverable.
+
+### Live browser control
+
+`browser` opens a visible Chromium window. Use `/browser` to navigate, then `browser_*` tools to interact. `content` returns trimmed visible text, not raw HTML, so one page cannot eat your window. `close` releases the driver; `open` spawns fresh. Multiple isolated profiles, proxy support via config or `/browser proxy`.
+
+Real web interaction inside the agent loop: auth flows, dashboards, docs, any surface a human can see.
+
+## The stack
+
+Everything else is still phi under the hood: same TUI, same sub-agent model, same MCP meta-tool design, same extension protocol.
+
+What changed:
+
+- **Rebranded identity:** CLI is `a1`, config dir is `~/.a1/`, env vars are `A1_*`.
+- **Expanded tool surface:** 30+ built-in analysis, search, graph, browser, and permission tools.
+- **Session memory bank:** JSONL-backed memory under `~/.a1/sessions/memory/`; successful and failed tool calls are journaled and injected as system messages.
+- **Terminal history navigation:** Up/Down arrows browse prior submissions; history reloads from memory bank when resuming sessions.
+- **Semantic code search:** optional local embeddings via Ollama + file-chunk index, exposed as `vector_search`.
+- **Call graph / dependency tracer:** `graph` builds a directed dependency graph from imports. Default supports Go, Python, Rust, JS/TS; build with `-tags treesitter` for 40+ languages.
+- **Batch editor with dependency ordering:** `batch` sorts files by topological order so dependencies are edited before dependents.
+- **Test impact selector:** `testimpact` inverts the call graph to find only tests affected by a changed source file.
+- **Environment snapshot / rollback:** `snapshot` creates temporary git branches before risky changes and can roll back or delete them.
+- **Multi-language error translation:** `errtrans` normalizes Rust, Python, Bash, Lua, TypeScript, Go, and build-system errors to actionable fixes.
+- **Build semantics:** `build` understands Makefiles, CMake, Meson, Cargo, Go modules, npm scripts, and Gradle.
+- **Task-aware budget allocation:** `tokenbudget` distributes context budget across tools by task type so high-value passes run first.
+- **Stricter system doctrine:** the embedded system prompt encodes operating mode, core principles, a 5-gate cognitive loop, workflow rules, deliverable standards, constraints, failure recovery, and ADHD-oriented reporting.
+- **Kilo Gateway provider:** `kilo` model preset wires the harness to an OpenRouter-compatible gateway; browser auth and usage popups via a vendored TypeScript extension.
+
+## References
+
+- Context management: training-free multi-generational compression for long-lived coding agents — [billion-context-pi](https://github.com/ranxianglei/billion-context-pi/blob/master/paper/model-driven-incremental-hierarchical-compression-training-free-multi-generational-context-management-for-long-lived-coding-agents.md)
+- APPA: Recoverable Information-Flow Control — [arXiv:2607.24625](https://arxiv.org/abs/2607.24625)
 
 ## Footprint
 
@@ -137,11 +138,32 @@ Design goals:
 | `fetch`        | Sandboxed HTTP GET/POST web fetcher            |
 | `runtime`      | Parse `go test -json` failures and stack traces |
 | `browser`      | Live browser control via Playwright              |
+| `permission`   | Live APPA permission inspection and mode control |
 | `agent_spawn`  | Start an isolated sub-agent job (async)      |
 | `agent_wait`   | Wait for a job; returns short summary only   |
 | `agent_list`   | List jobs                                    |
 | `agent_cancel` | Cancel a running job                         |
 
 Sub-agent transcripts live under `~/.a1/jobs/<id>/` and are **not** injected into the parent context.
+
+## Quick start
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/damien1141/a1/main/scripts/install.sh | bash
+```
+
+```sh
+a1 config
+a1 run -p "fix the failing test in internal/tools"
+```
+
+Build from source:
+
+```sh
+make build          # produces ./a1
+make install        # build and install into $GOBIN
+```
+
+On first start, A1 creates `~/.a1/{bin,skills,hooks,session}`. Search tools (`fd`, `rg`) download into `~/.a1/bin` when missing.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and commit conventions.
