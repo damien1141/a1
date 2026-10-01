@@ -10,7 +10,7 @@ A fork of [phi](https://github.com/pulseaiclub/phi) (e1079e0) with a different d
 
 - **Rebranded identity:** CLI is `a1`, config dir is `~/.a1/`, env vars are `A1_*`.
 - **Expanded tool surface:** `context`, `tokenbudget`, `errtrans`, `build`, `deadcode`, `coverage`, `doc`, `apidoc`, `vuln`, `nplusone`, `secret`, `error`, `test`, `rank`, `impact`, `deps`, `migration`, `property`, `stack`, `todo`, `scaffold`, `journal`, `judge`, `scratchpad`, `config_validate`, `fetch`, `runtime`, `browser`.
-- **Fold-aware context analysis:** `context` reports protected zones, recent-zone discipline, growth-gated compression, and tier accounting instead of generic budget warnings.
+- **Fold-aware context analysis:** `context` reports protected zones, recent-zone discipline, growth-gated compression, and tier accounting instead of generic budget warnings. Compaction triggers on a growth gate (billion-context §3.4): a nudge fires only when context exceeds a floor fraction of the window AND has grown by at least a threshold since the last compression, so short overshoots above the threshold do not trigger a costly summarization call. The §4 KEEP/DROP doctrine and the model's right to refuse are embedded in the summary prompts.
 - **Task-aware budget allocation:** `tokenbudget` distributes context budget across tools by task type so high-value passes run first.
 - **Error normalization:** `errtrans` maps compiler, runtime, and shell errors from Rust, Python, Bash, Lua, TypeScript, Go, and build systems to actionable fixes.
 - **Build semantics:** `build` understands Makefiles, CMake, Meson, Cargo, Go modules, npm scripts, and Gradle tasks.

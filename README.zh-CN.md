@@ -10,7 +10,7 @@
 
 - **身份重命名：** CLI 是 `a1`，配置目录是 `~/.a1/`，环境变量是 `A1_*`。
 - **工具集扩展：** `context`、`tokenbudget`、`errtrans`、`build`、`deadcode`、`coverage`、`doc`、`apidoc`、`vuln`、`nplusone`、`secret`、`error`、`test`、`rank`、`impact`、`deps`、`migration`、`property`、`stack`、`todo`、`scaffold`、`journal`、`judge`、`scratchpad`、`config_validate`、`fetch`、`runtime`、`browser`。
-- **Fold 感知的上下文分析：** `context` 报告受保护区域、最近区纪律、增长门控压缩和分层统计，而不是泛化的预算警告。
+- **Fold 感知的上下文分析：** `context` 报告受保护区域、最近区纪律、增长门控压缩和分层统计，而不是泛化的预算警告。压缩通过增长门控触发（billion-context §3.4）：仅当上下文超过窗口的地板比例，且自上次压缩以来增长超过阈值时，才会触发压缩指令，这样超过阈值的短时波动不会触发代价高昂的摘要调用。§4 的 KEEP/DROP 教条以及模型的拒绝权已嵌入摘要提示中。
 - **任务感知的预算分配：** `tokenbudget` 按任务类型在工具间分配上下文预算，优先保障高价值分析通道。
 - **错误归一化：** `errtrans` 把 Rust、Python、Bash、Lua、TypeScript、Go 和构建系统的编译器/运行时/Shell 错误映射为可操作修复。
 - **构建语义感知：** `build` 理解 Makefile、CMake、Meson、Cargo、Go modules、npm scripts 和 Gradle tasks。
