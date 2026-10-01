@@ -23,6 +23,8 @@
 - **批量编辑器与依赖排序：** `batch` 工具使用拓扑排序对文件进行依赖排序，确保先编辑依赖项再编辑被依赖项。
 - **测试影响选择器：** `testimpact` 工具反转调用图，查找导入已变更源文件的测试文件，从而只运行受影响的测试。
 - **环境快照 / 回滚：** `snapshot` 工具在 risky changes 前创建临时 git 分支，事后可回滚或删除。
+- **实时浏览器控制：** `browser` 工具通过 Playwright 启动一个可见的 Chromium 窗口，提供导航、点击、输入、截图和页面检查能力。支持多个隔离的浏览器配置文件。用 `/browser` 打开 URL，再用 `browser_*` 工具与其交互。`content` 返回裁剪后的可见文本（非原始 HTML），避免单个页面撑爆上下文窗口。`close` 会释放 Playwright 驱动，以便后续的 `open` 能重新启动一个新浏览器。
+- **浏览器代理：** `~/.a1/config.yaml` 中的 `browser.proxy`，或 `/browser proxy <url>`，为下次启动设置 HTTP/HTTPS/SOCKS 代理。`/browser proxy on` 和 `/browser proxy off` 两种形式无需重新输入 URL 即可启用或禁用上次使用的代理。在 `close` 后的下一次 `open` 时生效。
 - **权限层：** 默认模式限制读写仅在项目目录内；提供 yolo 模式和按需目录授权提示。
 
 底层仍然是 phi：相同的 TUI、相同的子代理模型、相同的 MCP 元工具设计、相同的扩展协议。
