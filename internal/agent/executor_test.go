@@ -39,6 +39,10 @@ func (g fixedGate) Check(context.Context, permission.Request) (permission.Decisi
 	return g.dec, g.reason
 }
 
+func (g fixedGate) Admit(context.Context, permission.Request) (permission.Decision, string) {
+	return permission.Allow, ""
+}
+
 func TestExecutorDenyDoesNotRunHandler(t *testing.T) {
 	var ran atomic.Int32
 	reg := tools.Registry{
@@ -356,6 +360,10 @@ type recordingGate struct {
 
 func (g *recordingGate) Check(_ context.Context, req permission.Request) (permission.Decision, string) {
 	g.last = req
+	return permission.Allow, ""
+}
+
+func (g *recordingGate) Admit(context.Context, permission.Request) (permission.Decision, string) {
 	return permission.Allow, ""
 }
 

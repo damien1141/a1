@@ -111,7 +111,7 @@ What changed:
 | `build`        | Build system semantics                       |
 | `deadcode`     | Unused exported symbols                      |
 | `coverage`     | Parse `go test -coverprofile`                |
-| `doc`          | Doc-to-code sync checker                     |
+| `docsync`      | Doc-to-code sync checker                     |
 | `apidoc`       | API doc stubs from godoc                     |
 | `vuln`         | Vulnerability pattern scan                   |
 | `nplusone`     | Database queries inside loops                |

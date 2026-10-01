@@ -47,7 +47,12 @@ func TestRunSecret_DetectsPassword(t *testing.T) {
 func TestRunSecret_DetectsPrivateKey(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
-	writeFile(t, root, "key.pem", "-----BEGIN RSA PRIVATE KEY-----\nMIIBogIBAAJBALRiMLAHudeSA/x3hB2f+2NRkJLA1SomqGU0MpEaM6VDYzLA\n-----END RSA PRIVATE KEY-----\n")
+	writeFile(
+		t,
+		root,
+		"key.pem",
+		"-----BEGIN RSA PRIVATE KEY-----\nMIIBogIBAAJBALRiMLAHudeSA/x3hB2f+2NRkJLA1SomqGU0MpEaM6VDYzLA\n-----END RSA PRIVATE KEY-----\n",
+	)
 
 	raw, _ := json.Marshal(secretInput{Path: "."})
 	out, err := runSecret(t.Context(), raw)

@@ -36,8 +36,11 @@ func ScaffoldTool() tooldef.Tool {
 						"description": "Directory to analyze. Example: .",
 					},
 					"limit": llm.Object{
-						"type":        "integer",
-						"description": fmt.Sprintf("Maximum results to return. Example: 20 (default: %d)", scaffoldDefaultLimit),
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Maximum results to return. Example: 20 (default: %d)",
+							scaffoldDefaultLimit,
+						),
 					},
 				},
 				Required: []string{},
@@ -98,7 +101,11 @@ func runScaffold(ctx context.Context, input json.RawMessage) (tooldef.Result, er
 	}
 
 	if len(hints) == 0 {
-		return tooldef.Result{Content: "No recognized project scaffold detected", Detail: "0 hints", Output: "No recognized project scaffold detected"}, nil
+		return tooldef.Result{
+			Content: "No recognized project scaffold detected",
+			Detail:  "0 hints",
+			Output:  "No recognized project scaffold detected",
+		}, nil
 	}
 
 	content := renderScaffoldResults(ctx, hints)
@@ -204,7 +211,6 @@ func detectScaffold(root string, limit int) ([]scaffoldHint, error) {
 		}
 		return nil
 	})
-
 	if err != nil {
 		return nil, err
 	}

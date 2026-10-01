@@ -14,6 +14,8 @@ import (
 )
 
 type labelComposer interface {
+	SetTopCenterLabel(layout.BorderLabel)
+	ClearTopCenterLabel()
 	SetBottomLeftLabel(layout.BorderLabel)
 	ClearBottomLeftLabel()
 	SetTopLeftLabel(layout.BorderLabel)
@@ -165,13 +167,54 @@ func (f *FooterChrome) Apply(msg controller.FooterMsg) {
 	switch msg.Kind {
 	case controller.FooterSetActivity:
 		f.activity.Apply(msg.Activity)
+		if msg.Activity == controller.ActivityStreaming {
+			f.composer.ClearTopCenterLabel()
+		}
 	case controller.FooterClearIfActivity:
 		if f.activity.Current == msg.If {
 			f.activity.Apply(controller.ActivityIdle)
+			f.composer.ClearTopCenterLabel()
 		}
 	case controller.FooterUpdateAvailable:
 		latest := strings.TrimPrefix(msg.Latest, "v")
 		f.updateHint = latest + " available · phi update"
+	case controller.FooterTurnEnd:
+		if f.composer == nil {
+			break
+		}
+		text := ""
+		if strings.TrimSpace(msg.Label) != "" {
+			text = strings.TrimSpace(msg.Label)
+		} else {
+			snap := session.Snapshot{}
+			if f.labelContext != nil {
+				snap = f.labelContext()
+			}
+			for i := len(snap.Messages) - 1; i >= 0; i-- {
+				if snap.Messages[i].Role == session.RoleAssistant {
+					if snap.Messages[i].State != session.StateStreaming {
+						text = snap.Messages[i].State.String()
+					}
+					break
+				}
+			}
+		}
+		if text == "" {
+			break
+		}
+		tps := ""
+		if f.lastUsage.TPS > 0 {
+			tps = fmt.Sprintf("%.0f tok/s", f.lastUsage.TPS)
+		}
+		if tps != "" {
+			tps = tps + " · " + text
+		} else {
+			tps = text
+		}
+		f.composer.SetTopLeftLabel(layout.BorderLabel{
+			Text:  tps,
+			Style: f.theme.IdentityOrSuccess(),
+		})
 	}
 }
 

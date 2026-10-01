@@ -29,8 +29,11 @@ the previous summary unchanged. Do not pad.
 
 IMPORTANT: If new messages end with unanswered question or request to user, you **MUST**
 add it to Critical Context (replacing any previous pending question if answered).
+## Context Hygiene
+- keep context lean; extract relevant lines, do not carry noise.
+- if quality drops or session is long, produce a handoff note with these sections: done, verified, decisions needed, next, open risks, files touched.
+- keep only current relevant instructions; remove deprecated facts.
 
-You **MUST** use this format (omit sections if not applicable):
 
 ## Goal
 [Preserve existing goals; add new ones if task expanded]

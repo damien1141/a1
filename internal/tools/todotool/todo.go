@@ -41,8 +41,11 @@ func TodoTool() tooldef.Tool {
 						"description": "File pattern filter. Example: *.go",
 					},
 					"limit": llm.Object{
-						"type":        "integer",
-						"description": fmt.Sprintf("Maximum matches to return. Example: 50 (default: %d)", todoDefaultLimit),
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Maximum matches to return. Example: 50 (default: %d)",
+							todoDefaultLimit,
+						),
 					},
 				},
 				Required: []string{},
@@ -107,7 +110,11 @@ func runTodo(ctx context.Context, input json.RawMessage) (tooldef.Result, error)
 	}
 
 	if len(matches) == 0 {
-		return tooldef.Result{Content: "No TODO/FIXME/HACK/XXX/OPTIMIZE/BUG markers found", Detail: "0 markers", Output: "No TODO/FIXME/HACK/XXX/OPTIMIZE/BUG markers found"}, nil
+		return tooldef.Result{
+			Content: "No TODO/FIXME/HACK/XXX/OPTIMIZE/BUG markers found",
+			Detail:  "0 markers",
+			Output:  "No TODO/FIXME/HACK/XXX/OPTIMIZE/BUG markers found",
+		}, nil
 	}
 
 	content := strings.Join(matches, "\n")
@@ -163,7 +170,10 @@ func searchTodos(root, glob string, limit int) ([]string, error) {
 			if todoPattern.MatchString(line) {
 				markerCount++
 				if markerCount > limit {
-					matches = append(matches, fmt.Sprintf("... (%d markers limit reached; use limit=%d for more)", limit, limit*2))
+					matches = append(
+						matches,
+						fmt.Sprintf("... (%d markers limit reached; use limit=%d for more)", limit, limit*2),
+					)
 					return filepath.SkipDir
 				}
 				lineText := strings.TrimRight(line, "\r")

@@ -42,8 +42,11 @@ func ApidocTool() tooldef.Tool {
 						"description": "File pattern filter. Example: *.go",
 					},
 					"limit": llm.Object{
-						"type":        "integer",
-						"description": fmt.Sprintf("Maximum results to return. Example: 50 (default: %d)", apidocDefaultLimit),
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Maximum results to return. Example: 50 (default: %d)",
+							apidocDefaultLimit,
+						),
 					},
 				},
 				Required: []string{},
@@ -70,12 +73,12 @@ type apidocInput struct {
 }
 
 type apidocEntry struct {
-	file     string
-	line     int
-	name     string
-	kind     string
+	file      string
+	line      int
+	name      string
+	kind      string
 	signature string
-	doc      string
+	doc       string
 }
 
 func runApidoc(ctx context.Context, input json.RawMessage) (tooldef.Result, error) {
@@ -113,7 +116,11 @@ func runApidoc(ctx context.Context, input json.RawMessage) (tooldef.Result, erro
 	}
 
 	if len(entries) == 0 {
-		return tooldef.Result{Content: "No exported symbols found for documentation", Detail: "0 symbols", Output: "No exported symbols found for documentation"}, nil
+		return tooldef.Result{
+			Content: "No exported symbols found for documentation",
+			Detail:  "0 symbols",
+			Output:  "No exported symbols found for documentation",
+		}, nil
 	}
 
 	content := renderApidocResults(ctx, entries)

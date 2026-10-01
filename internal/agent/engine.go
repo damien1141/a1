@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"iter"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/damien1141/a1/internal/llm/skills"
 	"github.com/damien1141/a1/internal/mcp"
 	"github.com/damien1141/a1/internal/permission"
+	"github.com/damien1141/a1/internal/engineaccess"
 	"github.com/damien1141/a1/internal/session"
 	"github.com/damien1141/a1/internal/session/compaction"
 	"github.com/damien1141/a1/internal/tools"
@@ -27,6 +29,37 @@ import (
 // Callers can distinguish it from other runtime errors with errors.Is,
 // e.g. for a dedicated exit code.
 var ErrMaxRounds = errors.New("exceeded maximum tool rounds")
+
+// ActiveEngine is the currently running agent engine, if any. It is set by
+// the TUI controller when a loop starts and cleared when it stops. Tools use
+// ActiveEngine() to inspect or mutate session-local permission state.
+var activeEngine atomic.Value
+
+// SetActiveEngine registers the active engine for tool/harness access.
+// Pass nil to clear.
+func SetActiveEngine(engine *Engine) {
+	activeEngine.Store(engine)
+	engineaccess.SetActiveEngine(engine)
+}
+
+// ActiveEngine returns the currently registered engine, or nil.
+func ActiveEngine() *Engine {
+	v := activeEngine.Load()
+	if v == nil {
+		return nil
+	}
+	return v.(*Engine)
+}
+
+// Gate returns the current permission gate.
+func (engine *Engine) Gate() permission.Gate {
+	if engine == nil {
+		return nil
+	}
+	return engine.gate
+}
+
+
 
 const defaultMaxToolRounds = 64
 

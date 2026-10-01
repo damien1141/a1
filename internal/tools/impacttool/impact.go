@@ -45,8 +45,11 @@ func ImpactTool() tooldef.Tool {
 						"description": "File pattern filter. Example: *.go",
 					},
 					"limit": llm.Object{
-						"type":        "integer",
-						"description": fmt.Sprintf("Maximum results to return. Example: 50 (default: %d)", impactDefaultLimit),
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Maximum results to return. Example: 50 (default: %d)",
+							impactDefaultLimit,
+						),
 					},
 				},
 				Required: []string{"symbol"},
@@ -115,7 +118,11 @@ func runImpact(ctx context.Context, input json.RawMessage) (tooldef.Result, erro
 	}
 
 	if len(refs) == 0 {
-		return tooldef.Result{Content: "No references found for " + symbol, Detail: "0 refs", Output: "No references found for " + symbol}, nil
+		return tooldef.Result{
+			Content: "No references found for " + symbol,
+			Detail:  "0 refs",
+			Output:  "No references found for " + symbol,
+		}, nil
 	}
 
 	content := renderImpactResults(ctx, refs)

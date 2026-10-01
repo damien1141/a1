@@ -35,7 +35,7 @@ func (d Decision) String() string {
 }
 
 // ModeOf returns the permission Mode configured on g, if known.
-// BypassGate unwraps to its Inner. Unknown gate types return "".
+// SessionAllowGate unwraps to its Inner. Unknown gate types return "".
 func ModeOf(g Gate) Mode {
 	for g != nil {
 		switch x := g.(type) {
@@ -44,7 +44,7 @@ func ModeOf(g Gate) Mode {
 				return x.Policy.Mode
 			}
 			return ModeInteractive
-		case *BypassGate:
+		case *SessionAllowGate:
 			g = x.Inner
 		case AllowAll:
 			return ""
@@ -72,10 +72,14 @@ const (
 
 // Request describes a tool invocation for permission evaluation.
 type Request struct {
-	Action  Action
-	Tool    string
-	Paths   []string // absolute, cleaned
-	Command string
+	Action      Action
+	Tool        string
+	Paths       []string // absolute, cleaned
+	Command     string
+	InputLabels []Label
+
+	// OutputLabel is populated after tool execution for admission checks.
+	OutputLabel Label
 }
 
 // Policy is the configurable permission ruleset.
@@ -88,7 +92,23 @@ type Policy struct {
 	BashDeny            []string // regex
 	SensitivePathDeny   []string // path prefixes
 	WorkspaceOnlyReads  bool     // if true, out-of-workspace reads deny
-	DangerouslyAllowAll bool     // skip all permission checks
+	DangerouslyAllowAll bool     // skip all permission checks globally
+	AllowAllSession    bool     // skip all permission checks for this session only
+
+	// Step 4: call-scoped authority.
+	// RequiresAuthority forces Ask decisions to consult an external Authority
+	// for a single-use ruling bound to the exact call hash.
+	RequiresAuthority bool
+	// Authority is the external authority consulted when RequiresAuthority is
+	// true and the gate returns Ask. Empty = no authority configured.
+	Authority any
+
+	// Admission controls (Step 3).
+	// NoUntrustedOutput denies admission when output trust is Untrusted.
+	NoUntrustedOutput bool
+	// RequiredEffects are effect tokens that must appear in EffectLog before
+	// admission is granted. Empty = no effect check.
+	RequiredEffects []string
 }
 
 // DefaultPolicy returns the interactive defaults from task-002.

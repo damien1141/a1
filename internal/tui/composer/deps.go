@@ -41,6 +41,8 @@ type OverlayComposer interface {
 
 // LabelComposer receives the composer status slot (activity or token labels).
 type LabelComposer interface {
+	SetTopCenterLabel(layout.BorderLabel)
+	ClearTopCenterLabel()
 	SetBottomLeftLabel(layout.BorderLabel)
 	ClearBottomLeftLabel()
 }

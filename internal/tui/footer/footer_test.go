@@ -15,8 +15,12 @@ import (
 )
 
 type stubComposer struct {
-	label layout.BorderLabel
-	set   bool
+	label       layout.BorderLabel
+	set         bool
+	topCenter   layout.BorderLabel
+	topCenterSet bool
+	topLeft     layout.BorderLabel
+	topLeftSet  bool
 }
 
 func (s *stubComposer) SetBottomLeftLabel(label layout.BorderLabel) {
@@ -27,6 +31,26 @@ func (s *stubComposer) SetBottomLeftLabel(label layout.BorderLabel) {
 func (s *stubComposer) ClearBottomLeftLabel() {
 	s.label = layout.BorderLabel{}
 	s.set = false
+}
+
+func (s *stubComposer) SetTopLeftLabel(label layout.BorderLabel) {
+	s.topLeft = label
+	s.topLeftSet = true
+}
+
+func (s *stubComposer) ClearTopLeftLabel() {
+	s.topLeft = layout.BorderLabel{}
+	s.topLeftSet = false
+}
+
+func (s *stubComposer) SetTopCenterLabel(label layout.BorderLabel) {
+	s.topCenter = label
+	s.topCenterSet = true
+}
+
+func (s *stubComposer) ClearTopCenterLabel() {
+	s.topCenter = layout.BorderLabel{}
+	s.topCenterSet = false
 }
 
 func TestDrawCombinesParts(t *testing.T) {
@@ -67,6 +91,20 @@ func TestUpdateTokenDisplayZeroClearsLabel(t *testing.T) {
 	f.UpdateTokenDisplay(session.TokenUsage{})
 	assert.False(t, comp.set)
 	assert.Empty(t, comp.label.Text)
+}
+
+func TestUpdateTokenDisplayTPS(t *testing.T) {
+	f := NewFooterChrome(components.DefaultTheme(), 128000)
+	comp := &stubComposer{}
+	f.BindComposer(comp)
+
+	f.UpdateTokenDisplay(session.TokenUsage{CompletionTokens: 100, TPS: 42.7})
+	assert.Equal(t, "43 tok/s", comp.topLeft.Text)
+	assert.Equal(t, f.theme.IdentityOrSuccess(), comp.topLeft.Style)
+
+	// Zero TPS clears the label.
+	f.UpdateTokenDisplay(session.TokenUsage{CompletionTokens: 100})
+	assert.Empty(t, comp.topLeft.Text)
 }
 
 func TestClearTokenDisplayDropsLabel(t *testing.T) {

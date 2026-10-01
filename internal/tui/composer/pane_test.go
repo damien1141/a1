@@ -181,7 +181,7 @@ func wiredComposer(t *testing.T) (*ComposerPane, *controller.Bus) {
 	reg := commands.NewCommandRegistry()
 	reg.Register(commands.Command{Name: "clear", Slash: true})
 	reg.Register(commands.Command{Name: "diff", Slash: true, NeedsArgs: true})
-	c.Wire(nil, nil, reg, c.cwd, bus, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	c.Wire(nil, nil, reg, c.cwd, bus, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	return c, bus
 }
 
@@ -293,8 +293,8 @@ func TestComposerHistoryNavigation(t *testing.T) {
 	assert.Equal(t, "first entry", c.Chat.Value)
 	assert.Equal(t, 1, c.historyIdx)
 
-	// Down past newest should clear input.
+	// Down past newest should restore the draft.
 	c.navigateHistory(1)
-	assert.Equal(t, "", c.Chat.Value)
+	assert.Equal(t, "new input", c.Chat.Value)
 	assert.Equal(t, -1, c.historyIdx)
 }

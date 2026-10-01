@@ -32,20 +32,23 @@ func ApiTool() tooldef.Tool {
 			Description: apiDescription,
 			Params: &llm.FunctionParameters{
 				Type: "object",
-			Properties: llm.Object{
-				"path": llm.Object{
-					"type":        "string",
-					"description": "Directory or package path. Example: ./internal/tools",
+				Properties: llm.Object{
+					"path": llm.Object{
+						"type":        "string",
+						"description": "Directory or package path. Example: ./internal/tools",
+					},
+					"glob": llm.Object{
+						"type":        "string",
+						"description": "File pattern filter. Example: *.go",
+					},
+					"limit": llm.Object{
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Maximum symbols to return. Example: 50 (default: %d)",
+							apiDefaultLimit,
+						),
+					},
 				},
-				"glob": llm.Object{
-					"type":        "string",
-					"description": "File pattern filter. Example: *.go",
-				},
-				"limit": llm.Object{
-					"type":        "integer",
-					"description": fmt.Sprintf("Maximum symbols to return. Example: 50 (default: %d)", apiDefaultLimit),
-				},
-			},
 				Required: []string{},
 			},
 			Readable: true,
@@ -70,11 +73,11 @@ type apiInput struct {
 }
 
 type apiSymbol struct {
-	file    string
-	name    string
-	kind    string
-	used    bool
-	refs    int
+	file string
+	name string
+	kind string
+	used bool
+	refs int
 }
 
 func runApi(ctx context.Context, input json.RawMessage) (tooldef.Result, error) {
@@ -112,7 +115,11 @@ func runApi(ctx context.Context, input json.RawMessage) (tooldef.Result, error) 
 	}
 
 	if len(symbols) == 0 {
-		return tooldef.Result{Content: "No exported symbols found", Detail: "0 symbols", Output: "No exported symbols found"}, nil
+		return tooldef.Result{
+			Content: "No exported symbols found",
+			Detail:  "0 symbols",
+			Output:  "No exported symbols found",
+		}, nil
 	}
 
 	content := renderApiResults(ctx, symbols)

@@ -39,8 +39,11 @@ func CoverageTool() tooldef.Tool {
 						"description": "Directory or package path. Example: ./internal/tools",
 					},
 					"limit": llm.Object{
-						"type":        "integer",
-						"description": fmt.Sprintf("Maximum files to return. Example: 50 (default: %d)", coverageDefaultLimit),
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Maximum files to return. Example: 50 (default: %d)",
+							coverageDefaultLimit,
+						),
 					},
 				},
 				Required: []string{},
@@ -106,7 +109,11 @@ func runCoverage(ctx context.Context, input json.RawMessage) (tooldef.Result, er
 	}
 
 	if len(coverage) == 0 {
-		return tooldef.Result{Content: "No coverage data found", Detail: "0 files", Output: "No coverage data found"}, nil
+		return tooldef.Result{
+			Content: "No coverage data found",
+			Detail:  "0 files",
+			Output:  "No coverage data found",
+		}, nil
 	}
 
 	content := renderCoverageResults(ctx, coverage)

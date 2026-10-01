@@ -27,7 +27,7 @@ func TestCheckWriteOutsideWorkspace(t *testing.T) {
 		Tool:   "write",
 		Paths:  []string{outside},
 	})
-	require.Equal(t, Deny, dec)
+	require.Equal(t, Ask, dec)
 }
 
 func TestCheckWriteInsideWorkspace(t *testing.T) {
@@ -48,7 +48,7 @@ func TestCheckWriteSensitiveConfig(t *testing.T) {
 	g, err := NewGate(DefaultPolicy(), ws)
 	require.NoError(t, err)
 	home, _ := os.UserHomeDir()
-	cfgPath := filepath.Join(home, ".phi", "config.yaml")
+	cfgPath := filepath.Join(home, ".a1", "config.yaml")
 	dec, _ := g.Check(t.Context(), Request{
 		Action: ActionWrite,
 		Tool:   "write",
@@ -154,4 +154,76 @@ func TestReadSensitiveDeny(t *testing.T) {
 		Paths:  []string{filepath.Join(home, ".ssh", "id_rsa")},
 	})
 	require.Equal(t, Deny, dec)
+}
+
+func TestCheckReadOutsideWorkspaceAsks(t *testing.T) {
+	ws := t.TempDir()
+	g, err := NewGate(DefaultPolicy(), ws)
+	require.NoError(t, err)
+	outside := filepath.Join(os.TempDir(), "phi-perm-test-read-outside")
+	dec, _ := g.Check(t.Context(), Request{
+		Action: ActionRead,
+		Tool:   "read",
+		Paths:  []string{outside},
+	})
+	require.Equal(t, Ask, dec, "interactive mode should ask for out-of-workspace reads")
+}
+
+func TestCheckReadOutsideWorkspaceDeniedInReadonly(t *testing.T) {
+	ws := t.TempDir()
+	p := DefaultPolicy()
+	p.Mode = ModeReadonly
+	g, err := NewGate(p, ws)
+	require.NoError(t, err)
+	outside := filepath.Join(os.TempDir(), "phi-perm-test-read-outside")
+	dec, _ := g.Check(t.Context(), Request{
+		Action: ActionRead,
+		Tool:   "read",
+		Paths:  []string{outside},
+	})
+	require.Equal(t, Deny, dec, "readonly mode should deny out-of-workspace reads")
+}
+
+func TestCheckReadOutsideWorkspaceDeniedInAutopilot(t *testing.T) {
+	p := DefaultPolicy()
+	p.Mode = ModeAutopilot
+	g, err := NewGate(p, t.TempDir())
+	require.NoError(t, err)
+	outside := filepath.Join(os.TempDir(), "phi-perm-test-read-outside")
+	dec, _ := g.Check(t.Context(), Request{
+		Action: ActionRead,
+		Tool:   "read",
+		Paths:  []string{outside},
+	})
+	require.Equal(t, Deny, dec, "autopilot mode should deny out-of-workspace reads")
+}
+
+func TestCheckWriteOutsideWorkspaceAllowedWhenDisabled(t *testing.T) {
+	ws := t.TempDir()
+	p := DefaultPolicy()
+	p.WorkspaceOnlyWrites = false
+	g, err := NewGate(p, ws)
+	require.NoError(t, err)
+	outside := filepath.Join(os.TempDir(), "phi-perm-test-outside")
+	dec, _ := g.Check(t.Context(), Request{
+		Action: ActionWrite,
+		Tool:   "write",
+		Paths:  []string{outside},
+	})
+	require.Equal(t, Allow, dec, "disabled workspace-only writes should allow out-of-workspace paths")
+}
+
+func TestCheckReadOutsideWorkspaceAllowedWhenDisabled(t *testing.T) {
+	ws := t.TempDir()
+	p := DefaultPolicy()
+	p.WorkspaceOnlyReads = false
+	g, err := NewGate(p, ws)
+	require.NoError(t, err)
+	outside := filepath.Join(os.TempDir(), "phi-perm-test-read-outside")
+	dec, _ := g.Check(t.Context(), Request{
+		Action: ActionRead,
+		Tool:   "read",
+		Paths:  []string{outside},
+	})
+	require.Equal(t, Allow, dec, "disabled workspace-only reads should allow out-of-workspace paths")
 }

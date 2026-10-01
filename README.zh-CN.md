@@ -111,7 +111,7 @@ Shift-Tab 在 `interactive`、`readonly`、`autopilot` 和 `headless-strict` 之
 | `build`         | 构建系统语义                              |
 | `deadcode`      | 未使用的导出符号                          |
 | `coverage`      | 解析 `go test -coverprofile`              |
-| `doc`           | 文档与代码同步检查                        |
+| `docsync`       | 文档与代码同步检查                        |
 | `apidoc`        | 从 godoc 生成 API 文档存根                |
 | `vuln`          | 漏洞模式扫描                              |
 | `nplusone`      | 循环内的数据库查询                        |

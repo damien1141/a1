@@ -18,7 +18,7 @@ import (
 
 func TestEditorAppliesBranchLabel(t *testing.T) {
 	e := &Editor{composer: composer.NewComposerPane(components.DefaultTheme(), "m", "/tmp")}
-	e.composer.Wire(nil, nil, nil, "", nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	e.composer.Wire(nil, nil, nil, "", nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	e.composer.Chat.BottomRightLabel.Text = "~ (old)"
 	e.Update(controller.BranchLabelMsg{Text: "~ (new)"})
 	assert.Equal(t, "~ (new)", e.composer.Chat.BottomRightLabel.Text)
@@ -34,7 +34,7 @@ func TestBranchSlashOpensPickerOverRealRepo(t *testing.T) {
 		bus:      bus,
 		cwd:      dir,
 	}
-	e.composer.Wire(nil, nil, nil, "", nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	e.composer.Wire(nil, nil, nil, "", nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	builtins := commands.NewBuiltinRegistry(bus, nil, e.composer, nil, nil, nil, "", nil, nil)
 	e.commands = builtins.Registry

@@ -40,6 +40,7 @@ type ChatInput struct {
 	MaxBodyRows int // default 12; height grows with content up to this
 
 	TopLeftLabel     layout.BorderLabel
+	TopCenterLabel   layout.BorderLabel
 	TopRightLabel    layout.BorderLabel
 	BottomLeftLabel  layout.BorderLabel
 	BottomRightLabel layout.BorderLabel
@@ -625,9 +626,12 @@ func (c *ChatInput) Draw(ctx components.DrawContext) components.Surface {
 	}
 
 	s := components.NewSurface(w, h, c)
-	var tl, tr, bl, br *layout.BorderLabel
+	var tl, tc, tr, bl, br *layout.BorderLabel
 	if c.TopLeftLabel.Visible() {
 		tl = &c.TopLeftLabel
+	}
+	if c.TopCenterLabel.Visible() {
+		tc = &c.TopCenterLabel
 	}
 	if c.TopRightLabel.Visible() {
 		tr = &c.TopRightLabel
@@ -638,7 +642,7 @@ func (c *ChatInput) Draw(ctx components.DrawContext) components.Surface {
 	if c.BottomRightLabel.Visible() {
 		br = &c.BottomRightLabel
 	}
-	layout.DrawRoundedBorder(&s, layout.BorderRounded, borderSt, tl, tr, bl, br, ctx.Method)
+	layout.DrawRoundedBorder(&s, layout.BorderRounded, borderSt, tc, tl, tr, bl, br, ctx.Method)
 
 	pad := c.padX()
 	innerW := w - 2 - pad*2

@@ -43,8 +43,11 @@ func DeadcodeTool() tooldef.Tool {
 						"description": "File pattern filter. Example: *.go",
 					},
 					"limit": llm.Object{
-						"type":        "integer",
-						"description": fmt.Sprintf("Maximum results to return. Example: 50 (default: %d)", deadcodeDefaultLimit),
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Maximum results to return. Example: 50 (default: %d)",
+							deadcodeDefaultLimit,
+						),
 					},
 				},
 				Required: []string{},
@@ -71,11 +74,11 @@ type deadcodeInput struct {
 }
 
 type deadcodeSymbol struct {
-	file    string
-	name    string
-	kind    string
-	line    int
-	refs    int
+	file string
+	name string
+	kind string
+	line int
+	refs int
 }
 
 func runDeadcode(ctx context.Context, input json.RawMessage) (tooldef.Result, error) {
@@ -113,7 +116,11 @@ func runDeadcode(ctx context.Context, input json.RawMessage) (tooldef.Result, er
 	}
 
 	if len(symbols) == 0 {
-		return tooldef.Result{Content: "No dead code detected", Detail: "0 dead symbols", Output: "No dead code detected"}, nil
+		return tooldef.Result{
+			Content: "No dead code detected",
+			Detail:  "0 dead symbols",
+			Output:  "No dead code detected",
+		}, nil
 	}
 
 	content := renderDeadcodeResults(ctx, symbols)

@@ -33,20 +33,20 @@ func WatcherTool() tooldef.Tool {
 			Description: watcherDescription,
 			Params: &llm.FunctionParameters{
 				Type: "object",
-			Properties: llm.Object{
-				"path": llm.Object{
-					"type":        "string",
-					"description": "Directory to watch. Example: .",
+				Properties: llm.Object{
+					"path": llm.Object{
+						"type":        "string",
+						"description": "Directory to watch. Example: .",
+					},
+					"since": llm.Object{
+						"type":        "string",
+						"description": "ISO8601 timestamp to check from. Empty uses last check.",
+					},
+					"glob": llm.Object{
+						"type":        "string",
+						"description": "Optional file pattern filter. Example: *.go",
+					},
 				},
-				"since": llm.Object{
-					"type":        "string",
-					"description": "ISO8601 timestamp to check from. Empty uses last check.",
-				},
-				"glob": llm.Object{
-					"type":        "string",
-					"description": "Optional file pattern filter. Example: *.go",
-				},
-			},
 				Required: []string{},
 			},
 			Readable: true,
@@ -102,7 +102,10 @@ func runWatcher(ctx context.Context, input json.RawMessage) (tooldef.Result, err
 	if strings.TrimSpace(in.Since) != "" {
 		since, err = time.Parse(time.RFC3339, strings.TrimSpace(in.Since))
 		if err != nil {
-			return tooldef.Result{}, fmt.Errorf("invalid since timestamp (use ISO8601, e.g. 2024-01-01T00:00:00Z): %w", err)
+			return tooldef.Result{}, fmt.Errorf(
+				"invalid since timestamp (use ISO8601, e.g. 2024-01-01T00:00:00Z): %w",
+				err,
+			)
 		}
 	} else {
 		lastCheckMu.Lock()

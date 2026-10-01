@@ -347,6 +347,27 @@ func (e *Executor) runOne(
 	return e.toolMessage(call.ID, modelContent), postStop, postReason
 }
 
+// consultAuthority applies Step 4 call-scoped authority when the policy requires it.
+func (e *Executor) consultAuthority(ctx context.Context, dec permission.Decision, reason string, req permission.Request) (permission.Decision, string) {
+	if dec != permission.Ask {
+		return dec, reason
+	}
+	static, ok := e.gate.(*permission.StaticGate)
+	if !ok || !static.Policy.RequiresAuthority {
+		return dec, reason
+	}
+	authority, _ := static.Policy.Authority.(permission.Authority)
+	if authority == nil {
+		return dec, reason
+	}
+	callHash := permission.CallHash(req)
+	dec, reason = authority.Authorize(ctx, callHash, req)
+	if dec == permission.Allow || dec == permission.Deny {
+		return dec, reason
+	}
+	return permission.Ask, reason
+}
+
 func (e *Executor) checkPermission(
 	ctx context.Context,
 	call llm.ToolCall,
@@ -361,6 +382,7 @@ func (e *Executor) checkPermission(
 	}
 
 	dec, reason := e.gate.Check(ctx, req)
+	dec, reason = e.consultAuthority(ctx, dec, reason, req)
 	switch dec {
 	case permission.Allow:
 		return llm.Message{}, false

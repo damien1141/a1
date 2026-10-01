@@ -17,6 +17,6 @@ func TestModeOf(t *testing.T) {
 	assert.Equal(t, ModeReadonly, ModeOf(g))
 
 	var enabled atomic.Bool
-	bypass := &BypassGate{Inner: g, Enabled: &enabled}
+	bypass := &SessionAllowGate{Inner: g, Enabled: &enabled}
 	assert.Equal(t, ModeReadonly, ModeOf(bypass))
 }

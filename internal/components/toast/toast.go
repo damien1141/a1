@@ -113,7 +113,7 @@ func (t *Toast) Draw(ctx components.DrawContext) components.Surface {
 			panel.SetCell(x, y, xui.Cell{Char: " ", Width: 1, Style: fill})
 		}
 	}
-	layout.DrawRoundedBorder(&panel, layout.BorderRounded, border, nil, nil, nil, nil, ctx.Method)
+	layout.DrawRoundedBorder(&panel, layout.BorderRounded, border, nil, nil, nil, nil, nil, ctx.Method)
 
 	textX := 1
 	if icon != "" {

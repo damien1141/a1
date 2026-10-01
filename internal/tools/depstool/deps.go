@@ -41,8 +41,11 @@ func DepsTool() tooldef.Tool {
 						"description": "File pattern filter. Example: *.go",
 					},
 					"limit": llm.Object{
-						"type":        "integer",
-						"description": fmt.Sprintf("Maximum results to return. Example: 50 (default: %d)", depsDefaultLimit),
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Maximum results to return. Example: 50 (default: %d)",
+							depsDefaultLimit,
+						),
 					},
 				},
 				Required: []string{},
@@ -69,9 +72,9 @@ type depsInput struct {
 }
 
 type depEntry struct {
-	path    string
-	files   []string
-	count   int
+	path  string
+	files []string
+	count int
 }
 
 func runDeps(ctx context.Context, input json.RawMessage) (tooldef.Result, error) {
@@ -109,7 +112,11 @@ func runDeps(ctx context.Context, input json.RawMessage) (tooldef.Result, error)
 	}
 
 	if len(entries) == 0 {
-		return tooldef.Result{Content: "No external dependencies found", Detail: "0 deps", Output: "No external dependencies found"}, nil
+		return tooldef.Result{
+			Content: "No external dependencies found",
+			Detail:  "0 deps",
+			Output:  "No external dependencies found",
+		}, nil
 	}
 
 	content := renderDepsResults(ctx, entries)
@@ -210,7 +217,7 @@ func parseImports(path string) ([]string, error) {
 
 func isExternalImport(imp string) bool {
 	return !strings.HasPrefix(imp, ".")
-	}
+}
 
 func sortDeps(entries []depEntry) {
 	for i := 0; i < len(entries); i++ {

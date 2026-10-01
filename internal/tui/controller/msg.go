@@ -37,6 +37,7 @@ const (
 	FooterSetActivity FooterKind = iota
 	FooterClearIfActivity
 	FooterUpdateAvailable
+	FooterTurnEnd
 )
 
 // FooterMsg drives footer activity status and update hints.
@@ -48,6 +49,7 @@ type FooterMsg struct {
 
 	Latest  string // FooterUpdateAvailable
 	Current string
+	Label   string // FooterTurnEnd
 }
 
 func (FooterMsg) isMsg() {}

@@ -119,6 +119,10 @@ type modelListResponse struct {
 
 const (
 	defaultOpenAIBaseURL  = "https://api.openai.com/v1"
+	// KiloGatewayBaseURL is the OpenRouter-compatible Kilo Gateway endpoint.
+	// It is exposed as a provider preset so users can select Kilo from the
+	// config UI without typing the URL by hand.
+	KiloGatewayBaseURL = "https://api.kilo.ai/api/gateway"
 	anthropicAPIVersion   = "2023-06-01"
 	modelListRequestLimit = 15 * time.Second
 	modelListBodyLimit    = int64(4 << 20)

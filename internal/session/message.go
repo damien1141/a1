@@ -170,6 +170,7 @@ type TokenUsage struct {
 	CachedTokens     int // prompt cache reads (C in the composer)
 	CacheWriteTokens int // prompt cache writes (W in the composer)
 	TotalTokens      int
+	TPS              float64 // completion tokens per second, 0 when unknown
 }
 
 // TokenUsageFrom converts provider usage into the UI-facing copy.

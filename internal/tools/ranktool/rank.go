@@ -30,24 +30,30 @@ func RankTool() tooldef.Tool {
 		Definition: llm.ToolDefinition{
 			Name:        "rank",
 			Description: rankDescription,
-		Params: &llm.FunctionParameters{
-			Type: "object",
-			Properties: llm.Object{
-				"path": llm.Object{
-					"type":        "string",
-					"description": "Directory to rank. Example: ./src",
+			Params: &llm.FunctionParameters{
+				Type: "object",
+				Properties: llm.Object{
+					"path": llm.Object{
+						"type":        "string",
+						"description": "Directory to rank. Example: ./src",
+					},
+					"glob": llm.Object{
+						"type": "string",
+						"description": fmt.Sprintf(
+							"Glob filter for file names. Example: **/*.go (default: %s)",
+							rankDefaultGlob,
+						),
+					},
+					"limit": llm.Object{
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Maximum results to return. Example: 20 (default: %d)",
+							rankDefaultLimit,
+						),
+					},
 				},
-				"glob": llm.Object{
-					"type":        "string",
-					"description": fmt.Sprintf("Glob filter for file names. Example: **/*.go (default: %s)", rankDefaultGlob),
-				},
-				"limit": llm.Object{
-					"type":        "integer",
-					"description": fmt.Sprintf("Maximum results to return. Example: 20 (default: %d)", rankDefaultLimit),
-				},
+				Required: []string{},
 			},
-			Required: []string{},
-		},
 			Readable: true,
 		},
 		DetailFromArgs: func(input json.RawMessage) string {
@@ -150,7 +156,6 @@ func rankFiles(root, glob string, limit int) ([]fileScore, error) {
 		})
 		return nil
 	})
-
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +206,11 @@ func scoreFile(root, path string, info os.FileInfo) (float64, []string) {
 	ext := strings.ToLower(filepath.Ext(base))
 
 	switch {
-	case strings.HasSuffix(base, "_test.go"), strings.HasSuffix(base, "_test.py"), strings.HasSuffix(base, "_test.rs"), strings.HasSuffix(base, "_test.js"), strings.HasSuffix(base, "_test.ts"):
+	case strings.HasSuffix(base, "_test.go"),
+		strings.HasSuffix(base, "_test.py"),
+		strings.HasSuffix(base, "_test.rs"),
+		strings.HasSuffix(base, "_test.js"),
+		strings.HasSuffix(base, "_test.ts"):
 		score -= 40
 		reasons = append(reasons, "test file")
 	case strings.HasSuffix(base, ".test.go"), strings.HasSuffix(base, ".spec.js"), strings.HasSuffix(base, ".spec.ts"):

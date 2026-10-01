@@ -277,7 +277,7 @@ func (p *Picker) Draw(ctx components.DrawContext) components.Surface {
 			panel.SetCell(x, y, xui.Cell{Char: " ", Width: 1, Style: fillStyle})
 		}
 	}
-	layout.DrawRoundedBorder(&panel, layout.BorderRounded, th.Border, nil, nil, nil, nil, ctx.Method)
+	layout.DrawRoundedBorder(&panel, layout.BorderRounded, th.Border, nil, nil, nil, nil, nil, ctx.Method)
 
 	// Soft blue selection bar (distinct from palette yellow).
 	selBg := xui.RGBColor(0x3a, 0x5a, 0x7a)

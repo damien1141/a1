@@ -41,8 +41,11 @@ func PropertyTool() tooldef.Tool {
 						"description": "File pattern filter. Example: *.go",
 					},
 					"limit": llm.Object{
-						"type":        "integer",
-						"description": fmt.Sprintf("Maximum results to return. Example: 20 (default: %d)", propertyDefaultLimit),
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Maximum results to return. Example: 20 (default: %d)",
+							propertyDefaultLimit,
+						),
 					},
 				},
 				Required: []string{},
@@ -69,10 +72,10 @@ type propertyInput struct {
 }
 
 type propertySuggestion struct {
-	file    string
-	funcName string
+	file      string
+	funcName  string
 	signature string
-	testCode string
+	testCode  string
 }
 
 func runProperty(ctx context.Context, input json.RawMessage) (tooldef.Result, error) {
@@ -110,7 +113,11 @@ func runProperty(ctx context.Context, input json.RawMessage) (tooldef.Result, er
 	}
 
 	if len(suggestions) == 0 {
-		return tooldef.Result{Content: "No exported functions found for property testing", Detail: "0 functions", Output: "No exported functions found for property testing"}, nil
+		return tooldef.Result{
+			Content: "No exported functions found for property testing",
+			Detail:  "0 functions",
+			Output:  "No exported functions found for property testing",
+		}, nil
 	}
 
 	content := renderPropertyResults(ctx, suggestions)

@@ -497,6 +497,20 @@ func (c *ComposerPane) ClearTopLeftLabel() {
 	}
 }
 
+// SetTopCenterLabel sets the composer top-center status label (unified turn/error/activity).
+func (c *ComposerPane) SetTopCenterLabel(label layout.BorderLabel) {
+	if c != nil {
+		c.Chat.TopCenterLabel = label
+	}
+}
+
+// ClearTopCenterLabel clears the composer top-center status label.
+func (c *ComposerPane) ClearTopCenterLabel() {
+	if c != nil {
+		c.Chat.TopCenterLabel = layout.BorderLabel{}
+	}
+}
+
 // SetBottomLeftLabel sets the composer status slot (activity or tokens).
 func (c *ComposerPane) SetBottomLeftLabel(label layout.BorderLabel) {
 	if c != nil {
@@ -1192,6 +1206,7 @@ func (c *ComposerPane) navigateHistory(delta int) {
 	}
 	if c.historyIdx == -1 {
 		if delta < 0 {
+			c.draft = c.Chat.Value
 			c.historyIdx = len(c.history) - 1
 		} else {
 			c.Chat.Value = ""

@@ -29,6 +29,7 @@ import (
 	"github.com/damien1141/a1/internal/tools/mcptool"
 	"github.com/damien1141/a1/internal/tools/migrationtool"
 	"github.com/damien1141/a1/internal/tools/nplusonetool"
+	"github.com/damien1141/a1/internal/tools/permissiontool"
 	"github.com/damien1141/a1/internal/tools/propertytool"
 	"github.com/damien1141/a1/internal/tools/ranktool"
 	"github.com/damien1141/a1/internal/tools/readtool"
@@ -151,6 +152,7 @@ func DefaultTools() []Tool {
 		testimpacttool.TestImpactTool(),
 		judgetool.JudgeTool(),
 		scratchpadtool.ScratchpadTool(),
+		permissiontool.PermissionTool(),
 	}
 }
 
@@ -200,5 +202,6 @@ func ReadonlyTools() []Tool {
 		testimpacttool.TestImpactTool(),
 		judgetool.JudgeTool(),
 		scratchpadtool.ScratchpadTool(),
+		permissiontool.PermissionTool(),
 	}
 }

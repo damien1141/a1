@@ -9,6 +9,7 @@ import (
 	"github.com/damien1141/a1/internal/components/palette"
 	"github.com/damien1141/a1/internal/components/toast"
 	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/permission"
 	"github.com/damien1141/a1/internal/tui/controller"
 )
 
@@ -83,18 +84,12 @@ func (s *SettingsCommands) applyTheme(name string) {
 	s.Bus.Publish(controller.ThemeMsg{Name: name})
 }
 
-func (s *SettingsCommands) setPermissions(bypass bool) {
+func (s *SettingsCommands) setPermissions(mode permission.Mode) {
 	if s == nil || s.Ctrl == nil {
 		return
 	}
-	s.Ctrl.SetAllowAll(bypass)
-	kind := toast.ToastWarning
-	msg := "Permissions: on (ask)"
-	if bypass {
-		kind = toast.ToastSuccess
-		msg = "Permissions: off (allow all)"
-	}
-	publishToast(s.Bus, msg, kind, 3*time.Second)
+	s.Ctrl.SetAllowAll(false)
+	s.Ctrl.SetPermissionMode(mode)
 }
 
 func (s *SettingsCommands) setAgents(enabled bool) {
@@ -222,35 +217,33 @@ func buildThemePalette(apply func(string)) palette.PaletteCommand {
 	}
 }
 
-func buildPermissionsPalette(set func(bool)) palette.PaletteCommand {
+func buildPermissionsPalette(set func(permission.Mode)) palette.PaletteCommand {
+	modes := []permission.Mode{
+		permission.ModeInteractive,
+		permission.ModeReadonly,
+		permission.ModeAutopilot,
+		permission.ModeHeadlessStrict,
+	}
+	submenu := make([]palette.PaletteCommand, 0, len(modes))
+	for _, mode := range modes {
+		submenu = append(submenu, palette.PaletteCommand{
+			ID:       "permissions-" + string(mode),
+			Verb:     string(mode),
+			Keywords: []string{string(mode), "permission", "mode"},
+			Run: func() {
+				if set != nil {
+					set(mode)
+				}
+			},
+		})
+	}
 	return palette.PaletteCommand{
 		ID:           "settings-permissions",
 		Noun:         "settings",
 		Verb:         "permissions",
-		Keywords:     []string{"permission", "bypass", "allow all", "ask", "gate", "security"},
-		SubmenuTitle: "Permissions",
-		Submenu: []palette.PaletteCommand{
-			{
-				ID:       "permissions-off",
-				Verb:     "off — allow all (no prompts)",
-				Keywords: []string{"bypass", "disable", "off"},
-				Run: func() {
-					if set != nil {
-						set(true)
-					}
-				},
-			},
-			{
-				ID:       "permissions-on",
-				Verb:     "on — ask before gated tools",
-				Keywords: []string{"enable", "ask", "on", "interactive"},
-				Run: func() {
-					if set != nil {
-						set(false)
-					}
-				},
-			},
-		},
+		Keywords:     []string{"permission", "mode", "interactive", "readonly", "autopilot", "headless"},
+		SubmenuTitle: "Permission mode",
+		Submenu:      submenu,
 	}
 }
 

@@ -42,8 +42,11 @@ func NplusoneTool() tooldef.Tool {
 						"description": "File pattern filter. Example: *.go",
 					},
 					"limit": llm.Object{
-						"type":        "integer",
-						"description": fmt.Sprintf("Maximum results to return. Example: 50 (default: %d)", nplusoneDefaultLimit),
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Maximum results to return. Example: 50 (default: %d)",
+							nplusoneDefaultLimit,
+						),
 					},
 				},
 				Required: []string{},
@@ -70,11 +73,11 @@ type nplusoneInput struct {
 }
 
 type nplusoneHit struct {
-	file    string
-	loopLine int
+	file      string
+	loopLine  int
 	queryLine int
 	queryType string
-	context string
+	context   string
 }
 
 func runNplusone(ctx context.Context, input json.RawMessage) (tooldef.Result, error) {
@@ -112,7 +115,11 @@ func runNplusone(ctx context.Context, input json.RawMessage) (tooldef.Result, er
 	}
 
 	if len(hits) == 0 {
-		return tooldef.Result{Content: "No N+1 query patterns detected", Detail: "0 hits", Output: "No N+1 query patterns detected"}, nil
+		return tooldef.Result{
+			Content: "No N+1 query patterns detected",
+			Detail:  "0 hits",
+			Output:  "No N+1 query patterns detected",
+		}, nil
 	}
 
 	content := renderNplusoneResults(ctx, hits)
@@ -173,7 +180,9 @@ func collectGoFiles(root, glob string) ([]string, error) {
 	return files, err
 }
 
-var queryRe = regexp.MustCompile(`(?i)(db\.Query|db\.QueryRow|db\.Exec|sql\.Query|sql\.QueryRow|gorm\.Find|gorm\.First|gorm\.Where|\.Raw\(|\.Scan\(|\.Select\(|\.Create\(|\.Save\(|\.Update\(|\.Delete\()`)
+var queryRe = regexp.MustCompile(
+	`(?i)(db\.Query|db\.QueryRow|db\.Exec|sql\.Query|sql\.QueryRow|gorm\.Find|gorm\.First|gorm\.Where|\.Raw\(|\.Scan\(|\.Select\(|\.Create\(|\.Save\(|\.Update\(|\.Delete\()`,
+)
 
 func scanFileForNPlusOne(path string) ([]nplusoneHit, error) {
 	b, err := os.ReadFile(path)
@@ -241,7 +250,7 @@ func renderNplusoneResults(ctx context.Context, hits []nplusoneHit) string {
 	var sb strings.Builder
 	for _, h := range hits {
 		rel := tooldef.RelToCwd(ctx, h.file)
-			sb.WriteString(fmt.Sprintf("%s:%d\t%d\t%s\t%s\n", rel, h.loopLine, h.queryLine, h.queryType, h.context))
+		sb.WriteString(fmt.Sprintf("%s:%d\t%d\t%s\t%s\n", rel, h.loopLine, h.queryLine, h.queryType, h.context))
 	}
 	return sb.String()
 }

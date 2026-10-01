@@ -30,16 +30,19 @@ func ErrorTool() tooldef.Tool {
 			Description: errorDescription,
 			Params: &llm.FunctionParameters{
 				Type: "object",
-			Properties: llm.Object{
-				"text": llm.Object{
-					"type":        "string",
-					"description": "Error message or stack trace line to match.",
+				Properties: llm.Object{
+					"text": llm.Object{
+						"type":        "string",
+						"description": "Error message or stack trace line to match.",
+					},
+					"limit": llm.Object{
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Maximum matches to return. Example: 5 (default: %d)",
+							errorDefaultLimit,
+						),
+					},
 				},
-				"limit": llm.Object{
-					"type":        "integer",
-					"description": fmt.Sprintf("Maximum matches to return. Example: 5 (default: %d)", errorDefaultLimit),
-				},
-			},
 				Required: []string{"text"},
 			},
 			Readable: true,
@@ -122,7 +125,9 @@ var errorPatterns = []errorPattern{
 		name:        "Rust: borrow checker error",
 		description: "The Rust borrow checker rejected an ownership pattern.",
 		fix:         "Clone the value, use references with appropriate lifetimes, or restructure ownership.",
-		re:          regexp.MustCompile(`(?i)borrow of moved value|cannot borrow.*as mutable|borrowed value does not live long enough`),
+		re: regexp.MustCompile(
+			`(?i)borrow of moved value|cannot borrow.*as mutable|borrowed value does not live long enough`,
+		),
 	},
 	{
 		name:        "Rust: index out of bounds",
@@ -134,7 +139,9 @@ var errorPatterns = []errorPattern{
 		name:        "Rust: unwrap on None",
 		description: "unwrap() was called on a None value.",
 		fix:         "Use if let, match, or .expect(\"message\") to handle the None case explicitly.",
-		re:          regexp.MustCompile(`(?i)called\s+` + "`" + `unwrap` + "`" + `\s+on\s+a\s+` + "`" + `None` + "`" + `\s+value`),
+		re: regexp.MustCompile(
+			`(?i)called\s+` + "`" + `unwrap` + "`" + `\s+on\s+a\s+` + "`" + `None` + "`" + `\s+value`,
+		),
 	},
 	{
 		name:        "Node: require not found",
@@ -182,7 +189,16 @@ func runError(ctx context.Context, input json.RawMessage) (tooldef.Result, error
 	for _, pattern := range errorPatterns {
 		subs := pattern.re.FindStringSubmatch(text)
 		if len(subs) > 0 {
-			matches = append(matches, fmt.Sprintf("[%s]\n  Matched: %s\n  %s\n  Fix: %s", pattern.name, subs[0], pattern.description, pattern.fix))
+			matches = append(
+				matches,
+				fmt.Sprintf(
+					"[%s]\n  Matched: %s\n  %s\n  Fix: %s",
+					pattern.name,
+					subs[0],
+					pattern.description,
+					pattern.fix,
+				),
+			)
 			if len(matches) >= limit {
 				break
 			}
@@ -190,7 +206,11 @@ func runError(ctx context.Context, input json.RawMessage) (tooldef.Result, error
 	}
 
 	if len(matches) == 0 {
-		return tooldef.Result{Content: "No known error patterns matched", Detail: "0 matches", Output: "No known error patterns matched"}, nil
+		return tooldef.Result{
+			Content: "No known error patterns matched",
+			Detail:  "0 matches",
+			Output:  "No known error patterns matched",
+		}, nil
 	}
 
 	content := strings.Join(matches, "\n\n")

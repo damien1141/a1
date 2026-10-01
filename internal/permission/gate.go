@@ -10,6 +10,14 @@ import (
 // Gate evaluates permission requests. It has no side effects; Ask is handled by the caller.
 type Gate interface {
 	Check(ctx context.Context, req Request) (Decision, string)
+	Admit(ctx context.Context, req Request) (Decision, string)
+}
+
+// AdmissionGate is an optional extension of Gate for post-execution admission checks.
+type AdmissionGate interface {
+	// Admit evaluates whether a completed tool execution should be admitted
+	// based on output labels and effect-log checks.
+	Admit(ctx context.Context, req Request) (Decision, string)
 }
 
 // StaticGate evaluates against a fixed Policy and workspace root.
@@ -28,6 +36,14 @@ func NewGate(policy Policy, workspace string) (*StaticGate, error) {
 		workspace = WorkspaceRoot()
 	}
 	g := &StaticGate{Policy: policy, Workspace: workspace}
+	if policy.DangerouslyAllowAll || policy.AllowAllSession {
+		g.Policy.BashDefault = Allow
+		g.Policy.WorkspaceOnlyWrites = false
+		g.Policy.WorkspaceOnlyReads = false
+		g.Policy.SensitivePathDeny = nil
+		g.bashAllow = nil
+		g.bashDeny = nil
+	}
 	var err error
 	g.bashAllow, err = compilePatterns(policy.BashAllow)
 	if err != nil {
@@ -54,9 +70,36 @@ func compilePatterns(patterns []string) ([]*regexp.Regexp, error) {
 
 // Check evaluates req and applies mode folding (Ask→Deny for headless-strict / autopilot).
 func (g *StaticGate) Check(ctx context.Context, req Request) (Decision, string) {
+	if g.Policy.DangerouslyAllowAll || g.Policy.AllowAllSession {
+		return Allow, ""
+	}
 	_ = ctx
 	dec, reason := g.evaluate(req)
 	return g.foldMode(dec, reason, req)
+}
+
+// Admit evaluates whether a completed execution should be admitted based on
+// output labels and effect-log requirements. It does not re-run path/cmd checks.
+//
+// Default behavior:
+//   - If req has no OutputLabel, allow.
+//   - If Policy has no RequiredEffects or NoUntrustedOutput, allow.
+//   - Otherwise enforce configured effect and trust rules.
+func (g *StaticGate) Admit(_ context.Context, req Request) (Decision, string) {
+	out := req.OutputLabel
+	if out.Trust == Unknown && len(out.EffectTokens) == 0 {
+		return Allow, ""
+	}
+	if !g.Policy.NoUntrustedOutput && len(g.Policy.RequiredEffects) == 0 {
+		return Allow, ""
+	}
+	if g.Policy.NoUntrustedOutput && out.Trust == Untrusted {
+		return Deny, "untrusted output denied by policy"
+	}
+	if len(g.Policy.RequiredEffects) > 0 {
+		return Ask, "admission requires effect-log verification"
+	}
+	return Allow, ""
 }
 
 func (g *StaticGate) evaluate(req Request) (Decision, string) {
@@ -205,5 +248,10 @@ type AllowAll struct{}
 
 // Check always returns Allow.
 func (AllowAll) Check(context.Context, Request) (Decision, string) {
+	return Allow, ""
+}
+
+// Admit always returns Allow.
+func (AllowAll) Admit(context.Context, Request) (Decision, string) {
 	return Allow, ""
 }

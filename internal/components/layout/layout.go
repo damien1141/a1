@@ -124,7 +124,7 @@ func DrawRoundedBorder(
 	s *components.Surface,
 	style BorderStyle,
 	borderStyle xui.Style,
-	topLeft, topRight, bottomLeft, bottomRight *BorderLabel,
+	topLeft, topCenter, topRight, bottomLeft, bottomRight *BorderLabel,
 	method xui.WidthMethod,
 ) {
 	w, h := s.Size.Width, s.Size.Height
@@ -133,44 +133,96 @@ func DrawRoundedBorder(
 	}
 	g := borderGlyphs(style)
 	bs := borderStyle
-
 	put := func(x, y int, ch string, st xui.Style) {
 		s.SetCell(x, y, xui.Cell{Char: ch, Width: 1, Style: st})
 	}
-
-	// Corners + edges
-	put(0, 0, g.tl, bs)
-	put(w-1, 0, g.tr, bs)
-	put(0, h-1, g.bl, bs)
-	put(w-1, h-1, g.br, bs)
-	for x := 1; x < w-1; x++ {
-		put(x, 0, g.h, bs)
-		put(x, h-1, g.h, bs)
+	corners := func() {
+		put(0, 0, g.tl, bs)
+		put(w-1, 0, g.tr, bs)
+		put(0, h-1, g.bl, bs)
+		put(w-1, h-1, g.br, bs)
+		for x := 1; x < w-1; x++ {
+			put(x, 0, g.h, bs)
+			put(x, h-1, g.h, bs)
+		}
+		for y := 1; y < h-1; y++ {
+			put(0, y, g.v, bs)
+			put(w-1, y, g.v, bs)
+		}
 	}
-	for y := 1; y < h-1; y++ {
-		put(0, y, g.v, bs)
-		put(w-1, y, g.v, bs)
+	const cornerGap = 1
+	paintTop := func() {
+		avail := w - 2
+		if avail < 1 {
+			return
+		}
+		leftW := borderLabelWidth(topLeft, method)
+		centerW := borderLabelWidth(topCenter, method)
+		rightW := borderLabelWidth(topRight, method)
+		gap := 0
+		if leftW > 0 {
+			gap += cornerGap
+		}
+		if centerW > 0 {
+			gap += cornerGap
+		}
+		if rightW > 0 {
+			gap += cornerGap
+		}
+		content := avail - gap
+		if content < 0 {
+			content = 0
+		}
+		if leftW+centerW+rightW > content {
+			total := leftW + centerW + rightW
+			if total == 0 {
+				return
+			}
+			rightW = int(float64(rightW) / float64(total) * float64(content))
+			centerW = int(float64(centerW) / float64(total) * float64(content))
+			leftW = content - centerW - rightW
+			if leftW < 0 {
+				leftW = 0
+				centerW = content - rightW
+				if centerW < 0 {
+					centerW = 0
+					rightW = content
+				}
+			}
+		}
+		x := 1 + cornerGap
+		if topLeft != nil && leftW > 0 {
+			paintBorderLabel(s, x, 0, leftW, topLeft, method)
+			x += leftW + cornerGap
+		}
+		if topCenter != nil && centerW > 0 {
+			paintBorderLabel(s, x, 0, centerW, topCenter, method)
+			x += centerW + cornerGap
+		}
+		if topRight != nil && rightW > 0 {
+			spans, tw := fitBorderLabel(topRight, rightW, method)
+			x = w - 1 - cornerGap - tw
+			x = max(x, 1)
+			paintFittedSpans(s, x, 0, spans, method)
+		}
 	}
-
-	const cornerGap = 1 // border cells between corner and label text
-	embed := func(y int, left, right *BorderLabel) {
-		avail := w - 2 // between corners
+	paintBottom := func(y int, left, right *BorderLabel) {
+		avail := w - 2
 		if avail < 1 {
 			return
 		}
 		leftW := borderLabelWidth(left, method)
 		rightW := borderLabelWidth(right, method)
 		content := avail
-		if left != nil && leftW > 0 {
+		if leftW > 0 {
 			content -= cornerGap
 		}
-		if right != nil && rightW > 0 {
+		if rightW > 0 {
 			content -= cornerGap
 		}
 		if content < 0 {
 			content = 0
 		}
-		// Prefer right label if they collide.
 		if leftW+rightW > content {
 			if rightW >= content {
 				rightW = content
@@ -184,14 +236,14 @@ func DrawRoundedBorder(
 		}
 		if right != nil && rightW > 0 {
 			spans, tw := fitBorderLabel(right, rightW, method)
-			// Leave cornerGap cells of border before the right corner.
 			x := w - 1 - cornerGap - tw
 			x = max(x, 1)
 			paintFittedSpans(s, x, y, spans, method)
 		}
 	}
-	embed(0, topLeft, topRight)
-	embed(h-1, bottomLeft, bottomRight)
+	corners()
+	paintTop()
+	paintBottom(h-1, bottomLeft, bottomRight)
 }
 
 // TruncateToWidth returns the longest prefix of s that fits within max columns.

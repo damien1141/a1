@@ -33,16 +33,19 @@ func TestTool() tooldef.Tool {
 			Description: testDescription,
 			Params: &llm.FunctionParameters{
 				Type: "object",
-			Properties: llm.Object{
-				"output": llm.Object{
-					"type":        "string",
-					"description": "Raw test runner output to parse.",
+				Properties: llm.Object{
+					"output": llm.Object{
+						"type":        "string",
+						"description": "Raw test runner output to parse.",
+					},
+					"context": llm.Object{
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Lines of context around each failure. Example: 3 (default: %d)",
+							testDefaultContextLines,
+						),
+					},
 				},
-				"context": llm.Object{
-					"type":        "integer",
-					"description": fmt.Sprintf("Lines of context around each failure. Example: 3 (default: %d)", testDefaultContextLines),
-				},
-			},
 				Required: []string{"output"},
 			},
 			Readable: true,
@@ -89,7 +92,11 @@ func runTest(ctx context.Context, input json.RawMessage) (tooldef.Result, error)
 
 	failures := parseTestFailures(text)
 	if len(failures) == 0 {
-		return tooldef.Result{Content: "No test failures detected in output", Detail: "0 failures", Output: "No test failures detected in output"}, nil
+		return tooldef.Result{
+			Content: "No test failures detected in output",
+			Detail:  "0 failures",
+			Output:  "No test failures detected in output",
+		}, nil
 	}
 
 	var out []string
@@ -172,7 +179,8 @@ func parseTestFailures(text string) []testFailure {
 		}
 		body := strings.Join(bodyLines, "\n")
 		for _, line := range strings.Split(body, "\n") {
-			if strings.Contains(line, "assertion") || strings.Contains(line, "panic") || strings.Contains(line, "error") {
+			if strings.Contains(line, "assertion") || strings.Contains(line, "panic") ||
+				strings.Contains(line, "error") {
 				if fm := cargoFileRe.FindStringSubmatch(line); fm != nil {
 					ln, _ := strconv.Atoi(fm[2])
 					failures = append(failures, testFailure{

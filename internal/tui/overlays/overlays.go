@@ -717,7 +717,7 @@ func paintAskPanel(
 	method xui.WidthMethod,
 ) components.Surface {
 	panel := components.NewSurface(width, height, nil)
-	layout.DrawRoundedBorder(&panel, layout.BorderRounded, border, nil, nil, nil, nil, method)
+	layout.DrawRoundedBorder(&panel, layout.BorderRounded, border, nil, nil, nil, nil, nil, method)
 	y := 1
 	for _, line := range body {
 		if y >= height-1 {

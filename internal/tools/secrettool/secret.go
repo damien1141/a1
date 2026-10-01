@@ -31,20 +31,23 @@ func SecretTool() tooldef.Tool {
 			Description: secretDescription,
 			Params: &llm.FunctionParameters{
 				Type: "object",
-			Properties: llm.Object{
-				"path": llm.Object{
-					"type":        "string",
-					"description": "Directory or file to scan. Example: ./src",
+				Properties: llm.Object{
+					"path": llm.Object{
+						"type":        "string",
+						"description": "Directory or file to scan. Example: ./src",
+					},
+					"glob": llm.Object{
+						"type":        "string",
+						"description": "File pattern filter. Example: *.go",
+					},
+					"limit": llm.Object{
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Maximum matches to return. Example: 50 (default: %d)",
+							secretDefaultLimit,
+						),
+					},
 				},
-				"glob": llm.Object{
-					"type":        "string",
-					"description": "File pattern filter. Example: *.go",
-				},
-				"limit": llm.Object{
-					"type":        "integer",
-					"description": fmt.Sprintf("Maximum matches to return. Example: 50 (default: %d)", secretDefaultLimit),
-				},
-			},
 				Required: []string{},
 			},
 			Readable: true,
@@ -171,7 +174,10 @@ func scanForSecrets(root, glob string, limit int) ([]string, error) {
 				if pattern.re.MatchString(line) {
 					count++
 					if count > limit {
-						matches = append(matches, fmt.Sprintf("... (%d secrets limit reached; use limit=%d for more)", limit, limit*2))
+						matches = append(
+							matches,
+							fmt.Sprintf("... (%d secrets limit reached; use limit=%d for more)", limit, limit*2),
+						)
 						return filepath.SkipDir
 					}
 					lineText := strings.TrimRight(line, "\r")

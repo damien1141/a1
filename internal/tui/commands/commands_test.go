@@ -10,6 +10,7 @@ import (
 
 	"github.com/damien1141/a1/internal/components/palette"
 	"github.com/damien1141/a1/internal/extension"
+	"github.com/damien1141/a1/internal/permission"
 	"github.com/damien1141/a1/internal/tui/controller"
 )
 
@@ -28,18 +29,23 @@ func TestThemeCommand_Submenu(t *testing.T) {
 }
 
 func TestPermissionsCommand_Toggle(t *testing.T) {
-	var bypass *bool
-	cmd := buildPermissionsPalette(func(v bool) { bypass = &v })
+	var got permission.Mode
+	cmd := buildPermissionsPalette(func(m permission.Mode) { got = m })
 	assert.Equal(t, "settings", cmd.Noun)
 	assert.Equal(t, "permissions", cmd.Verb)
-	require.Len(t, cmd.Submenu, 2)
+	require.Len(t, cmd.Submenu, 4)
 
 	cmd.Submenu[0].Run()
-	require.NotNil(t, bypass)
-	assert.True(t, *bypass)
+	assert.Equal(t, permission.ModeInteractive, got)
 
 	cmd.Submenu[1].Run()
-	assert.False(t, *bypass)
+	assert.Equal(t, permission.ModeReadonly, got)
+
+	cmd.Submenu[2].Run()
+	assert.Equal(t, permission.ModeAutopilot, got)
+
+	cmd.Submenu[3].Run()
+	assert.Equal(t, permission.ModeHeadlessStrict, got)
 }
 
 func TestAgentsCommand_Toggle(t *testing.T) {

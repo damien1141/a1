@@ -42,8 +42,11 @@ func DocTool() tooldef.Tool {
 						"description": "File pattern filter. Example: *.go",
 					},
 					"limit": llm.Object{
-						"type":        "integer",
-						"description": fmt.Sprintf("Maximum results to return. Example: 50 (default: %d)", docDefaultLimit),
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Maximum results to return. Example: 50 (default: %d)",
+							docDefaultLimit,
+						),
 					},
 				},
 				Required: []string{},
@@ -112,7 +115,11 @@ func runDocSync(ctx context.Context, input json.RawMessage) (tooldef.Result, err
 	}
 
 	if len(hits) == 0 {
-		return tooldef.Result{Content: "No documentation drift detected", Detail: "0 hits", Output: "No documentation drift detected"}, nil
+		return tooldef.Result{
+			Content: "No documentation drift detected",
+			Detail:  "0 hits",
+			Output:  "No documentation drift detected",
+		}, nil
 	}
 
 	content := renderDocSyncResults(ctx, hits)
@@ -236,7 +243,11 @@ func collectDocFiles(root string) ([]string, error) {
 
 var exportRe = regexp.MustCompile(`(?m)^(?:func|type|var|const)\s+([A-Z][a-zA-Z0-9_]*)\b`)
 
-func parseExports(path string) ([]struct{ file, name, kind string; line int }, error) {
+func parseExports(path string) ([]struct {
+	file, name, kind string
+	line             int
+}, error,
+) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -245,7 +256,10 @@ func parseExports(path string) ([]struct{ file, name, kind string; line int }, e
 	lines := strings.Split(text, "\n")
 
 	matches := exportRe.FindAllStringSubmatch(text, -1)
-	symbols := make([]struct{ file, name, kind string; line int }, 0, len(matches))
+	symbols := make([]struct {
+		file, name, kind string
+		line             int
+	}, 0, len(matches))
 	for _, m := range matches {
 		lineNum := 0
 		for i, line := range lines {
@@ -265,7 +279,10 @@ func parseExports(path string) ([]struct{ file, name, kind string; line int }, e
 		case strings.HasPrefix(m[0], "const"):
 			kind = "const"
 		}
-		symbols = append(symbols, struct{ file, name, kind string; line int }{
+		symbols = append(symbols, struct {
+			file, name, kind string
+			line             int
+		}{
 			file: path,
 			name: m[1],
 			kind: kind,

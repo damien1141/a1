@@ -21,3 +21,9 @@ func GetDefaultProject() *Project {
 	})
 	return defaultProject
 }
+
+// SetDefaultProject replaces the singleton project. Intended for tests only.
+func SetDefaultProject(p *Project) {
+	defaultProject = p
+	initOnce = sync.Once{}
+}

@@ -14,7 +14,7 @@ func Extract(toolName string, args json.RawMessage) (Request, error) {
 
 // ExtractAt is Extract with an explicit cwd for relative paths (session / job WorkDir).
 func ExtractAt(toolName string, args json.RawMessage, cwd string) (Request, error) {
-	req := Request{Tool: toolName}
+	req := Request{Tool: toolName, InputLabels: []Label{DefaultTrustForToolArgs(toolName)}}
 	switch toolName {
 	case "bash":
 		var in struct {

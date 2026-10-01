@@ -34,16 +34,19 @@ func StackTool() tooldef.Tool {
 			Description: stackDescription,
 			Params: &llm.FunctionParameters{
 				Type: "object",
-			Properties: llm.Object{
-				"text": llm.Object{
-					"type":        "string",
-					"description": "Stack trace text to parse. Paste the full traceback.",
+				Properties: llm.Object{
+					"text": llm.Object{
+						"type":        "string",
+						"description": "Stack trace text to parse. Paste the full traceback.",
+					},
+					"context": llm.Object{
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Lines of source context around each frame. Example: 5 (default: %d)",
+							stackDefaultContextLines,
+						),
+					},
 				},
-				"context": llm.Object{
-					"type":        "integer",
-					"description": fmt.Sprintf("Lines of source context around each frame. Example: 5 (default: %d)", stackDefaultContextLines),
-				},
-			},
 				Required: []string{"text"},
 			},
 			Readable: true,
@@ -88,7 +91,11 @@ func runStack(ctx context.Context, input json.RawMessage) (tooldef.Result, error
 	}
 
 	if len(frames) == 0 {
-		return tooldef.Result{Content: "No recognizable stack frames found in input", Detail: "0 frames", Output: "No recognizable stack frames found in input"}, nil
+		return tooldef.Result{
+			Content: "No recognizable stack frames found in input",
+			Detail:  "0 frames",
+			Output:  "No recognizable stack frames found in input",
+		}, nil
 	}
 
 	var out []string

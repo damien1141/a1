@@ -41,8 +41,11 @@ func MigrationTool() tooldef.Tool {
 						"description": "File pattern filter. Example: *.go",
 					},
 					"limit": llm.Object{
-						"type":        "integer",
-						"description": fmt.Sprintf("Maximum results to return. Example: 50 (default: %d)", migrationDefaultLimit),
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Maximum results to return. Example: 50 (default: %d)",
+							migrationDefaultLimit,
+						),
 					},
 				},
 				Required: []string{},
@@ -110,7 +113,11 @@ func runMigration(ctx context.Context, input json.RawMessage) (tooldef.Result, e
 	}
 
 	if len(hits) == 0 {
-		return tooldef.Result{Content: "No migration targets detected", Detail: "0 hits", Output: "No migration targets detected"}, nil
+		return tooldef.Result{
+			Content: "No migration targets detected",
+			Detail:  "0 hits",
+			Output:  "No migration targets detected",
+		}, nil
 	}
 
 	content := renderMigrationResults(ctx, hits)
@@ -179,11 +186,26 @@ var migrationPatterns = []struct {
 	{regexp.MustCompile(`(?i)ioutil\.WriteFile`), "ioutil.WriteFile is deprecated; use os.WriteFile (Go 1.16+)"},
 	{regexp.MustCompile(`(?i)ioutil\.ReadAll`), "ioutil.ReadAll is deprecated; use io.ReadAll (Go 1.16+)"},
 	{regexp.MustCompile(`(?i)ioutil\.NopCloser`), "ioutil.NopCloser is deprecated; use io.NopCloser (Go 1.16+)"},
-	{regexp.MustCompile(`(?i)golang\.org/x/net/context`), "golang.org/x/net/context is deprecated; use context package (Go 1.7+)"},
-	{regexp.MustCompile(`(?i)context\.TODO\(\)`), "context.TODO() suggests incomplete error handling; consider context.Background() or context.WithCancel"},
-	{regexp.MustCompile(`(?i)http\.Get\(|http\.Post\(|http\.Do\(`), "http.Client.Get/Post/Do without timeout; wrap in context.WithTimeout"},
-	{regexp.MustCompile(`(?i)sql\.Rows\.Scan\([^)]*\*[^)]*\)`), "sql.Rows.Scan without error check; always check returned error"},
-	{regexp.MustCompile(`(?i)defer\s+\w+\.Close\(\)\s*$`), "defer Close() without error check; consider checking Close() error"},
+	{
+		regexp.MustCompile(`(?i)golang\.org/x/net/context`),
+		"golang.org/x/net/context is deprecated; use context package (Go 1.7+)",
+	},
+	{
+		regexp.MustCompile(`(?i)context\.TODO\(\)`),
+		"context.TODO() suggests incomplete error handling; consider context.Background() or context.WithCancel",
+	},
+	{
+		regexp.MustCompile(`(?i)http\.Get\(|http\.Post\(|http\.Do\(`),
+		"http.Client.Get/Post/Do without timeout; wrap in context.WithTimeout",
+	},
+	{
+		regexp.MustCompile(`(?i)sql\.Rows\.Scan\([^)]*\*[^)]*\)`),
+		"sql.Rows.Scan without error check; always check returned error",
+	},
+	{
+		regexp.MustCompile(`(?i)defer\s+\w+\.Close\(\)\s*$`),
+		"defer Close() without error check; consider checking Close() error",
+	},
 }
 
 func scanFileForMigrations(path string) ([]migrationHit, error) {

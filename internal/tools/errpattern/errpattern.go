@@ -41,8 +41,11 @@ func ErrPatternTool() tooldef.Tool {
 						"description": "File pattern filter. Example: *.go",
 					},
 					"limit": llm.Object{
-						"type":        "integer",
-						"description": fmt.Sprintf("Maximum results to return. Example: 50 (default: %d)", errPatternDefaultLimit),
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Maximum results to return. Example: 50 (default: %d)",
+							errPatternDefaultLimit,
+						),
 					},
 				},
 				Required: []string{},
@@ -110,7 +113,11 @@ func runErrPattern(ctx context.Context, input json.RawMessage) (tooldef.Result, 
 	}
 
 	if len(hits) == 0 {
-		return tooldef.Result{Content: "No error handling issues detected", Detail: "0 hits", Output: "No error handling issues detected"}, nil
+		return tooldef.Result{
+			Content: "No error handling issues detected",
+			Detail:  "0 hits",
+			Output:  "No error handling issues detected",
+		}, nil
 	}
 
 	content := renderErrPatternResults(ctx, hits)
@@ -176,8 +183,14 @@ var errPatterns = []struct {
 	message string
 }{
 	{regexp.MustCompile(`(?i)_\s*=\s*err`), "error is ignored; handle or explicitly discard with blank identifier"},
-	{regexp.MustCompile(`(?i)err\s*:=\s*\w+\([^)]*\)\s*;`), "error is ignored; handle or explicitly discard with blank identifier"},
-	{regexp.MustCompile(`(?i)if\s+err\s*:=\s*\w+\([^)]*\);\s*err\s*!=\s*nil\s*\{\s*return\s*err\s*\}`), "error is returned without context; consider wrapping with additional context"},
+	{
+		regexp.MustCompile(`(?i)err\s*:=\s*\w+\([^)]*\)\s*;`),
+		"error is ignored; handle or explicitly discard with blank identifier",
+	},
+	{
+		regexp.MustCompile(`(?i)if\s+err\s*:=\s*\w+\([^)]*\);\s*err\s*!=\s*nil\s*\{\s*return\s*err\s*\}`),
+		"error is returned without context; consider wrapping with additional context",
+	},
 	{regexp.MustCompile(`(?i)panic\(`), "panic usage; consider returning error instead"},
 	{regexp.MustCompile(`(?i)log\.Fatal`), "log.Fatal in library code; consider returning error instead"},
 }

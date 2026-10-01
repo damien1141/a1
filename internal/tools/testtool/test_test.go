@@ -26,7 +26,12 @@ func TestTestTool_Definition(t *testing.T) {
 func TestRunTest_GoFailure(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
-	writeFile(t, root, "main_test.go", "package main\nimport \"testing\"\nfunc TestMain(t *testing.T) {\n\tt.Errorf(\"assertion failed\")\n}\n")
+	writeFile(
+		t,
+		root,
+		"main_test.go",
+		"package main\nimport \"testing\"\nfunc TestMain(t *testing.T) {\n\tt.Errorf(\"assertion failed\")\n}\n",
+	)
 
 	output := `=== RUN   TestMain
 === FAIL: TestMain (0.00s)

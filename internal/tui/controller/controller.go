@@ -174,7 +174,7 @@ func (c *EngineController) initGate(policy permission.Policy) {
 	if err != nil {
 		inner = permission.AllowAll{}
 	}
-	c.gate = &permission.BypassGate{Inner: inner, Enabled: &c.allowAll}
+	c.gate = &permission.SessionAllowGate{Inner: inner, Enabled: &c.allowAll}
 }
 
 func (c *EngineController) PermissionMode() permission.Mode {
@@ -221,6 +221,7 @@ func (c *EngineController) CycleThinkLevel() {
 		}
 	}
 	c.SetThinkLevel(modes[idx])
+	c.publish(ModelChangeMsg{Kind: "think_level", Value: string(modes[idx])})
 	c.publish(
 		ToastMsg{Message: "Thinking mode: " + string(modes[idx]), Kind: toast.ToastSuccess, Duration: 2 * time.Second},
 	)
@@ -232,6 +233,12 @@ func (c *EngineController) SetPermissionMode(mode permission.Mode) {
 	}
 	policy := c.proj.Config().Permissions
 	policy.Mode = mode
+	// Preserve the session-tuned ask timeout: initGate stored it on the
+	// controller, but rebuilding the gate from the config would drop it back
+	// to the default on every mode switch.
+	if c.askTimeoutSec > 0 {
+		policy.AskTimeoutSec = c.askTimeoutSec
+	}
 	var inner permission.Gate
 	var err error
 	inner, err = permission.NewGate(policy, permission.WorkspaceRoot())
@@ -241,7 +248,7 @@ func (c *EngineController) SetPermissionMode(mode permission.Mode) {
 	if err != nil {
 		inner = permission.AllowAll{}
 	}
-	c.gate = &permission.BypassGate{Inner: inner, Enabled: &c.allowAll}
+	c.gate = &permission.SessionAllowGate{Inner: inner, Enabled: &c.allowAll}
 	if c.engine != nil {
 		c.engine.SetPermission(c.gate, c.askPermission)
 	}
@@ -518,6 +525,7 @@ func (c *EngineController) SetThinkLevel(mode llm.ThinkMode) {
 	if c.engine != nil {
 		c.engine.SetModel(c.modelCfg)
 	}
+	c.publish(ModelChangeMsg{Kind: "think_level", Value: string(mode)})
 }
 
 // ThinkLevel returns the current thinking mode.
@@ -819,19 +827,24 @@ func (c *EngineController) runLoop(
 		return
 	}
 
+	agent.SetActiveEngine(c.engine)
+	defer agent.SetActiveEngine(nil)
 	for ev, err := range c.engine.Loop(ctx, prompt, agent.LoopOpts{
 		PendingSkills: pendingSkills,
 		Images:        images,
 	}) {
 		if !c.alive(gen) {
+			c.publish(FooterMsg{Kind: FooterTurnEnd})
 			return
 		}
 		if err != nil {
 			c.publishLoopError(gen, err.Error())
+			c.publish(FooterMsg{Kind: FooterTurnEnd})
 			return
 		}
 		if ev != nil {
 			c.publish(SessionEventMsg{Event: ev})
 		}
 	}
+	c.publish(FooterMsg{Kind: FooterTurnEnd})
 }

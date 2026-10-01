@@ -322,7 +322,7 @@ func (p *Picker) Draw(ctx components.DrawContext) components.Surface {
 			panel.SetCell(x, y, xui.Cell{Char: " ", Width: 1, Style: fillStyle})
 		}
 	}
-	layout.DrawRoundedBorder(&panel, layout.BorderRounded, th.Border, nil, nil, nil, nil, ctx.Method)
+	layout.DrawRoundedBorder(&panel, layout.BorderRounded, th.Border, nil, nil, nil, nil, nil, ctx.Method)
 
 	title := " " + p.cfg.Title + " · " + strconv.Itoa(len(p.Items)) + " "
 	if n := len(p.filtered); n != len(p.Items) {

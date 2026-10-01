@@ -42,8 +42,11 @@ func VulnTool() tooldef.Tool {
 						"description": "File pattern filter. Example: *.go",
 					},
 					"limit": llm.Object{
-						"type":        "integer",
-						"description": fmt.Sprintf("Maximum results to return. Example: 50 (default: %d)", vulnDefaultLimit),
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Maximum results to return. Example: 50 (default: %d)",
+							vulnDefaultLimit,
+						),
 					},
 				},
 				Required: []string{},
@@ -112,7 +115,11 @@ func runVuln(ctx context.Context, input json.RawMessage) (tooldef.Result, error)
 	}
 
 	if len(hits) == 0 {
-		return tooldef.Result{Content: "No vulnerability patterns detected", Detail: "0 hits", Output: "No vulnerability patterns detected"}, nil
+		return tooldef.Result{
+			Content: "No vulnerability patterns detected",
+			Detail:  "0 hits",
+			Output:  "No vulnerability patterns detected",
+		}, nil
 	}
 
 	content := renderVulnResults(ctx, hits)
@@ -178,8 +185,16 @@ var vulnPatterns = []struct {
 	message  string
 	severity string
 }{
-	{regexp.MustCompile(`(?i)fmt\.Sprintf\(".*%s.*",\s*\w+\)`), "potential SQL injection via fmt.Sprintf with user input", "high"},
-	{regexp.MustCompile(`(?i)exec\.Command\(".*",\s*.*input`), "potential command injection via exec.Command with user input", "high"},
+	{
+		regexp.MustCompile(`(?i)fmt\.Sprintf\(".*%s.*",\s*\w+\)`),
+		"potential SQL injection via fmt.Sprintf with user input",
+		"high",
+	},
+	{
+		regexp.MustCompile(`(?i)exec\.Command\(".*",\s*.*input`),
+		"potential command injection via exec.Command with user input",
+		"high",
+	},
 	{regexp.MustCompile(`(?i)template\.HTML\("`), "potential XSS via template.HTML with unescaped content", "high"},
 	{regexp.MustCompile(`(?i)md5\.New\(\)|md5\.Sum`), "use of weak hash function MD5", "medium"},
 	{regexp.MustCompile(`(?i)sha1\.New\(\)|sha1\.Sum`), "use of weak hash function SHA1", "medium"},
@@ -187,8 +202,16 @@ var vulnPatterns = []struct {
 	{regexp.MustCompile(`(?i)crypto/rc4`), "use of weak encryption RC4", "high"},
 	{regexp.MustCompile(`(?i)password.*=.*["'][^"']{8,}["']`), "hardcoded password in source code", "high"},
 	{regexp.MustCompile(`(?i)api[_-]?key.*=.*["'][A-Za-z0-9_\-]{20,}["']`), "hardcoded API key in source code", "high"},
-	{regexp.MustCompile(`(?i)http\.Get\(|http\.Post\(`), "HTTP request without timeout; consider context.WithTimeout", "medium"},
-	{regexp.MustCompile(`(?i)tls\.Config\{[^}]*InsecureSkipVerify.*true`), "InsecureSkipVerify=true disables TLS certificate validation", "high"},
+	{
+		regexp.MustCompile(`(?i)http\.Get\(|http\.Post\(`),
+		"HTTP request without timeout; consider context.WithTimeout",
+		"medium",
+	},
+	{
+		regexp.MustCompile(`(?i)tls\.Config\{[^}]*InsecureSkipVerify.*true`),
+		"InsecureSkipVerify=true disables TLS certificate validation",
+		"high",
+	},
 }
 
 func scanFileForVulns(path string) ([]vulnHit, error) {

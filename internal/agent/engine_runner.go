@@ -58,6 +58,9 @@ func (r EngineRunner) Run(ctx context.Context, env job.RunEnv) (string, error) {
 			return "", err
 		}
 		gate = g
+		if spec.Confinement != nil {
+			gate = permission.NewConfinementGate(g, *spec.Confinement)
+		}
 	}
 
 	toolList := r.Tools

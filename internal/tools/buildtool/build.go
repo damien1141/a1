@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/damien1141/a1/internal/tools/tooldef"
 	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/tools/tooldef"
 )
 
 const (
@@ -37,8 +37,11 @@ func BuildTool() tooldef.Tool {
 						"description": "Project root to inspect. Example: .",
 					},
 					"limit": llm.Object{
-						"type":        "integer",
-								"description": fmt.Sprintf("Maximum results to return. Example: 20 (default: %d)", buildDefaultLimit),
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Maximum results to return. Example: 20 (default: %d)",
+							buildDefaultLimit,
+						),
 					},
 				},
 				Required: []string{},
@@ -106,7 +109,11 @@ func runBuild(ctx context.Context, input json.RawMessage) (tooldef.Result, error
 	}
 
 	if len(targets) == 0 {
-		return tooldef.Result{Content: "No build targets found", Detail: "0 targets", Output: "No build targets found"}, nil
+		return tooldef.Result{
+			Content: "No build targets found",
+			Detail:  "0 targets",
+			Output:  "No build targets found",
+		}, nil
 	}
 
 	content := renderBuildResults(ctx, targets)
@@ -142,14 +149,14 @@ func inspectBuild(root string, limit int) ([]buildTarget, error) {
 func detectManifest(root string) string {
 	names := map[string]bool{
 		"Makefile": false, "makefile": false, "GNUmakefile": false,
-		"CMakeLists.txt": false,
-		"meson.build": false,
+		"CMakeLists.txt":    false,
+		"meson.build":       false,
 		"meson_options.txt": false,
-		"Cargo.toml": false,
-		"go.mod": false,
-		"package.json": false,
-		"build.gradle": false,
-		"build.gradle.kts": false,
+		"Cargo.toml":        false,
+		"go.mod":            false,
+		"package.json":      false,
+		"build.gradle":      false,
+		"build.gradle.kts":  false,
 	}
 	files, _ := os.ReadDir(root)
 	for _, f := range files {
@@ -210,11 +217,11 @@ func inspectMakefile(root string) []buildTarget {
 				desc = "phony"
 			}
 			targets = append(targets, buildTarget{
-				Name:      name,
-				Kind:      "make",
-				Source:    filepath.Base(path),
-				DependsOn: splitDeps(rest),
-				Command:   rest,
+				Name:        name,
+				Kind:        "make",
+				Source:      filepath.Base(path),
+				DependsOn:   splitDeps(rest),
+				Command:     rest,
 				Description: desc,
 			})
 		}
@@ -250,11 +257,11 @@ func inspectCMake(root string) []buildTarget {
 			deps = inner[1:]
 		}
 		targets = append(targets, buildTarget{
-			Name:      name,
-			Kind:      "cmake",
-			Source:    filepath.Base(path),
-			DependsOn: deps,
-			Command:   line,
+			Name:        name,
+			Kind:        "cmake",
+			Source:      filepath.Base(path),
+			DependsOn:   deps,
+			Command:     line,
 			Description: kindForCMake(line),
 		})
 	}
@@ -284,11 +291,11 @@ func inspectMeson(root string) []buildTarget {
 			deps = parts[2:]
 		}
 		targets = append(targets, buildTarget{
-			Name:      name,
-			Kind:      "meson",
-			Source:    filepath.Base(path),
-			DependsOn: deps,
-			Command:   line,
+			Name:        name,
+			Kind:        "meson",
+			Source:      filepath.Base(path),
+			DependsOn:   deps,
+			Command:     line,
 			Description: kindForMeson(line),
 		})
 	}
@@ -326,11 +333,11 @@ func inspectCargo(root string) []buildTarget {
 			continue
 		}
 		targets = append(targets, buildTarget{
-			Name:      val,
-			Kind:      "cargo",
-			Source:    filepath.Base(path),
-			DependsOn: []string{},
-			Command:   line,
+			Name:        val,
+			Kind:        "cargo",
+			Source:      filepath.Base(path),
+			DependsOn:   []string{},
+			Command:     line,
 			Description: "cargo target",
 		})
 		inSection = false
@@ -350,11 +357,11 @@ func inspectGo(root string) []buildTarget {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "go ") {
 			targets = append(targets, buildTarget{
-				Name:      "go build",
-				Kind:      "go",
-				Source:    filepath.Base(path),
-				DependsOn: []string{},
-				Command:   line,
+				Name:        "go build",
+				Kind:        "go",
+				Source:      filepath.Base(path),
+				DependsOn:   []string{},
+				Command:     line,
 				Description: "module build",
 			})
 			break
@@ -384,11 +391,11 @@ func inspectNpm(root string) []buildTarget {
 			continue
 		}
 		targets = append(targets, buildTarget{
-			Name:      key,
-			Kind:      "npm",
-			Source:    filepath.Base(path),
-			DependsOn: []string{},
-			Command:   line,
+			Name:        key,
+			Kind:        "npm",
+			Source:      filepath.Base(path),
+			DependsOn:   []string{},
+			Command:     line,
 			Description: "npm script",
 		})
 	}
@@ -420,11 +427,11 @@ func inspectGradle(root string) []buildTarget {
 			name = strings.TrimSuffix(name, "(")
 		}
 		targets = append(targets, buildTarget{
-			Name:      name,
-			Kind:      "gradle",
-			Source:    filepath.Base(path),
-			DependsOn: []string{},
-			Command:   line,
+			Name:        name,
+			Kind:        "gradle",
+			Source:      filepath.Base(path),
+			DependsOn:   []string{},
+			Command:     line,
 			Description: "gradle task",
 		})
 	}
@@ -471,7 +478,17 @@ func splitDeps(deps string) []string {
 func renderBuildResults(ctx context.Context, targets []buildTarget) string {
 	var sb strings.Builder
 	for _, t := range targets {
-		sb.WriteString(fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\n", t.Name, t.Kind, t.Source, strings.Join(t.DependsOn, ", "), t.Description, t.Name))
+		sb.WriteString(
+			fmt.Sprintf(
+				"%s\t%s\t%s\t%s\t%s\t%s\n",
+				t.Name,
+				t.Kind,
+				t.Source,
+				strings.Join(t.DependsOn, ", "),
+				t.Description,
+				t.Name,
+			),
+		)
 	}
 	return sb.String()
 }

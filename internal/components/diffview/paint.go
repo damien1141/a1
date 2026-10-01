@@ -354,7 +354,7 @@ func paintHelp(s *components.Surface, th components.Theme, method xui.WidthMetho
 		fillRange(&panel, 0, y, boxW, fill)
 	}
 	layout.DrawRoundedBorder(&panel, layout.BorderRounded, chrome.ModalBorder(th),
-		&layout.BorderLabel{Text: " diff review ", Style: chrome.PanelTitle(th)}, nil, nil, nil, method)
+		&layout.BorderLabel{Text: " diff review ", Style: chrome.PanelTitle(th)}, nil, nil, nil, nil, method)
 	for i, l := range lines {
 		if i+1 >= boxH-1 {
 			break
