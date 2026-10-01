@@ -3,6 +3,9 @@
 *.log
 phi-debug.log
 .cursor/
+billion-context.md
+todo.md
+.temp/
 
 # Go build output (make build)
 /phi

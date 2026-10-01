@@ -232,4 +232,18 @@ var presets = []Preset{
 		},
 		Hooks: glmHooks(),
 	},
+	// Kilo Gateway — OpenRouter-compatible endpoint serving 300+ models.
+	// The TypeScript provider extension (./.temp/kilo-pi-provider) handles
+	// browser auth and usage popups; this preset wires the Go harness to the
+	// same gateway so users can select Kilo from the config UI.
+	// Source: https://github.com/Kilo-Org/kilo-pi-provider
+	{
+		Config: llm.ModelConfig{
+			Name:          "kilo",
+			BaseURL:       "https://api.kilo.ai/api/gateway",
+			ContextWindow: 1_000_000,
+			ImageEnabled:  true,
+			API:           llm.OpenAI,
+		},
+	},
 }

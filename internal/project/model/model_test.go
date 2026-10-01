@@ -195,3 +195,18 @@ func TestGeminiLevelHookOffFloor(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(body), `"thinkingLevel":"LOW"`)
 }
+
+// TestLookupKilo verifies the Kilo Gateway preset wires the Go harness to
+// the same OpenRouter-compatible endpoint the TypeScript provider extension
+// (./.temp/kilo-pi-provider) targets, so users can select Kilo from the
+// config UI without typing the URL by hand.
+func TestLookupKilo(t *testing.T) {
+	p, ok := Lookup("kilo")
+	require.True(t, ok)
+	assert.Equal(t, "kilo", p.Config.Name)
+	assert.Equal(t, "https://api.kilo.ai/api/gateway", p.Config.BaseURL)
+	assert.Equal(t, 1_000_000, p.Config.ContextWindow)
+	assert.True(t, p.Config.ImageEnabled, "gateway models accept image input")
+	assert.Equal(t, llm.OpenAI, p.Config.API, "Kilo Gateway is OpenRouter-compatible")
+	assert.Nil(t, p.Hooks.OpenAI, "no vendor-specific hooks needed")
+}
