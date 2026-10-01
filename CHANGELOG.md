@@ -10,7 +10,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **Curated skill library:** 34 pre-built skills ship embedded and install to
+  `~/.a1/skills/` on first run. Each is a `SKILL.md` with YAML frontmatter, a
+  structured operating loop, and a `references/` directory. The harness loads
+  them into the system prompt and routes by keyword trigger. Covers keel skills
+  (`rigorous-coding`, `agent-orchestration`, `spec-driven-development`,
+  `debugging-wizard`), language skills (Go, Rust, Python, TypeScript, C++, .NET,
+  Swift, JVM, PHP, Ruby, Lua), framework skills (React, Astro, Vue, Angular,
+  HTMX, Alpine), and domain skills (system architecture, API design, cloud-native,
+  SRE, data engineering, LLM engineering, testing, code review).
+- **Skill routing guide** in the system prompt: keel → domain → language →
+  framework loading order, with rules for multi-skill stacking.
+
 ### Changed
+
+- Bump version to v1.0.1.
 
 ### Deprecated
 

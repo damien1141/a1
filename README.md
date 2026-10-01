@@ -59,6 +59,17 @@ This is not a settings menu you have to leave the session to edit. The agent can
 
 Real web interaction inside the agent loop: auth flows, dashboards, docs, any surface a human can see.
 
+### Curated skill library
+
+34 pre-built skills ship with a1 and install to `~/.a1/skills/` on first run. Each is a `SKILL.md` with YAML frontmatter, a structured operating loop, and a `references/` directory of deep-dive docs. The harness loads them into the system prompt and routes by keyword trigger.
+
+- **Keel skills** — `rigorous-coding` (5-gate loop, VERIFIED vs ASSUMED labels), `agent-orchestration` (delegation contracts, output enforcement, red-team critique), `spec-driven-development` (EARS requirements, PROGRESS.md, ADRs), `debugging-wizard` (systematic method, bug taxonomies, blameless postmortems)
+- **Language skills** — `golang-pro`, `rust-pro`, `python-pro`, `typescript-pro`, `cpp-pro`, `dotnet-pro`, `swift-pro`, `jvm-pro`, `php-pro`, `ruby-pro`, `lua-pro`
+- **Framework skills** — `react-pro`, `astro-pro` (110 design templates, 4 archetypes), `vue-pro`, `angular-pro`, `htmx-pro`, `alpine-pro`
+- **Domain skills** — `system-architecture` (DDD, microservices, strangler fig), `api-design` (REST, gRPC, GraphQL, WebSocket), `cloud-native` (K8s, GitOps, service mesh), `sre-reliability` (SLOs, observability, chaos), `data-engineering`, `llm-engineering`, `testing-master`, `code-reviewer` (OWASP, SAST, CVSS)
+
+Skills are constraints and shortcuts, not suggestions. When a task matches, read the `SKILL.md` first and follow its operating loop — skipping steps is the most common source of bugs.
+
 ## The stack
 
 Everything else is still phi under the hood: same TUI, same sub-agent model, same MCP meta-tool design, same extension protocol.

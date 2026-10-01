@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+
+	"github.com/damien1141/a1/internal/llm/skills"
 )
 
 // GlobalLayout describes the global phi home directory (~/.a1).
@@ -54,11 +56,11 @@ func (g GlobalLayout) SkillsDir() string { return filepath.Join(g.root, "skills"
 func (g GlobalLayout) ExtensionsDir() string { return filepath.Join(g.root, "extensions") }
 
 // SessionBase returns the root directory for persisted sessions.
-	func (g GlobalLayout) SessionBase() string { return filepath.Join(g.root, "session") }
+func (g GlobalLayout) SessionBase() string { return filepath.Join(g.root, "session") }
 
-	// MemoryDir returns the root directory for session memory banks
-	// (~/.a1/sessions/memory).
-	func (g GlobalLayout) MemoryDir() string { return filepath.Join(g.root, "sessions", "memory") }
+// MemoryDir returns the root directory for session memory banks
+// (~/.a1/sessions/memory).
+func (g GlobalLayout) MemoryDir() string { return filepath.Join(g.root, "sessions", "memory") }
 
 // JobsDir returns the directory for sub-agent job artifacts.
 func (g GlobalLayout) JobsDir() string { return filepath.Join(g.root, "jobs") }
@@ -135,6 +137,13 @@ func ensureGlobalDirs(global GlobalLayout) error {
 			return fmt.Errorf("create directory %q: %w", dir, err)
 		}
 	}
+
+	// Install default skills on first run so ~/.a1/skills/ is populated
+	// automatically. Existing user skills are never overwritten.
+	if _, err := skills.InstallDefault(global.SkillsDir()); err != nil {
+		return fmt.Errorf("install default skills: %w", err)
+	}
+
 	return nil
 }
 

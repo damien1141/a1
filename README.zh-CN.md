@@ -59,6 +59,17 @@ Shift-Tab 在 `interactive`、`readonly`、`autopilot` 和 `headless-strict` 之
 
 在代理循环内完成真实网页交互：认证流程、仪表盘、文档，人类能看的东西代理都能看。
 
+### 精选技能库
+
+34 个预置技能随 a1 内嵌，首次运行时自动安装到 `~/.a1/skills/`。每个技能是一个 `SKILL.md`，带 YAML frontmatter、结构化操作循环，以及 `references/` 深度文档目录。框架将它们加载进系统提示，并按关键词触发路由。
+
+- **基座技能** — `rigorous-coding`（5 门循环、VERIFIED vs ASSUMED 标签）、`agent-orchestration`（委派契约、输出强制、红队批判）、`spec-driven-development`（EARS 需求、PROGRESS.md、ADR）、`debugging-wizard`（系统化方法、bug 分类、无责复盘）
+- **语言技能** — `golang-pro`、`rust-pro`、`python-pro`、`typescript-pro`、`cpp-pro`、`dotnet-pro`、`swift-pro`、`jvm-pro`、`php-pro`、`ruby-pro`、`lua-pro`
+- **框架技能** — `react-pro`、`astro-pro`（110 个设计模板、4 种设计原型）、`vue-pro`、`angular-pro`、`htmx-pro`、`alpine-pro`
+- **领域技能** — `system-architecture`（DDD、微服务、Strangler Fig）、`api-design`（REST、gRPC、GraphQL、WebSocket）、`cloud-native`（K8s、GitOps、服务网格）、`sre-reliability`（SLO、可观测性、混沌工程）、`data-engineering`、`llm-engineering`、`testing-master`、`code-reviewer`（OWASP、SAST、CVSS）
+
+技能是约束和捷径，而非建议。当任务匹配时，先读 `SKILL.md` 再遵循其操作循环——跳过步骤是 bug 的最常见来源。
+
 ## 技术栈
 
 底层仍然是 phi：相同的 TUI、相同的子代理模型、相同的 MCP 元工具设计、相同的扩展协议。

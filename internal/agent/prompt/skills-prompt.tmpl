@@ -4,9 +4,30 @@ Skills are reusable workflows loaded from the agent's skill directories.
 Treat skills as constraints and shortcuts—apply the smallest relevant part.
 
 ## How to use skills
-- When a task matches a skill, read that skill's SKILL.md first and follow it.
-- Interpret script/asset paths relative to that skill's directory.
-- Follow each skill's name, description, and guidance; do not invent a parallel workflow.
+
+### Routing
+
+Match the task against each skill's `triggers` field (comma-separated keywords in the skill's YAML frontmatter). A skill matches when any of its triggers appear in the task, the file type, or the working context.
+
+- **Keel skills** (`rigorous-coding`, `agent-orchestration`, `spec-driven-development`, `debugging-wizard`, `testing-master`, `code-reviewer`) apply to almost every non-trivial task. Consider them first, then narrow.
+- **Domain skills** (`system-architecture`, `api-design`, `cloud-native`, `sre-reliability`, `data-engineering`, `llm-engineering`) apply when the task is in that domain.
+- **Language skills** (`golang-pro`, `rust-pro`, `python-pro`, `typescript-pro`, etc.) apply when writing or reviewing code in that language.
+- **Framework skills** (`react-pro`, `astro-pro`, `vue-pro`, `angular-pro`, `htmx-pro`) apply when working in that framework.
+
+### Loading
+
+1. Read the skill's `SKILL.md` **before** writing code in that domain. Do not inline from memory.
+2. Follow the skill's operating loop. It encodes the discipline for that domain — skipping steps is the most common source of bugs.
+3. If a skill references files under `references/` or `templates/`, interpret paths relative to the skill's directory. Open the file before using it.
+4. Skill constraints override your priors on that domain. If a skill says "MUST NOT use X", you do not use X, even if you think X is fine.
+5. Do not invent a parallel workflow. If a skill covers the task, follow it.
+
+### When multiple skills apply
+
+Load the most specific skill that covers the task. If a language skill and a domain skill both apply, load both — the language skill governs syntax and verification, the domain skill governs architecture and patterns.
+
+Do not stack every applicable skill. Load the minimum set that covers the task. If unsure, load the keel skill (`rigorous-coding`) and the most specific domain or language skill.
 
 ## Available skills
+
 {{.Catalog}}
