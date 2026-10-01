@@ -54,6 +54,11 @@ type Engine struct {
 	mcp          *mcp.Pool
 
 	session *Session
+	// lastCompactEstimate is the expected context size right after the last
+	// compaction, used by the growth gate (billion-context §3.4). Compaction
+	// shrinks the context sharply, so gating on post-compaction size measures
+	// the consumed increment since then rather than the absolute size.
+	lastCompactEstimate int
 }
 
 // NewEngine wires an LLM client, tool executor, and an externally created session.
@@ -427,6 +432,16 @@ func (engine *Engine) runCompact(
 		return false, nil
 	}
 	if !force && !compaction.ShouldCompact(usage, engine.modelCfg.ContextWindow, settings) {
+		// Safety valve: context is within reverseTokens of the window, so no
+		// compaction is needed. The growth gate (below) is the primary trigger.
+		return false, nil
+	}
+	// Growth gate (billion-context §3.4): a nudge fires only when context
+	// exceeds the floor fraction AND has grown by at least GrowthThreshold
+	// since the last compaction. This targets consumed increments rather
+	// than active context, so short overshoots above the threshold do not
+	// trigger a (costly) summarization call.
+	if !force && !compaction.ShouldCompactGated(usage, engine.modelCfg.ContextWindow, engine.lastCompactEstimate, settings) {
 		return false, nil
 	}
 	prep, err := compaction.PrepareCompact(engine.session.PathEntries(), settings)
@@ -454,6 +469,9 @@ func (engine *Engine) runCompact(
 		_ = yield(session.CompactionComplete{ID: id, Failed: true}, nil)
 		return false, err
 	}
+	// Track the post-compaction estimate so the next growth gate measures the
+	// consumed increment since this compression, not the absolute size.
+	engine.lastCompactEstimate = compaction.PostCompactionEstimate(settings)
 	if !yield(session.CompactionComplete{ID: id, TokensBefore: comp.TokensBefore}, nil) {
 		return false, context.Canceled
 	}

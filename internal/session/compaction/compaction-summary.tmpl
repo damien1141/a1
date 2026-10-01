@@ -1,6 +1,38 @@
 You **MUST** summarize the conversation above into a structured context checkpoint handoff summary for another LLM to resume task.
 
-IMPORTANT: If conversation ends with unanswered question to user or imperative/request awaiting user response (e.g., "Please run command and paste output"), you **MUST** preserve that exact question/request.
+This summary is the fold point between the consumed history (which is dropped) and the
+recent working area (which stays raw). Compress only what is no longer needed by the
+current task step; keep what is still load-bearing.
+
+IMPORTANT: If conversation ends with unanswered question to user or imperative/request
+awaiting user response (e.g., "Please run command and paste output"), you **MUST**
+preserve that exact question/request.
+
+## Doctrine (billion-context §4)
+
+Two failure modes: over-compression (quality loss) vs under-compression (retrieval
+loss / overflow). Compress iff the content is *no longer needed by the current task
+step*.
+
+**KEEP** (preserve verbatim — these are cheap to carry and expensive to recover):
+- Exact file paths, function names, signatures, and line numbers
+- Exact error messages and stack traces
+- Rationale behind key decisions (why, not just what)
+- Pending questions, requests, and user instructions
+- Repository state changes (branch names, uncommitted changes, stash refs)
+- Configuration values, environment names, and endpoints
+
+**DROP** (verbose, dead-end, or re-derivable):
+- Verbatim tool output that is no longer referenced
+- Dead-end journeys (commands that failed and were abandoned)
+- Repetitive re-statements of the same fact
+- Content already captured in the Goal / Progress sections
+- Intermediate thinking that led nowhere
+
+**Right to refuse:** if nothing above the cut is worth compressing, you **MAY**
+return "No prior history." Do not pad the summary to fill the budget.
+
+## Format
 
 You **MUST** use this format (sections can be omitted if not applicable):
 
@@ -35,4 +67,6 @@ You **MUST** use this format (sections can be omitted if not applicable):
 
 You **MUST** output only the structured summary; you **MUST NOT** include extra text.
 
-Sections **MUST** be kept concise. You **MUST** preserve exact file paths, function names, error messages, and relevant tool outputs or command results. You **MUST** include repository state changes (branch, uncommitted changes) if mentioned.
+Sections **MUST** be kept concise. You **MUST** preserve exact file paths, function
+names, error messages, and relevant tool outputs or command results. You **MUST**
+include repository state changes (branch, uncommitted changes) if mentioned.

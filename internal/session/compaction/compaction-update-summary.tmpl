@@ -1,4 +1,10 @@
-You **MUST** incorporate new messages above into the existing handoff summary in <previous-summary> tags, used by another LLM to resume task.
+You **MUST** incorporate new messages above into the existing handoff summary in
+<previous-summary> tags, used by another LLM to resume task.
+
+This is an incremental fold: the previous summary stands in for the consumed history,
+and the new messages are the consumed increment. Compress only what is no longer needed
+by the current task step.
+
 RULES:
 - **MUST** preserve all information from previous summary
 - **MUST** add new progress, decisions, and context from new messages
@@ -7,7 +13,22 @@ RULES:
 - **MUST** preserve exact file paths, function names, and error messages
 - You **MAY** remove anything no longer relevant
 
-IMPORTANT: If new messages end with unanswered question or request to user, you **MUST** add it to Critical Context (replacing any previous pending question if answered).
+## Doctrine (billion-context §4)
+
+**KEEP** (preserve verbatim): exact file paths, function names, signatures, line
+numbers; exact error messages and stack traces; rationale behind key decisions; pending
+questions, requests, and user instructions; repository state changes; configuration
+values and endpoints.
+
+**DROP** (verbose, dead-end, or re-derivable): verbatim tool output no longer referenced;
+dead-end journeys; repetitive re-statements; content already captured in Goal / Progress;
+intermediate thinking that led nowhere.
+
+**Right to refuse:** if the new messages add nothing worth folding, you **MAY** return
+the previous summary unchanged. Do not pad.
+
+IMPORTANT: If new messages end with unanswered question or request to user, you **MUST**
+add it to Critical Context (replacing any previous pending question if answered).
 
 You **MUST** use this format (omit sections if not applicable):
 
@@ -41,5 +62,6 @@ You **MUST** use this format (omit sections if not applicable):
 [Other important info not fitting above]
 
 You **MUST** output only the structured summary; you **MUST NOT** include extra text.
-
-Sections **MUST** be kept concise. You **MUST** preserve relevant tool outputs/command results. You **MUST** include repository state changes (branch, uncommitted changes) if mentioned.
+Sections **MUST** be kept concise. You **MUST** preserve relevant tool outputs/command
+results. You **MUST** include repository state changes (branch, uncommitted changes) if
+mentioned.
