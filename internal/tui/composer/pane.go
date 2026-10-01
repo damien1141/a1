@@ -71,6 +71,10 @@ type ComposerPane struct {
 	historyIdx     int    // -1 when not browsing
 	draft          string // cached input before entering history browse mode
 	onHistoryStore func(string)
+	// lastCtrlC records when Ctrl-C was last pressed, so a second press
+	// within the double-tap window exits the TUI instead of cancelling again.
+	// This is the "press once to stop generation, twice to quit" behavior.
+	lastCtrlC time.Time
 }
 
 // NewComposerPane builds composer widgets; call Wire before use.
@@ -670,6 +674,21 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 		}
 	case xui.KeyEvent:
 		if ev.CtrlC() {
+			// Press once to stop the current generation, twice within the
+			// double-tap window to quit the TUI. When nothing is running
+			// the first press is a no-op and the second exits.
+			now := time.Now()
+			if c.submitter != nil && c.submitter.IsBusy() {
+				// Stop the current generation (stream / local bash / overlay).
+				c.bus.Publish(controller.CancelStreamMsg{})
+				c.lastCtrlC = now
+				return
+			}
+			if c.lastCtrlC.IsZero() || now.Sub(c.lastCtrlC) > 700*time.Millisecond {
+				c.lastCtrlC = now
+				return
+			}
+			c.lastCtrlC = time.Time{}
 			if c.ctrlClose != nil {
 				c.ctrlClose()
 			}
