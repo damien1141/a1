@@ -431,17 +431,18 @@ func (engine *Engine) runCompact(
 	if engine.client == nil {
 		return false, nil
 	}
-	if !force && !compaction.ShouldCompact(usage, engine.modelCfg.ContextWindow, settings) {
-		// Safety valve: context is within reverseTokens of the window, so no
-		// compaction is needed. The growth gate (below) is the primary trigger.
-		return false, nil
-	}
-	// Growth gate (billion-context §3.4): a nudge fires only when context
-	// exceeds the floor fraction AND has grown by at least GrowthThreshold
-	// since the last compaction. This targets consumed increments rather
-	// than active context, so short overshoots above the threshold do not
-	// trigger a (costly) summarization call.
-	if !force && !compaction.ShouldCompactGated(usage, engine.modelCfg.ContextWindow, engine.lastCompactEstimate, settings) {
+	// Two triggers, OR'd together:
+	//  1. Safety valve (ShouldCompact): context is within reverseTokens of the
+	//     window. This must fire regardless of growth so the context never
+	//     exceeds the window.
+	//  2. Growth gate (ShouldCompactGated): context exceeds the floor fraction
+	//     AND has grown by at least GrowthThreshold since the last compaction.
+	//     This is the primary trigger (billion-context §3.4): it targets
+	//     consumed increments rather than active context.
+	// Both are checked before PrepareCompact so a no-op does not burn work.
+	safety := !force && compaction.ShouldCompact(usage, engine.modelCfg.ContextWindow, settings)
+	gated := !force && compaction.ShouldCompactGated(usage, engine.modelCfg.ContextWindow, engine.lastCompactEstimate, settings)
+	if !safety && !gated {
 		return false, nil
 	}
 	prep, err := compaction.PrepareCompact(engine.session.PathEntries(), settings)
