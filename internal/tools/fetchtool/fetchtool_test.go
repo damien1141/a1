@@ -154,3 +154,74 @@ func TestHtmlToText_Truncation(t *testing.T) {
 	assert.Contains(t, text, "[truncated]")
 	assert.Less(t, len(text), 10000)
 }
+
+func TestRunFetch_Links(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`
+<html><body>
+  <a href="https://example.com/">home</a>
+  <a href="https://example.com/about">about</a>
+  <a href="/docs">docs (relative)</a>
+  <a href="https://api.example.com/v1">api</a>
+  <a href="https://cdn.example.com/x">cdn</a>
+  <a href="mailto:foo@example.com">mailto</a>
+  <a href="javascript:void(0)">js</a>
+  <a href="https://example.com/about">dup</a>
+</body></html>`))
+	}))
+	defer server.Close()
+
+	raw, _ := json.Marshal(fetchInput{URL: server.URL, Links: true})
+	out, err := runFetch(t.Context(), raw)
+	require.NoError(t, err)
+	assert.Contains(t, out.Content, "## Links")
+	assert.Contains(t, out.Content, "example.com")
+	assert.Contains(t, out.Content, "/about")
+	assert.Contains(t, out.Content, "/docs")
+	assert.Contains(t, out.Content, "api.example.com")
+	assert.Contains(t, out.Content, "cdn.example.com")
+	assert.NotContains(t, out.Content, "mailto:")
+	assert.NotContains(t, out.Content, "javascript:")
+}
+
+func TestRunFetch_NoLinksWhenDisabled(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<html><body><a href="https://example.com/">x</a></body></html>`))
+	}))
+	defer server.Close()
+
+	raw, _ := json.Marshal(fetchInput{URL: server.URL})
+	out, err := runFetch(t.Context(), raw)
+	require.NoError(t, err)
+	assert.NotContains(t, out.Content, "## Links")
+}
+
+func TestExtractLinks(t *testing.T) {
+	html := `<a href="https://example.com/">home</a>
+<a href="https://example.com/about">about</a>
+<a href="/docs">docs</a>
+<a href="https://api.example.com/v1">api</a>
+<a href="mailto:foo@example.com">mail</a>`
+	links := extractLinks(html, "https://example.com/")
+	require.Len(t, links, 4)
+	// Sorted by host: api.example.com first, then example.com.
+	assert.Equal(t, "api.example.com", links[0].Host)
+	assert.Equal(t, "/v1", links[0].Path)
+	assert.Equal(t, "example.com", links[1].Host)
+}
+
+func TestFormatLinks(t *testing.T) {
+	links := []linkEntry{
+		{Host: "api.example.com", Path: "/v1"},
+		{Host: "example.com", Path: "/"},
+		{Host: "example.com", Path: "/about"},
+	}
+	out := formatLinks(links)
+	assert.Contains(t, out, "api.example.com")
+	assert.Contains(t, out, "example.com")
+	assert.Contains(t, out, "/v1")
+	assert.Contains(t, out, "/about")
+	assert.Contains(t, out, "3 links across 2 hosts")
+}

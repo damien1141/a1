@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -23,7 +25,12 @@ var fetchDescription = `Fetch web content via HTTP GET/POST.
 
 Returns response body, status code, and selected headers. HTML responses are
 automatically converted to readable text to keep the output token-friendly.
-Enforces a timeout and a maximum response size to keep the agent safe.`
+Enforces a timeout and a maximum response size to keep the agent safe.
+
+With links=true, also returns a deduplicated list of every link found on the
+page, grouped by host (subdomains first) and path. This lets the agent see the
+site's structure — what subdomains exist and what paths are reachable — so it
+can navigate without guessing.`
 
 // FetchTool returns the web fetch tool definition + handler.
 func FetchTool() tooldef.Tool {
@@ -54,6 +61,10 @@ func FetchTool() tooldef.Tool {
 						"type":        "boolean",
 						"description": "Return raw response body without HTML-to-text conversion. Example: false",
 					},
+					"links": llm.Object{
+						"type":        "boolean",
+						"description": "Also return every link found on the page, grouped by host (subdomains first) and path, so the agent can see the site structure and know where to navigate. Example: true",
+					},
 				},
 				Required: []string{"url"},
 			},
@@ -78,6 +89,7 @@ type fetchInput struct {
 	Headers string `json:"headers,omitempty"`
 	Body    string `json:"body,omitempty"`
 	Raw     bool   `json:"raw,omitempty"`
+	Links   bool   `json:"links,omitempty"`
 }
 
 func runFetch(ctx context.Context, input json.RawMessage) (tooldef.Result, error) {
@@ -134,6 +146,11 @@ func runFetch(ctx context.Context, input json.RawMessage) (tooldef.Result, error
 
 	contentType := resp.Header.Get("Content-Type")
 	bodyStr := string(body)
+	// Extract links from the raw HTML before htmlToText strips the tags.
+	var links []linkEntry
+	if in.Links && isHTMLContent(contentType) {
+		links = extractLinks(bodyStr, url)
+	}
 	if !in.Raw && isHTMLContent(contentType) {
 		bodyStr = htmlToText(bodyStr)
 	} else if !isTextContent(contentType) && !isHTMLContent(contentType) {
@@ -156,7 +173,16 @@ func runFetch(ctx context.Context, input json.RawMessage) (tooldef.Result, error
 	sb.WriteString("\n")
 
 	detail := fmt.Sprintf("%d %s", resp.StatusCode, http.StatusText(resp.StatusCode))
-	return tooldef.Result{Content: sb.String(), Detail: detail, Output: sb.String()}, nil
+	result := tooldef.Result{Content: sb.String(), Detail: detail, Output: sb.String()}
+
+	// When links=true, append the site structure so the agent can see what
+	// subdomains and paths exist and navigate without guessing.
+	if len(links) > 0 {
+		result.Content += "\n\n## Links\n\n" + formatLinks(links)
+		result.Output = result.Content
+	}
+
+	return result, nil
 }
 
 func isTextContent(ct string) bool {
@@ -208,4 +234,80 @@ func htmlToText(html string) string {
 		text = text[:maxTextLen] + "\n\n[truncated]"
 	}
 	return text
+}
+
+// linkRe matches href / src attributes. It is intentionally loose: any URL
+//-looking value is captured, and the caller resolves relative URLs against
+// the page base.
+var linkRe = regexp.MustCompile(`(?i)(?:href|src)\s*=\s*"([^"]+)"`)
+
+// linkEntry is one resolved link, grouped by host for the agent's navigation.
+type linkEntry struct {
+	Host string
+	Path string
+}
+
+// extractLinks finds every href/src in the raw HTML, resolves them against
+// the page URL, and returns the unique set grouped by host.
+func extractLinks(html, baseURL string) []linkEntry {
+	base, err := url.Parse(baseURL)
+	if err != nil {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	var out []linkEntry
+	for _, m := range linkRe.FindAllStringSubmatch(html, -1) {
+		raw := strings.TrimSpace(m[1])
+		if raw == "" {
+			continue
+		}
+		// Skip non-navigable schemes: mailto, tel, javascript:.
+		if strings.Contains(raw, ":") && !strings.HasPrefix(raw, "http") && !strings.HasPrefix(raw, "//") {
+			continue
+		}
+		u, err := base.Parse(raw)
+		if err != nil || u.Scheme == "" {
+			continue
+		}
+		if u.Scheme != "http" && u.Scheme != "https" {
+			continue
+		}
+		key := u.Host + u.Path
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, linkEntry{Host: u.Host, Path: u.Path})
+	}
+	// Sort by host so the output is scannable: subdomains group together.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Host != out[j].Host {
+			return out[i].Host < out[j].Host
+		}
+		return out[i].Path < out[j].Path
+	})
+	return out
+}
+
+// formatLinks renders the link map as a compact, scannable block: one host
+// header followed by its paths. Subdomains sort naturally under the parent
+// host, so the agent sees the site's structure at a glance.
+func formatLinks(links []linkEntry) string {
+	var sb strings.Builder
+	var cur string
+	count := 0
+	for _, l := range links {
+		if l.Host != cur {
+			cur = l.Host
+			sb.WriteString(fmt.Sprintf("\n%s\n", cur))
+			count++
+		}
+		p := l.Path
+		if p == "" {
+			p = "/"
+		}
+		sb.WriteString(fmt.Sprintf("  %s\n", p))
+	}
+	sb.WriteString(fmt.Sprintf("\n(%d links across %d hosts)", len(links), count))
+	return sb.String()
 }
