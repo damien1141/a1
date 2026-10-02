@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -462,67 +463,33 @@ func currentPage() playwright.Page {
 	return nil
 }
 
-// browserSearch is called from runBrowser while browserMu is held. It opens
-// a search page, tries common search input selectors, fills and submits the
-// query. If no selector matches, it returns the page's visible inputs so the
-// caller can target them with click/type instead of guessing.
+// browserSearch bypasses the DuckDuckGo homepage UI — cookie banners,
+// captchas, and selector fragility — and jumps straight to the results URL.
+// This is faster and ignores captchas that only trigger on homepage UI
+// interaction.
 func browserSearch(in browserInput) (tooldef.Result, error) {
 	query := strings.TrimSpace(in.Text)
 	if query == "" {
 		return tooldef.Result{}, fmt.Errorf("text (the search query) is required for search")
 	}
-	profile := currentProfile
-	page := pages[profile]
+	page := currentPage()
 	if page == nil {
 		return tooldef.Result{}, fmt.Errorf("browser not open; use action=open first")
 	}
-	url := normalizeURL("https://duckduckgo.com")
-	if _, err := page.Goto(url); err != nil {
-		return tooldef.Result{}, fmt.Errorf("navigate: %w", err)
+	// Bypass the homepage UI entirely — DDG's search input selectors change
+	// and get blocked by cookie banners, so just land on the results page.
+	searchURL := "https://duckduckgo.com/?q=" + url.QueryEscape(query)
+	if _, err := page.Goto(searchURL); err != nil {
+		return tooldef.Result{}, fmt.Errorf("navigate to search: %w", err)
 	}
-	// Wait for the DOM before hunting for the search input — otherwise the
-	// selectors race the page load and the picker comes back empty.
 	if err := page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
 		State: playwright.LoadStateDomcontentloaded,
 	}); err != nil {
 		return tooldef.Result{}, fmt.Errorf("wait for load: %w", err)
 	}
-	selectors := []string{
-		"#search_form_input",
-		"input[name=q]",
-		"[aria-label*=\"search\" i]",
-		"input[type=\"search\"]",
-	}
-	var sel string
-	for _, try := range selectors {
-		found, err := page.IsVisible(try)
-		if err == nil && found {
-			sel = try
-			break
-		}
-	}
-	if sel == "" {
-		inputs, err := page.Evaluate(
-			`Array.from(document.querySelectorAll('input')).map(i => i.name || i.id || i.placeholder || '').filter(Boolean).slice(0, 20)`,
-		)
-		if err != nil {
-			return tooldef.Result{}, fmt.Errorf("search input not found: %w", err)
-		}
-		return tooldef.Result{
-			Content: fmt.Sprintf("no known search input found; visible inputs: %v", inputs),
-			Detail:  "search fallback",
-			Output:  "search fallback: no known input found",
-		}, nil
-	}
-	if err := page.Fill(sel, query); err != nil {
-		return tooldef.Result{}, fmt.Errorf("type query: %w", err)
-	}
-	if err := page.Press(sel, "Enter"); err != nil {
-		return tooldef.Result{}, fmt.Errorf("submit search: %w", err)
-	}
 	title, _ := page.Title()
 	return tooldef.Result{
-		Content: fmt.Sprintf("Searched DuckDuckGo for %q\nURL: %s\nTitle: %s", query, url, title),
+		Content: fmt.Sprintf("Searched DuckDuckGo for %q\nURL: %s\nTitle: %s", query, searchURL, title),
 		Detail:  fmt.Sprintf("search %q", query),
 		Output:  fmt.Sprintf("Searched DuckDuckGo for %q", query),
 	}, nil
@@ -600,6 +567,14 @@ func browserClick(in browserInput) (tooldef.Result, error) {
 	if err := page.Click(sel); err != nil {
 		return tooldef.Result{}, fmt.Errorf("click %q: %w", sel, err)
 	}
+	// Sync state: if the click triggered a navigation, wait for the new page
+	// to render before returning, so a follow-up content call sees the new
+	// page rather than the old one. domcontentloaded returns instantly when
+	// no navigation occurred, so it won't hang on JS modals.
+	_ = page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
+		State: playwright.LoadStateDomcontentloaded,
+	})
+
 	return tooldef.Result{
 		Content: fmt.Sprintf("Clicked %s", sel),
 		Detail:  sel,
@@ -621,6 +596,12 @@ func browserType(in browserInput) (tooldef.Result, error) {
 	if err := page.Fill(sel, text); err != nil {
 		return tooldef.Result{}, fmt.Errorf("type into %q: %w", sel, err)
 	}
+	// Sync state for form submissions — if the fill/submit triggered a
+	// navigation, wait for the new page to render before returning.
+	_ = page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
+		State: playwright.LoadStateDomcontentloaded,
+	})
+
 	return tooldef.Result{
 		Content: fmt.Sprintf("Typed into %s", sel),
 		Detail:  sel,
@@ -653,10 +634,33 @@ func browserContent() (tooldef.Result, error) {
 	if page == nil {
 		return tooldef.Result{}, fmt.Errorf("browser not open; use action=open first")
 	}
-	text, err := page.TextContent("body")
+	// page.TextContent("body") returns the entire DOM, including <nav>,
+	// <footer>, and <script> tags. Inject a small JS snippet to strip
+	// boilerplate and append hrefs to links so the LLM knows where they
+	// point instead of guessing.
+	extractJS := `() => {
+		const clone = document.body.cloneNode(true);
+		const noise = clone.querySelectorAll('script, style, noscript, svg, iframe, nav, footer, aside, header, [role="banner"], [role="navigation"], [role="complementary"]');
+		noise.forEach(el => el.remove());
+		// format links so the llm knows what they point to without guessing
+		clone.querySelectorAll('a').forEach(a => {
+			const href = a.getAttribute('href');
+			if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
+				a.innerText = a.innerText + ' (' + href + ')';
+			}
+		});
+		return clone.innerText;
+	}`
+
+	rawText, err := page.Evaluate(extractJS)
 	if err != nil {
 		return tooldef.Result{}, fmt.Errorf("content: %w", err)
 	}
+	text, ok := rawText.(string)
+	if !ok {
+		text = fmt.Sprintf("%v", rawText)
+	}
+
 	title, _ := page.Title()
 	url := page.URL()
 
