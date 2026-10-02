@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -17,26 +18,15 @@ import (
 )
 
 var (
-	browser        playwright.Browser
-	browserCtx     context.Context
-	browserCancel  context.CancelFunc
-	// pw is the Playwright driver instance. It is kept global so browserClose
-	// can call pw.Stop() to tear down the node driver; otherwise the driver
-	// lingers and the next playwright.Run() fails with "browser is already
-	// in use".
-	pw             *playwright.Playwright
-	profiles       map[string]playwright.BrowserContext
-	pages          map[string]playwright.Page
-	currentProfile string
-	// browserProxyURL is the proxy used by the next browser launch. It is set
-	// from config at startup and can be changed at runtime via the
-	// "proxy" action. Because Chromium picks up the proxy at launch time, a
-	// change takes effect on the next open after a close.
-	browserProxyURL string
-	// lastProxyURL remembers the last explicit proxy URL so "proxy on" can
-	// re-enable it without retyping. Empty until a URL has been set.
-	lastProxyURL   string
-	browserMu      sync.Mutex
+	browser          playwright.Browser
+	pw               *playwright.Playwright
+	profiles         map[string]playwright.BrowserContext
+	pages            map[string]playwright.Page
+	currentProfile   string
+	browserProxyURL  string
+	lastProxyURL     string
+	browserMu        sync.Mutex
+	betterfoxDir     = filepath.Join(".temp", "Betterfox")
 )
 
 func init() {
@@ -47,23 +37,19 @@ func init() {
 
 const (
 	browserDefaultTimeout = 30 * time.Second
-	// contentMaxChars caps the text returned by browser content. A full DOM
-	// for a Google results page is several MB and blows past the context
-	// window; ~12k chars of visible text is more than enough for the model
-	// to summarize or extract what it needs.
-	contentMaxChars = 12_000
+	contentMaxChars       = 12_000
 )
 
 var browserDescription = `Control a live web browser via Playwright.
 
-Spawns a visible Chromium window and exposes navigation, clicking, typing,
+Spawns a visible Firefox window and exposes navigation, clicking, typing,
 screenshots, and page inspection. Supports multiple isolated browser profiles.
 
 Actions:
 - open <url>: open a URL in the current profile (scheme auto-prepended, so
   "google.com" works).
 - navigate <url>: go to a URL in the already-open page.
-- search <query>: open google.com and run a search in one step.
+- search <query>: search on the current page or open duckduckgo.com and run a search in one step. Tries common search input selectors; if none match it lists visible inputs so you can target them with click/type.
 - click <selector>: click the first element matching a CSS selector.
 - type <selector> <text>: fill an input matching a CSS selector.
 - screenshot: save the visible viewport to /tmp/browser-screenshot.png.
@@ -147,13 +133,13 @@ func runBrowser(ctx context.Context, input json.RawMessage) (tooldef.Result, err
 	}
 
 	// proxy is the only action that does not need the browser up: it sets the
-	// URL used by the next launch. Chromium picks up the proxy at launch time,
+	// URL used by the next launch. Firefox picks up the proxy at launch time,
 	// so a change takes effect on the next open after a close.
 	if action == "proxy" {
 		return browserProxy(in)
 	}
 
-	// ensureBrowser launches Chromium on first use. It must run BEFORE this
+	// ensureBrowser launches Firefox on first use. It must run BEFORE this
 	// function takes browserMu: ensureBrowser acquires browserMu itself for
 	// the whole launch, so calling it while already holding the lock would
 	// deadlock (sync.Mutex is not re-entrant). Because browser is Readable and
@@ -195,7 +181,7 @@ func runBrowser(ctx context.Context, input json.RawMessage) (tooldef.Result, err
 	}
 }
 
-// ensureBrowser launches the persistent Chromium process and the default
+// ensureBrowser launches the persistent Firefox process and the default
 // profile on first use. It is called from runBrowser while NOT holding
 // browserMu, so the lock is free to acquire below. It holds browserMu for
 // the whole launch so two concurrent runBrowser calls (browser is Readable,
@@ -228,30 +214,40 @@ func ensureBrowser(ctx context.Context) error {
 	}
 	pw = pwLocal
 
-	launchOpts := playwright.BrowserTypeLaunchOptions{
+	launchOpts := playwright.BrowserTypeLaunchPersistentContextOptions{
 		Headless: playwright.Bool(false),
 	}
 	if browserProxyURL != "" {
 		launchOpts.Proxy = &playwright.Proxy{Server: browserProxyURL}
 	}
-	b, err := pwLocal.Chromium.Launch(launchOpts)
+
+	userDataDir := filepath.Join(os.Getenv("HOME"), ".a1", "browser-profiles", "default")
+	if err := os.MkdirAll(userDataDir, 0o755); err != nil {
+		pw.Stop()
+		pw = nil
+		return fmt.Errorf("create profile dir: %w", err)
+	}
+	if err := seedProfileTweaks(userDataDir); err != nil {
+		pw.Stop()
+		pw = nil
+		return fmt.Errorf("seed profile tweaks: %w", err)
+	}
+	ctx2, err := pwLocal.Firefox.LaunchPersistentContext(userDataDir, launchOpts)
 	if err != nil {
 		pw.Stop()
 		pw = nil
 		return fmt.Errorf("launch browser: %w", err)
 	}
-
-	browser = b
-	browserCtx, browserCancel = context.WithCancel(ctx)
-
-	// Create default profile.
-	if err := createProfile("default"); err != nil {
-		b.Close()
-		browser = nil
-		browserCancel = nil
+	profiles["default"] = ctx2
+	page, err := ctx2.NewPage()
+	if err != nil {
+		ctx2.Close()
+		delete(profiles, "default")
 		pw.Stop()
-		return fmt.Errorf("create default profile: %w", err)
+		pw = nil
+		return fmt.Errorf("new page for default profile: %w", err)
 	}
+	pages["default"] = page
 
 	// Create any additional profiles from config.
 	if proj := project.GetDefaultProject(); proj != nil && proj.Config() != nil {
@@ -275,11 +271,24 @@ func ensureBrowser(ctx context.Context) error {
 	return nil
 }
 
+// createProfile creates a persistent Firefox profile dir under
+// ~/.a1/browser-profiles/<name>, seeds Betterfox/smoothfox tweaks, then
+// launches a persistent context pointing at that dir.
 func createProfile(name string) error {
-	if browser == nil {
-		return fmt.Errorf("browser not initialized")
+	userDataDir := filepath.Join(os.Getenv("HOME"), ".a1", "browser-profiles", name)
+	if err := os.MkdirAll(userDataDir, 0o755); err != nil {
+		return fmt.Errorf("create profile dir %q: %w", name, err)
 	}
-	ctx, err := browser.NewContext()
+	if err := seedProfileTweaks(userDataDir); err != nil {
+		return fmt.Errorf("seed profile tweaks for %q: %w", name, err)
+	}
+	launchOpts := playwright.BrowserTypeLaunchPersistentContextOptions{
+		Headless: playwright.Bool(false),
+	}
+	if browserProxyURL != "" {
+		launchOpts.Proxy = &playwright.Proxy{Server: browserProxyURL}
+	}
+	ctx, err := pw.Firefox.LaunchPersistentContext(userDataDir, launchOpts)
 	if err != nil {
 		return fmt.Errorf("create profile %q: %w", name, err)
 	}
@@ -294,8 +303,52 @@ func createProfile(name string) error {
 	return nil
 }
 
+// seedProfileTweaks copies Betterfox user.js into the profile dir if
+// available. smoothfox.js is optional and ignored when missing.
+func seedProfileTweaks(dir string) error {
+	if _, err := os.Stat(betterfoxDir); err != nil {
+		return nil
+	}
+	src := filepath.Join(betterfoxDir, "user.js")
+	if _, err := os.Stat(src); err != nil {
+		return nil
+	}
+	dst := filepath.Join(dir, "user.js")
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	if _, err := out.ReadFrom(in); err != nil {
+		return err
+	}
+	smooth := filepath.Join(betterfoxDir, "smoothfox.js")
+	if _, err := os.Stat(smooth); err != nil {
+		return nil
+	}
+	appendTo := func(path string) error {
+		f, err := os.OpenFile(dst, os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		_, err = f.Write(b)
+		return err
+	}
+	return appendTo(smooth)
+}
+
 // SetProxy sets the proxy URL used by the next browser launch. It takes effect
-// on the next open after a close, since Chromium picks up the proxy at launch
+// on the next open after a close, since Firefox picks up the proxy at launch
 // time. Pass "" to disable the proxy. Thread-safe. The URL is remembered so
 // "proxy on" can re-enable it later without retyping.
 func SetProxy(url string) {
@@ -323,8 +376,9 @@ func currentPage() playwright.Page {
 }
 
 // browserSearch is called from runBrowser while browserMu is held. It opens
-// google.com, types the query into the search box and submits it in one step
-// so the model does not need a separate open → type → click → submit chain.
+// a search page, tries common search input selectors, fills and submits the
+// query. If no selector matches, it returns the page's visible inputs so the
+// caller can target them with click/type instead of guessing.
 func browserSearch(in browserInput) (tooldef.Result, error) {
 	query := strings.TrimSpace(in.Text)
 	if query == "" {
@@ -335,27 +389,46 @@ func browserSearch(in browserInput) (tooldef.Result, error) {
 	if page == nil {
 		return tooldef.Result{}, fmt.Errorf("browser not open; use action=open first")
 	}
-	url := normalizeURL("https://www.google.com")
+	url := normalizeURL("https://duckduckgo.com")
 	if _, err := page.Goto(url); err != nil {
 		return tooldef.Result{}, fmt.Errorf("navigate: %w", err)
 	}
-	// Wait for the search input to be present, then type and submit.
-	if _, err := page.WaitForSelector("input[name=q]", playwright.PageWaitForSelectorOptions{
-		Timeout: playwright.Float(5000),
-	}); err != nil {
-		return tooldef.Result{}, fmt.Errorf("search input not found: %w", err)
+	selectors := []string{
+		"#search_form_input",
+		"input[name=q]",
+		"[aria-label*=\"search\" i]",
+		"input[type=\"search\"]",
 	}
-	if err := page.Fill("input[name=q]", query); err != nil {
+	var sel string
+	for _, try := range selectors {
+		found, err := page.IsVisible(try)
+		if err == nil && found {
+			sel = try
+			break
+		}
+	}
+	if sel == "" {
+		inputs, err := page.Evaluate(`Array.from(document.querySelectorAll('input')).map(i => i.name || i.id || i.placeholder || '').filter(Boolean).slice(0, 20)`)
+		if err != nil {
+			return tooldef.Result{}, fmt.Errorf("search input not found: %w", err)
+		}
+		return tooldef.Result{
+			Content: fmt.Sprintf("no known search input found; visible inputs: %v", inputs),
+			Detail:  "search fallback",
+			Output:  "search fallback: no known input found",
+		}, nil
+	}
+	if err := page.Fill(sel, query); err != nil {
 		return tooldef.Result{}, fmt.Errorf("type query: %w", err)
 	}
-	if err := page.Press("input[name=q]", "Enter"); err != nil {
+	if err := page.Press(sel, "Enter"); err != nil {
 		return tooldef.Result{}, fmt.Errorf("submit search: %w", err)
 	}
 	title, _ := page.Title()
 	return tooldef.Result{
-		Content: fmt.Sprintf("Searched Google for %q\nURL: %s\nTitle: %s", query, url, title),
+		Content: fmt.Sprintf("Searched DuckDuckGo for %q\nURL: %s\nTitle: %s", query, url, title),
 		Detail:  fmt.Sprintf("search %q", query),
-		Output:  fmt.Sprintf("Searched Google for %q", query),
+		Output:  fmt.Sprintf("Searched DuckDuckGo for %q", query),
 	}, nil
 }
 
@@ -476,8 +549,6 @@ func browserContent() (tooldef.Result, error) {
 	if page == nil {
 		return tooldef.Result{}, fmt.Errorf("browser not open; use action=open first")
 	}
-	// page.Content() returns the full raw DOM — a Google results page alone is
-	// several MB and blows past the context window. Extract text and cap it.
 	text, err := page.TextContent("body")
 	if err != nil {
 		return tooldef.Result{}, fmt.Errorf("content: %w", err)
@@ -486,8 +557,6 @@ func browserContent() (tooldef.Result, error) {
 	url := page.URL()
 
 	text = strings.TrimSpace(text)
-	// Collapse runs of whitespace so the model sees readable prose, not a
-	// preformatted dump.
 	text = collapseWhitespace(text)
 	if len(text) > contentMaxChars {
 		text = text[:contentMaxChars] + "\n…[truncated]"
@@ -531,14 +600,6 @@ func browserClose() (tooldef.Result, error) {
 		browser.Close()
 		browser = nil
 	}
-	if browserCancel != nil {
-		browserCancel()
-		browserCtx = nil
-		browserCancel = nil
-	}
-	// Stop the Playwright node driver. Without this the driver process
-	// lingers and the next playwright.Run() fails with "browser is already
-	// in use", so a subsequent /browser open could never spawn a new one.
 	if pw != nil {
 		pw.Stop()
 		pw = nil
@@ -592,8 +653,6 @@ func browserProfileList() (tooldef.Result, error) {
 }
 
 // browserProfileCreate is called from runBrowser while browserMu is held.
-// The browser is already up (runBrowser ensures it), so this only needs to
-// create the named context.
 func browserProfileCreate(name string) (tooldef.Result, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -667,8 +726,6 @@ func normalizeURL(raw string) string {
 		return ""
 	}
 	// Already has a scheme (http://, https://, ftp://, about:, javascript:).
-	// Match a scheme token followed by a colon, which covers both "//" URLs
-	// and special schemes like about:blank.
 	if idx := strings.IndexByte(raw, ':'); idx > 0 {
 		scheme := raw[:idx]
 		if isSchemeToken(scheme) {
@@ -703,7 +760,7 @@ func isSchemeToken(s string) bool {
 	return true
 }
 
-// browserProxy sets the proxy URL used by the next browser launch. Chromium
+// browserProxy sets the proxy URL used by the next browser launch. Firefox
 // picks up the proxy at launch time, so a change takes effect on the next
 // open after a close.
 //

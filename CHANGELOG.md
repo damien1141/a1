@@ -25,6 +25,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Changed
 
 - Bump version to v1.0.1.
+-- `browser.search` now defaults to DuckDuckGo instead of Google.
 
 ### Deprecated
 
