@@ -5,7 +5,9 @@ go 1.26.3
 require (
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/damien1141/a1/ext/go v0.25.1
-	github.com/ollama/ollama v0.34.4
+	github.com/mxschmitt/playwright-go v0.6201.1
+	github.com/odvcencio/gotreesitter v0.5.2
+	github.com/ollama/ollama v0.35.0
 	github.com/pulseaiclub/pli v0.1.0
 	github.com/pulseaiclub/xui v0.1.6
 	github.com/stretchr/testify v1.12.1
@@ -21,8 +23,6 @@ require (
 	github.com/go-stack/stack v1.8.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
-	github.com/mxschmitt/playwright-go v0.6201.1 // indirect
-	github.com/odvcencio/gotreesitter v0.5.2 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
