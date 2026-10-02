@@ -77,6 +77,12 @@ Release procedure (the gates that must all be green before a tag goes out):
      with a one-line rationale (exported public API is the normal excuse).
    - Markdown lint: `markdownlint-cli2 --config .markdownlint.yaml "**/*.md"`.
      Drop orphaned link-reference definitions (MD053) — they fail the gate.
+     The gate excludes AI-authored skill content and working notes via negation
+     globs in `.github/workflows/markdown.yml` (`!skills/**/*.md`,
+     `!internal/llm/skills/**/*.md`, `!todo.md`, `!**/.temp/**/*.md`); the
+     pinned CI image ignores `.markdownlintignore`, so the exclusions live
+     in the workflow args. Add a new exclusion here, not by mass-fixing the
+     skill library.
 5. **Commit & push.** Conventional commit, lowercase, imperative, ≤72 chars.
    Push `main` first, then the tag. Only commit files this session changed —
    leave pre-existing unmodified working-tree files out unless asked.

@@ -34,8 +34,10 @@ func runGit(t *testing.T, dir string, args ...string) {
 	// args[0] is the binary ("git"); the inline -c flags must precede the
 	// subcommand, so drop it and re-add it as the command.
 	cmd := exec.CommandContext(t.Context(), "git",
-		append([]string{"-c", "commit.gpgsign=false",
-			"-c", "user.name=t", "-c", "user.email=t@t"}, args[1:]...)...)
+		append([]string{
+			"-c", "commit.gpgsign=false",
+			"-c", "user.name=t", "-c", "user.email=t@t",
+		}, args[1:]...)...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"GIT_AUTHOR_NAME=t",
