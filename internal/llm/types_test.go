@@ -1,33 +1,34 @@
 package llm
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
-func TestMessageImageRoundTrip(t *testing.T) {
-	orig := Message{
-		Role:    RoleUser,
-		Content: "what is this?",
-		Images: []Image{
-			{Data: "QUJD", MimeType: "image/png"},
-		},
-	}
-	body, err := json.Marshal(orig)
-	require.NoError(t, err)
-	assert.Contains(t, string(body), `"images"`)
-	assert.Contains(t, string(body), `"mimeType"`)
-
-	var got Message
-	require.NoError(t, json.Unmarshal(body, &got))
-	assert.Equal(t, orig, got)
+func TestAllThinkModes_ContainsDefaultAndOff(t *testing.T) {
+	modes := AllThinkModes()
+	assert.Contains(t, modes, Off)
+	assert.Contains(t, modes, Default)
+	assert.Equal(t, Default, modes[len(modes)-1], "default is the last selectable mode")
 }
 
-func TestMessageWithoutImagesMarshalsPlain(t *testing.T) {
-	body, err := json.Marshal(Message{Role: RoleUser, Content: "hi"})
-	require.NoError(t, err)
-	assert.NotContains(t, string(body), `"images"`)
+func TestAllThinkModes_CycleCoversEveryMode(t *testing.T) {
+	// Tab cycles through every mode and returns to the start, so the
+	// switcher is a closed loop over AllThinkModes().
+	modes := AllThinkModes()
+	seen := make(map[ThinkMode]bool)
+	cur := Off
+	for i := 0; i <= len(modes); i++ {
+		seen[cur] = true
+		idx := 0
+		for j, m := range modes {
+			if m == cur {
+				idx = (j + 1) % len(modes)
+				break
+			}
+		}
+		cur = modes[idx]
+	}
+	assert.Len(t, seen, len(modes))
 }

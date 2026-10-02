@@ -358,18 +358,18 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
 
 			msgs := engine.session.BuildContext()
 
-			msg, completeEvent, err := engine.streamTurn(ctx, yield, msgs)
-			if err != nil {
-				if !overflowRecovered && llm.IsContextOverflow(err) {
-					did, cerr := engine.runCompact(ctx, yield, 0, true)
-					if cerr == nil && did {
-						overflowRecovered = true
-						continue
-					}
+msg, completeEvent, err := engine.streamTurn(ctx, yield, msgs)
+		if err != nil {
+			if !overflowRecovered && llm.IsContextOverflow(err) {
+				did, cerr := engine.runCompact(ctx, yield, 0, true)
+				if cerr == nil && did {
+					overflowRecovered = true
+					continue
 				}
-				yield(nil, err)
-				return
 			}
+			yield(nil, err)
+			return
+		}
 			if completeEvent == nil {
 				// Cancelled or consumer stopped — no error to surface.
 				return
@@ -472,10 +472,13 @@ func (engine *Engine) runCompact(
 	//     AND has grown by at least GrowthThreshold since the last compaction.
 	//     This is the primary trigger (billion-context §3.4): it targets
 	//     consumed increments rather than active context.
-	// Both are checked before PrepareCompact so a no-op does not burn work.
 	safety := !force && compaction.ShouldCompact(usage, engine.modelCfg.ContextWindow, settings)
 	gated := !force && compaction.ShouldCompactGated(usage, engine.modelCfg.ContextWindow, engine.lastCompactEstimate, settings)
-	if !safety && !gated {
+	// Both are checked before PrepareCompact so a no-op does not burn work.
+	// force skips both triggers, so the guard must also require !force —
+	// otherwise the overflow-recovery path (force=true) would no-op here and
+	// burn its single retry on a second overflow.
+	if !force && !safety && !gated {
 		return false, nil
 	}
 	prep, err := compaction.PrepareCompact(engine.session.PathEntries(), settings)

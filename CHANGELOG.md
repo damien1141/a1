@@ -6,11 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] - 2026-10-02
 
 ### Added
 
-- **Curated skill library:** 34 pre-built skills ship embedded and install to
+- **Curated skill library:** 41 pre-built skills ship embedded and install to
   `~/.a1/skills/` on first run. Each is a `SKILL.md` with YAML frontmatter, a
   structured operating loop, and a `references/` directory. The harness loads
   them into the system prompt and routes by keyword trigger. Covers keel skills
@@ -24,14 +24,78 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
-- Bump version to v1.0.1.
--- `browser.search` now defaults to DuckDuckGo instead of Google.
+- Bump version to v1.1.0.
+- `browser.search` now defaults to DuckDuckGo instead of Google.
 
 ### Deprecated
 
 ### Removed
 
 ### Fixed
+
+- **Browser tool:** the Firefox switch left the old `browser playwright.Browser`
+  global declared but never assigned (`LaunchPersistentContext` returns a
+  context, not a browser). `browserClose` called `browser.Close()` on a nil
+  browser, so every `/browser close` (and the close on exit) panicked with a
+  nil-pointer dereference. Removed the dead global; close now stops the
+  Playwright driver and closes the persistent contexts.
+- **Thinking mode switcher:** the on-the-fly Tab cycle and the
+  `settings → think` palette only offered `off / minimal / low / medium /
+  high / xhigh / max`. The provider-adaptive "default" was missing — it is
+  what `buildThinkingConfig` maps to Anthropic's `thinking.type=adaptive`, and
+  what the config UI already exposes as `(default)`. Added a `default`
+  `ThinkMode` sentinel plus `AllThinkModes()`; the cycle and palette now
+  include it, and the controller resolves it to the active model preset's
+  thinking config before any request is sent, so providers never see the
+  sentinel.
+- **Auto-compaction on context overflow:** `runCompact(force=true)` skipped
+  both the safety and growth triggers by design, but the guard that no-ops
+  when neither trigger fired also applied to the force path — so the
+  overflow-recovery branch never compacted and burned its single retry on a
+  second overflow. The guard now requires `!force`, so force-compaction runs
+  whenever there is history to summarize. Added `TestRunCompact_ForceCompactsWhenHistoryExists`.
+- **Default skills directory:** the directory wiring was already correct —
+  `Discover` installs the embedded skill library into `~/.a1/skills` and
+  `loadConfig` defaults `skill_path` to that dir — but every installed skill
+  failed to parse. `parseFrontmatter` rejected any indented frontmatter line
+  with `ErrInvalidYAML`, and every shipped skill carries a nested `metadata:`
+  map block, so `LoadSkills` silently returned an empty list and the skills
+  palette showed "No skills found". Indented continuation lines are now
+  skipped (the parser only needs the flat top-level keys) instead of erroring.
+
+### Security
+
+## [Unreleased]
+
+- **Browser tool:** the Firefox switch left the old `browser playwright.Browser`
+  global declared but never assigned (`LaunchPersistentContext` returns a
+  context, not a browser). `browserClose` called `browser.Close()` on a nil
+  browser, so every `/browser close` (and the close on exit) panicked with a
+  nil-pointer dereference. Removed the dead global; close now stops the
+  Playwright driver and closes the persistent contexts.
+- **Thinking mode switcher:** the on-the-fly Tab cycle and the
+  `settings → think` palette only offered `off / minimal / low / medium /
+  high / xhigh / max`. The provider-adaptive "default" was missing — it is
+  what `buildThinkingConfig` maps to Anthropic's `thinking.type=adaptive`, and
+  what the config UI already exposes as `(default)`. Added a `default`
+  `ThinkMode` sentinel plus `AllThinkModes()`; the cycle and palette now
+  include it, and the controller resolves it to the active model preset's
+  thinking config before any request is sent, so providers never see the
+  sentinel.
+- **Auto-compaction on context overflow:** `runCompact(force=true)` skipped
+  both the safety and growth triggers by design, but the guard that no-ops
+  when neither trigger fired also applied to the force path — so the
+  overflow-recovery branch never compacted and burned its single retry on a
+  second overflow. The guard now requires `!force`, so force-compaction runs
+  whenever there is history to summarize. Added `TestRunCompact_ForceCompactsWhenHistoryExists`.
+- **Default skills directory:** the directory wiring was already correct —
+  `Discover` installs the embedded skill library into `~/.a1/skills` and
+  `loadConfig` defaults `skill_path` to that dir — but every installed skill
+  failed to parse. `parseFrontmatter` rejected any indented frontmatter line
+  with `ErrInvalidYAML`, and every shipped skill carries a nested `metadata:`
+  map block, so `LoadSkills` silently returned an empty list and the skills
+  palette showed "No skills found". Indented continuation lines are now
+  skipped (the parser only needs the flat top-level keys) instead of erroring.
 
 ### Security
 
@@ -700,7 +764,10 @@ Earlier releases are available from GitHub tags only.
 
 <!-- Released section ended -->
 
-[Unreleased]: https://github.com/pulseaiclub/phi/compare/v0.27.5...HEAD
+[Unreleased]: https://github.com/pulseaiclub/phi/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/pulseaiclub/phi/releases/tag/v1.1.0
+[1.0.1]: https://github.com/pulseaiclub/phi/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/pulseaiclub/phi/releases/tag/v1.0.0
 [0.27.5]: https://github.com/pulseaiclub/phi/compare/v0.27.4...v0.27.5
 [0.27.4]: https://github.com/pulseaiclub/phi/releases/tag/v0.27.4
 [0.27.3]: https://github.com/pulseaiclub/phi/releases/tag/v0.27.3

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParse(t *testing.T) {
@@ -210,4 +211,29 @@ func TestToPromptMarkdown_Multiple(t *testing.T) {
 	assert.Contains(t, result, "### Skill Two")
 	assert.Contains(t, result, "First")
 	assert.Contains(t, result, "Second")
+}
+
+// TestParse_LoadsEmbeddedDefaults verifies the shipped skill library parses
+// end-to-end: every SKILL.md under the embedded default/ tree must yield a
+// usable Skill. Without this, a parser regression that rejects nested YAML
+// blocks (like the metadata: map every shipped skill carries) silently
+// returns an empty list and the skills palette shows "No skills found".
+func TestParse_LoadsEmbeddedDefaults(t *testing.T) {
+	dir := t.TempDir()
+	files, err := InstallDefault(dir)
+	require.NoError(t, err)
+	require.Greater(t, files, 0, "InstallDefault should copy the embedded skills")
+
+	list, err := LoadSkills(dir)
+	require.NoError(t, err)
+	// InstallDefault counts every file copied (frontmatter + references),
+	// while LoadSkills counts parsed SKILL.md files; both must be non-zero
+	// and the parsed count must not exceed the copied count.
+	assert.Greater(t, len(list), 0, "default skills must parse")
+	assert.LessOrEqual(t, len(list), files)
+	for _, s := range list {
+		assert.NotEmpty(t, s.Name, "skill must have a name")
+		assert.NotEmpty(t, s.Description, "skill %q must have a description", s.Name)
+		assert.NotEmpty(t, s.Body, "skill %q must have a body", s.Name)
+	}
 }

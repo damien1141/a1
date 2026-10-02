@@ -203,15 +203,7 @@ func (c *EngineController) CyclePermissionMode() {
 }
 
 func (c *EngineController) CycleThinkLevel() {
-	modes := []llm.ThinkMode{
-		llm.Off,
-		llm.Minimal,
-		llm.Low,
-		llm.Medium,
-		llm.High,
-		llm.XHigh,
-		llm.Max,
-	}
+	modes := llm.AllThinkModes()
 	current := c.ThinkLevel()
 	idx := 0
 	for i, m := range modes {
@@ -513,17 +505,22 @@ func (c *EngineController) SetModel(name string) error {
 	if _, _, err := c.ReloadExtensions(); err != nil {
 		debuglog.Logf("extension: reload on SetModel: %v", err)
 	}
-	c.engine.SetModelWithHooks(cfg, model.HooksFor(cfg.Name))
+	// Resolve the "default" sentinel to the preset's thinking config before
+	// handing cfg to the engine; modelCfg keeps the sentinel for display.
+	c.engine.SetModelWithHooks(c.resolveThink(cfg), model.HooksFor(cfg.Name))
 	c.modelCfg = cfg
 	return nil
 }
 
-// SetThinkLevel changes the thinking level for the current session.
+// SetThinkLevel changes the thinking level for the current session. The
+// "default" sentinel is preserved on modelCfg (so the palette marks the
+// default row active) and resolved to the preset's thinking config by the
+// engine's client builder before any request is sent.
 func (c *EngineController) SetThinkLevel(mode llm.ThinkMode) {
 	c.modelCfg.Think.Mode = mode
 	c.modelCfg.Think.Enabled = mode != llm.Off
 	if c.engine != nil {
-		c.engine.SetModel(c.modelCfg)
+		c.engine.SetModel(c.resolveThink(c.modelCfg))
 	}
 	c.publish(ModelChangeMsg{Kind: "think_level", Value: string(mode)})
 }
@@ -651,11 +648,21 @@ func (c *EngineController) resolveModel() (llm.ModelConfig, error) {
 	return c.proj.Config().Model(), nil
 }
 
+// resolveThink returns a copy of cfg with the "default" thinking sentinel
+// resolved to the preset's thinking config, so the engine and its LLM client
+// never see the sentinel. The controller's own modelCfg keeps the sentinel so
+// the palette can mark the default row active.
+func (c *EngineController) resolveThink(cfg llm.ModelConfig) llm.ModelConfig {
+	cfg.Think = model.ResolveThink(cfg.Name, cfg.Think)
+	return cfg
+}
+
 func (c *EngineController) openEngine(
 	cfg llm.ModelConfig,
 	extRunner *extension.Runner,
 	resumeID string,
 ) (*agent.Engine, error) {
+	cfg = c.resolveThink(cfg)
 	opts := []agent.SessionOption{
 		agent.WithCwd(c.cwd),
 		agent.WithSessionDir(c.sessionDir),

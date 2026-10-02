@@ -1123,11 +1123,8 @@ func (c *ComposerPane) acceptSlash(item mention.Item) {
 	c.Chat.ReplaceRange(start, end, insert)
 	c.slash.Hide()
 	c.Chat.SlashOpen = false
-	if !strings.HasSuffix(insert, " ") {
-		c.bus.Publish(controller.SubmitMsg{Text: strings.TrimSpace(insert)})
-		if c.drainBus != nil {
-			c.drainBus()
-		}
+	if !strings.HasSuffix(insert, " ") && c.Chat.OnSubmit != nil {
+		c.Chat.OnSubmit(strings.TrimSpace(insert))
 	}
 }
 

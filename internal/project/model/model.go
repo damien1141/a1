@@ -39,6 +39,28 @@ func HooksFor(name string) llmclient.Hooks {
 	return llmclient.Hooks{}
 }
 
+// PresetThink returns the thinking config the built-in catalog ships for name,
+// or a zero config when name has no preset. Used to resolve the "default"
+// mode — the provider-adaptive sentinel — back to whatever the model
+// shipped with.
+func PresetThink(name string) llm.ThinkConfig {
+	if p, ok := Lookup(name); ok {
+		return p.Config.Think
+	}
+	return llm.ThinkConfig{}
+}
+
+// ResolveThink returns a concrete ThinkConfig: when mode is Default it falls
+// back to the preset's thinking config verbatim (including whether thinking is
+// on at all — a model with no preset therefore stays thinking-off). Otherwise
+// it returns the mode unchanged.
+func ResolveThink(name string, cfg llm.ThinkConfig) llm.ThinkConfig {
+	if cfg.Mode != llm.Default {
+		return cfg
+	}
+	return PresetThink(name)
+}
+
 var (
 	thinkHigh = llm.ThinkConfig{Enabled: true, Mode: llm.High}
 	thinkMax  = llm.ThinkConfig{Enabled: true, Mode: llm.Max}

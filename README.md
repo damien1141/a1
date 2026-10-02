@@ -1,4 +1,4 @@
-# A1 v1.0.0
+# A1 v1.1.0
 
 A terminal coding-agent harness for people who want an agent that can actually reason over long sessions, inspect its own permissions, and browse the web without leaving the shell.
 

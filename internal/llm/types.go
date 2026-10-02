@@ -42,7 +42,18 @@ const (
 	High    ThinkMode = "high"
 	XHigh   ThinkMode = "xhigh"
 	Max     ThinkMode = "max"
+	// Default is the provider-adaptive mode: it is not a literal wire value
+	// but a sentinel meaning "use whatever the model preset shipped with".
+	// buildThinkingConfig maps it to Anthropic's thinking.type="adaptive";
+	// the other providers fall back to their preset config when they see it.
+	Default ThinkMode = "default"
 )
+
+// AllThinkModes lists every selectable mode, in UI order, for the palette
+// and the Tab cycle. Default is last so the explicit levels come first.
+func AllThinkModes() []ThinkMode {
+	return []ThinkMode{Off, Minimal, Low, Medium, High, XHigh, Max, Default}
+}
 
 // ThinkConfig is the provider-agnostic reasoning level. Provider wire formats
 // (OpenAI reasoning_effort, Gemini thinkingBudget/level, …) are applied by

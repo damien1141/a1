@@ -451,3 +451,46 @@ func TestLoopNonOverflowErrorDoesNotCompact(t *testing.T) {
 	require.False(t, sawCompact)
 	require.Equal(t, int32(1), streamHits.Load())
 }
+
+// TestRunCompact_ForceCompactsWhenHistoryExists pins the overflow-recovery
+// path: runCompact(force=true) must compact a session that has summarizable
+// history rather than no-op. The guard that skips the safety/growth triggers
+// when force is set must not also skip compaction itself — otherwise the
+// single overflow retry is burned on a second overflow and recovery never
+// happens.
+func TestRunCompact_ForceCompactsWhenHistoryExists(t *testing.T) {
+	server := overflowThenOKServer(&atomic.Int32{})
+	defer server.Close()
+
+	sess, err := NewSession(WithCwd(t.TempDir()))
+	require.NoError(t, err)
+	require.NoError(t, sess.Append(
+		llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 12000}},
+		llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 24000}},
+		llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 36000}},
+		llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 50000}},
+	))
+
+	engine, err := NewEngine(
+		llm.ModelConfig{Name: "fake", BaseURL: server.URL, APIKey: "x", ContextWindow: 200_000},
+		sess,
+		WithGate(permission.AllowAll{}),
+		WithTools([]tools.Tool{}),
+	)
+	require.NoError(t, err)
+
+	var sawStart, sawComplete bool
+	did, err := engine.runCompact(t.Context(), func(ev session.Event, _ error) bool {
+		switch ev.(type) {
+		case session.CompactionStarted:
+			sawStart = true
+		case session.CompactionComplete:
+			sawComplete = true
+		}
+		return true
+	}, 0, true)
+	require.NoError(t, err)
+	require.True(t, did, "force compaction must run when there is history to summarize")
+	require.True(t, sawStart, "must emit CompactionStarted")
+	require.True(t, sawComplete, "must emit CompactionComplete")
+}

@@ -156,6 +156,20 @@ func TestSlashEnterStillSubmits(t *testing.T) {
 	assert.Equal(t, "/clear", submittedText(t, bus), "Enter keeps running a no-arg command")
 }
 
+func TestSlashEnterSubmitsOnceForRealCommand(t *testing.T) {
+	c, bus := wiredComposer(t)
+	openSlashPicker(t, c, "/cle", "cle")
+
+	c.Handle(&components.EventContext{}, xui.KeyEvent{Code: xui.KeyEnter, Press: true})
+
+	assert.Equal(t, "/clear", c.Chat.Value)
+	var submits int
+	for range bus.Drain() {
+		submits++
+	}
+	assert.Equal(t, 1, submits, "slash accept should submit exactly once")
+}
+
 func TestMentionTabCompletesIntoComposer(t *testing.T) {
 	c, bus := wiredComposer(t)
 	c.mention.SetResults([]mention.Item{{Path: "go.mod"}}, "")

@@ -1,27 +1,28 @@
-Browser tool suggestions
+fix firefox browser
+- DONE: the Firefox switch left the old `browser playwright.Browser` global
+  declared but never assigned (LaunchPersistentContext returns a context,
+  not a browser). browserClose called browser.Close() on a nil browser →
+  nil-pointer panic on every /browser close. Removed the dead global; close
+  now stops the Playwright driver and closes the persistent contexts.
 
- what broke
+add "default" thinking mode into the on the fly thinking mode switcher
+- DONE: added a `default` ThinkMode sentinel (maps to Anthropic adaptive; other
+  providers fall back to the preset's thinking config). Tab cycle and the
+  settings → think palette now include it. Resolution lives in the controller
+  so the engine/LLM client never see the sentinel.
 
- • browser.search hardcodes input[name=q], which is Google’s selector. DuckDuckGo’s search box uses different markup, so the
-  locator timed out twice.
- • the tool then offered no fallback — it didn’t try alternative selectors, type into the first visible input, or surface a
- clear “selector not found” error that would let me recover with browser.type + browser.press Enter.
+wire default skills directory
+- DONE: the directory wiring was already correct (Discover installs the
+  embedded skill library into ~/.a1/skills; loadConfig defaults skill_path to
+  that dir). The bug was that every installed skill failed to parse:
+  parseFrontmatter rejected indented frontmatter lines, and every shipped
+  skill carries a nested metadata: map block, so LoadSkills returned empty and
+  the skills palette showed "No skills found". Indented continuation lines are
+  now skipped. Added TestParse_LoadsEmbeddedDefaults and
+  TestSkillPathDefaultsToGlobalSkillsDir as regression guards.
 
- concrete improvements
-
- 1. selector auto-detection — instead of input[name=q], probe common patterns (input[name=q], #search_form_input, [aria-labe
- l*="search" i], input[type="search"]) and use the first match.
- 2. explicit fallback mode — when no known selector matches, return the page’s visible inputs so the caller can target them
- directly with type + press.
- 3. longer / configurable timeout — 5s is tight for slow search engines; make it a parameter or bump default to 10–15s.
- 4. expose low-level primitives — search is convenient but brittle. A fill(selector, text) + submit(selector) pair lets the
- agent adapt to any site without guessing.
-
- what i did instead
-
- • opened DuckDuckGo directly via browser.open
- • fell back to lite.duckduckgo.com (HTML-only version) and read results with browser.content
- • also used fetch for Google Scholar, but you asked me to stick to the browser tool, so I pivoted
-
- the tool is usable, but right now it’s optimized for Google only. making the search action selector-agnostic or removing it
-  in favor of generic type/click would fix the core weakness.
+fix auto-compaction on context overflow
+- DONE: runCompact(force=true) skipped both triggers by design, but the
+  no-op guard also applied to the force path, so the overflow-recovery branch
+  never compacted and burned its single retry on a second overflow. The guard
+  now requires !force. Added TestRunCompact_ForceCompactsWhenHistoryExists.

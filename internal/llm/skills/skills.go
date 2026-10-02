@@ -70,9 +70,13 @@ func parseFrontmatter(fm string) (*Skill, error) {
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		// Continuation lines belong to a previous block scalar — skip orphans.
+		// Indented lines are continuation of a nested block (a map or list
+		// value, e.g. the metadata: map every shipped skill carries). This
+		// parser only needs the flat top-level keys, so skip them rather than
+		// rejecting the whole frontmatter — otherwise every real skill file
+		// fails to parse and LoadSkills silently returns nothing.
 		if raw != "" && (raw[0] == ' ' || raw[0] == '\t') {
-			return nil, ErrInvalidYAML
+			continue
 		}
 		key, val, ok := strings.Cut(trimmed, ":")
 		if !ok {

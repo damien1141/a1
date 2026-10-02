@@ -218,6 +218,10 @@ func buildThinkingConfig(mode llm.ThinkMode) *thinkingConfig {
 	switch mode {
 	case llm.Off:
 		return nil
+	case llm.Default:
+		// Adaptive lets the model decide how much to think; this is the
+		// provider-native "default" the switcher exposes.
+		return &thinkingConfig{Type: "adaptive"}
 	case llm.Minimal, llm.Low:
 		budget := 1024
 		return &thinkingConfig{Type: "enabled", BudgetTokens: &budget}

@@ -18,7 +18,10 @@ import (
 )
 
 var (
-	browser          playwright.Browser
+	// pw is the Playwright driver instance. It is kept global so browserClose
+	// can call pw.Stop() to tear down the node driver; otherwise the driver
+	// lingers and the next playwright.Run() fails with "browser is already
+	// in use".
 	pw               *playwright.Playwright
 	profiles         map[string]playwright.BrowserContext
 	pages            map[string]playwright.Page
@@ -195,7 +198,7 @@ func ensureBrowser(ctx context.Context) error {
 	}
 	browserMu.Lock()
 	defer browserMu.Unlock()
-	if browser != nil {
+	if pw != nil {
 		return nil
 	}
 
@@ -596,10 +599,6 @@ func browserClose() (tooldef.Result, error) {
 		delete(pages, name)
 	}
 	currentProfile = "default"
-	if browser != nil {
-		browser.Close()
-		browser = nil
-	}
 	if pw != nil {
 		pw.Stop()
 		pw = nil

@@ -135,9 +135,7 @@ func (s *SettingsCommands) setThinkLevel(level llm.ThinkMode) {
 }
 
 func buildThinkPalette(ctrl *controller.EngineController, set func(llm.ThinkMode)) palette.PaletteCommand {
-	levels := []llm.ThinkMode{
-		llm.Off, llm.Minimal, llm.Low, llm.Medium, llm.High, llm.XHigh, llm.Max,
-	}
+	levels := llm.AllThinkModes()
 	current := llm.Off
 	if ctrl != nil {
 		current = ctrl.ThinkLevel()
@@ -148,10 +146,14 @@ func buildThinkPalette(ctrl *controller.EngineController, set func(llm.ThinkMode
 		if lv == current {
 			mark = "✓ "
 		}
+		verb := string(lv)
+		if lv == llm.Default {
+			verb = "default"
+		}
 		cmds = append(cmds, palette.PaletteCommand{
 			ID:       "think-" + string(lv),
-			Verb:     mark + string(lv),
-			Keywords: []string{string(lv), "thinking", "reasoning", "effort"},
+			Verb:     mark + verb,
+			Keywords: []string{string(lv), "thinking", "reasoning", "effort", "adaptive", "default"},
 			Run: func() {
 				if set != nil {
 					set(lv)
@@ -163,7 +165,7 @@ func buildThinkPalette(ctrl *controller.EngineController, set func(llm.ThinkMode
 		ID:           "settings-think",
 		Noun:         "settings",
 		Verb:         "think",
-		Keywords:     []string{"thinking", "reasoning", "effort", "budget"},
+		Keywords:     []string{"thinking", "reasoning", "effort", "budget", "default"},
 		SubmenuTitle: "Thinking Level",
 		Submenu:      cmds,
 	}
