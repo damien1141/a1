@@ -8,6 +8,7 @@ import (
 )
 
 var _ Gate = fixedGate{}
+
 type fixedGate struct {
 	dec Decision
 }
@@ -21,6 +22,7 @@ func (g fixedGate) Admit(context.Context, Request) (Decision, string) {
 }
 
 var _ Gate = (*recordingGate)(nil)
+
 type recordingGate struct {
 	last Request
 }

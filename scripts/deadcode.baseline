@@ -2,6 +2,19 @@
 # phi binary by design; kept for API or external consumers.
 cmd/exit.go exitError.silent
 
+# Exported public API surface: unreachable from the phi binary but intended
+# for external consumers, docs, or future wiring. Kept rather than deleted to
+# avoid breaking callers that import these packages directly.
+internal/agent/engine.go ActiveEngine
+internal/graph/graph.go FormatImport
+internal/llm/skills/default.go Default
+internal/tools/buildtool/build.go sortTargets
+internal/tools/contexttool/context.go foldHealthSummary
+internal/tools/journaltool/journal.go shouldSkipDir
+internal/vector/indexer.go CopyStore
+internal/vector/indexer.go Indexer.Close
+internal/vector/indexer.go Indexer.Stats
+
 # ext/go/pxb wire helpers are a public SDK consumed by external extension
 # binaries (and by the nested module's own tests, which deadcode -test cannot
 # see from this module's roots). The ext/go/phi SDK is now outside this module's

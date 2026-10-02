@@ -43,8 +43,14 @@ func TestModeCycle(t *testing.T) {
 		// Simulate CyclePermissionMode: rebuild the gate with the next mode.
 		g2 := gateWithMode(t, next)
 		// Verify the new mode actually changes behavior for a write.
-		dec1, _ := g.Check(context.Background(), Request{Action: ActionWrite, Paths: []string{filepath.Join(g.Workspace, "a.txt")}})
-		dec2, _ := g2.Check(context.Background(), Request{Action: ActionWrite, Paths: []string{filepath.Join(g2.Workspace, "a.txt")}})
+		dec1, _ := g.Check(
+			context.Background(),
+			Request{Action: ActionWrite, Paths: []string{filepath.Join(g.Workspace, "a.txt")}},
+		)
+		dec2, _ := g2.Check(
+			context.Background(),
+			Request{Action: ActionWrite, Paths: []string{filepath.Join(g2.Workspace, "a.txt")}},
+		)
 		// In interactive a workspace write is Allow; in readonly it is Deny.
 		if start == ModeInteractive {
 			assert.Equal(t, Allow, dec1, "%s: workspace write allowed", start)
@@ -85,7 +91,10 @@ func TestReadonlyAllowsReadonlyBash(t *testing.T) {
 	require.NoError(t, err)
 	dec, _ := g.Check(context.Background(), Request{Action: ActionBash, Command: "git status"})
 	assert.Equal(t, Allow, dec, "git status in readonly")
-	dec, _ = g.Check(context.Background(), Request{Action: ActionWrite, Paths: []string{filepath.Join(g.Workspace, "a.txt")}})
+	dec, _ = g.Check(
+		context.Background(),
+		Request{Action: ActionWrite, Paths: []string{filepath.Join(g.Workspace, "a.txt")}},
+	)
 	assert.Equal(t, Deny, dec, "write denied in readonly")
 }
 

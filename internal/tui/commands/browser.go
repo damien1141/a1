@@ -36,7 +36,9 @@ func (b *BrowserCommands) Register(r *CommandRegistry) {
 		Insert:      "/browser ",
 		Run: func(_ Context, args []string) error {
 			if len(args) == 0 {
-				return fmt.Errorf("usage: /browser open <url> | proxy <url> | close | profile list|create|switch|delete")
+				return fmt.Errorf(
+					"usage: /browser open <url> | proxy <url> | close | profile list|create|switch|delete",
+				)
 			}
 			action := args[0]
 			var in struct {

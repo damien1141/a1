@@ -8,11 +8,11 @@ import (
 
 // ChildSpec is the capability profile for a sub-agent role.
 type ChildSpec struct {
-	Role         job.Role
-	Tools        []tools.Tool
-	Mode         permission.Mode // used when EngineRunner.Gate is nil
-	Hint         string          // appended to the child prompt
-	Confinement  *permission.ConfinementPolicy // nil = no trajectory confinement
+	Role        job.Role
+	Tools       []tools.Tool
+	Mode        permission.Mode               // used when EngineRunner.Gate is nil
+	Hint        string                        // appended to the child prompt
+	Confinement *permission.ConfinementPolicy // nil = no trajectory confinement
 }
 
 // ChildTools returns the default (explore) tool set.
@@ -26,27 +26,33 @@ func SpecForRole(role job.Role) ChildSpec {
 	switch role {
 	case job.RoleWorker:
 		return ChildSpec{
-			Role:         job.RoleWorker,
-			Tools:        tools.DefaultTools(), // no agent_*; writable
-			Mode:         permission.ModeHeadlessStrict,
-			Hint:         workerSummaryHint,
-			Confinement:  &permission.ConfinementPolicy{MaxSteps: 20},
+			Role:        job.RoleWorker,
+			Tools:       tools.DefaultTools(), // no agent_*; writable
+			Mode:        permission.ModeHeadlessStrict,
+			Hint:        workerSummaryHint,
+			Confinement: &permission.ConfinementPolicy{MaxSteps: 20},
 		}
 	case job.RoleReview:
 		return ChildSpec{
-			Role:         job.RoleReview,
-			Tools:        tools.ReadonlyTools(),
-			Mode:         permission.ModeReadonly,
-			Hint:         reviewSummaryHint,
-			Confinement:  &permission.ConfinementPolicy{MaxSteps: 15, AllowedTools: []string{"read", "grep", "find", "ls", "bash"}},
+			Role:  job.RoleReview,
+			Tools: tools.ReadonlyTools(),
+			Mode:  permission.ModeReadonly,
+			Hint:  reviewSummaryHint,
+			Confinement: &permission.ConfinementPolicy{
+				MaxSteps:     15,
+				AllowedTools: []string{"read", "grep", "find", "ls", "bash"},
+			},
 		}
 	default:
 		return ChildSpec{
-			Role:         job.RoleExplore,
-			Tools:        tools.ReadonlyTools(),
-			Mode:         permission.ModeReadonly,
-			Hint:         exploreSummaryHint,
-			Confinement:  &permission.ConfinementPolicy{MaxSteps: 10, AllowedTools: []string{"read", "grep", "find", "ls", "bash"}},
+			Role:  job.RoleExplore,
+			Tools: tools.ReadonlyTools(),
+			Mode:  permission.ModeReadonly,
+			Hint:  exploreSummaryHint,
+			Confinement: &permission.ConfinementPolicy{
+				MaxSteps:     10,
+				AllowedTools: []string{"read", "grep", "find", "ls", "bash"},
+			},
 		}
 	}
 }

@@ -15,12 +15,12 @@ import (
 )
 
 type stubComposer struct {
-	label       layout.BorderLabel
-	set         bool
-	topCenter   layout.BorderLabel
+	label        layout.BorderLabel
+	set          bool
+	topCenter    layout.BorderLabel
 	topCenterSet bool
-	topLeft     layout.BorderLabel
-	topLeftSet  bool
+	topLeft      layout.BorderLabel
+	topLeftSet   bool
 }
 
 func (s *stubComposer) SetBottomLeftLabel(label layout.BorderLabel) {

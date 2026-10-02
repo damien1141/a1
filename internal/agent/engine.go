@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sync/atomic"
 	"iter"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/damien1141/a1/internal/agent/prompt"
+	"github.com/damien1141/a1/internal/engineaccess"
 	"github.com/damien1141/a1/internal/extension"
 	"github.com/damien1141/a1/internal/job"
 	"github.com/damien1141/a1/internal/llm"
@@ -18,7 +19,6 @@ import (
 	"github.com/damien1141/a1/internal/llm/skills"
 	"github.com/damien1141/a1/internal/mcp"
 	"github.com/damien1141/a1/internal/permission"
-	"github.com/damien1141/a1/internal/engineaccess"
 	"github.com/damien1141/a1/internal/session"
 	"github.com/damien1141/a1/internal/session/compaction"
 	"github.com/damien1141/a1/internal/tools"
@@ -58,8 +58,6 @@ func (engine *Engine) Gate() permission.Gate {
 	}
 	return engine.gate
 }
-
-
 
 const defaultMaxToolRounds = 64
 
@@ -358,18 +356,18 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
 
 			msgs := engine.session.BuildContext()
 
-msg, completeEvent, err := engine.streamTurn(ctx, yield, msgs)
-		if err != nil {
-			if !overflowRecovered && llm.IsContextOverflow(err) {
-				did, cerr := engine.runCompact(ctx, yield, 0, true)
-				if cerr == nil && did {
-					overflowRecovered = true
-					continue
+			msg, completeEvent, err := engine.streamTurn(ctx, yield, msgs)
+			if err != nil {
+				if !overflowRecovered && llm.IsContextOverflow(err) {
+					did, cerr := engine.runCompact(ctx, yield, 0, true)
+					if cerr == nil && did {
+						overflowRecovered = true
+						continue
+					}
 				}
+				yield(nil, err)
+				return
 			}
-			yield(nil, err)
-			return
-		}
 			if completeEvent == nil {
 				// Cancelled or consumer stopped — no error to surface.
 				return
@@ -473,7 +471,8 @@ func (engine *Engine) runCompact(
 	//     This is the primary trigger (billion-context §3.4): it targets
 	//     consumed increments rather than active context.
 	safety := !force && compaction.ShouldCompact(usage, engine.modelCfg.ContextWindow, settings)
-	gated := !force && compaction.ShouldCompactGated(usage, engine.modelCfg.ContextWindow, engine.lastCompactEstimate, settings)
+	gated := !force &&
+		compaction.ShouldCompactGated(usage, engine.modelCfg.ContextWindow, engine.lastCompactEstimate, settings)
 	// Both are checked before PrepareCompact so a no-op does not burn work.
 	// force skips both triggers, so the guard must also require !force —
 	// otherwise the overflow-recovery path (force=true) would no-op here and

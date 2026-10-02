@@ -50,11 +50,11 @@ type modelDoc struct {
 	ContextWindow *int   `yaml:"context_window,omitempty" json:"contextWindow,omitempty"`
 	// ImageEnabled is a pointer so the editor can omit the key until the user
 	// toggles it (absent vs false). Runtime parse treats absence as false.
-	ImageEnabled *bool  `yaml:"image_enabled,omitempty"  json:"imageEnabled,omitempty"`
-	API          string `yaml:"api,omitempty"            json:"api,omitempty"` // OpenAI | OpenAIResponses | Anthropic | Gemini
-	ThinkEnabled *bool  `yaml:"think_enabled,omitempty"  json:"thinkEnabled,omitempty"`
-	ThinkLevel   string `yaml:"think_level,omitempty"    json:"thinkLevel,omitempty"`
-	Default      bool   `yaml:"default,omitempty"        json:"default"`
+	ImageEnabled *bool  `yaml:"image_enabled,omitempty" json:"imageEnabled,omitempty"`
+	API          string `yaml:"api,omitempty"           json:"api,omitempty"` // OpenAI | OpenAIResponses | Anthropic | Gemini
+	ThinkEnabled *bool  `yaml:"think_enabled,omitempty" json:"thinkEnabled,omitempty"`
+	ThinkLevel   string `yaml:"think_level,omitempty"   json:"thinkLevel,omitempty"`
+	Default      bool   `yaml:"default,omitempty"       json:"default"`
 }
 
 type permDoc struct {
@@ -118,11 +118,11 @@ type modelListResponse struct {
 }
 
 const (
-	defaultOpenAIBaseURL  = "https://api.openai.com/v1"
+	defaultOpenAIBaseURL = "https://api.openai.com/v1"
 	// KiloGatewayBaseURL is the OpenRouter-compatible Kilo Gateway endpoint.
 	// It is exposed as a provider preset so users can select Kilo from the
 	// config UI without typing the URL by hand.
-	KiloGatewayBaseURL = "https://api.kilo.ai/api/gateway"
+	KiloGatewayBaseURL    = "https://api.kilo.ai/api/gateway"
 	anthropicAPIVersion   = "2023-06-01"
 	modelListRequestLimit = 15 * time.Second
 	modelListBodyLimit    = int64(4 << 20)
@@ -134,7 +134,8 @@ type configHandler struct {
 }
 
 func (h *configHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if (r.URL.Path == "/api/config" || r.URL.Path == "/api/models" || r.URL.Path == "/api/stats") && !isLoopbackHost(r.Host) {
+	if (r.URL.Path == "/api/config" || r.URL.Path == "/api/models" || r.URL.Path == "/api/stats") &&
+		!isLoopbackHost(r.Host) {
 		writeConfigErr(w, http.StatusForbidden, errors.New("request origin is not allowed"))
 		return
 	}

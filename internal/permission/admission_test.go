@@ -22,13 +22,13 @@ func TestAdmitBlocksUntrustedOutputWhenConfigured(t *testing.T) {
 	require.NoError(t, err)
 
 	dec, _ := g.Admit(t.Context(), Request{
-		Action: ActionBash,
+		Action:      ActionBash,
 		OutputLabel: Label{Trust: Untrusted},
 	})
 	assert.Equal(t, Deny, dec)
 
 	dec, _ = g.Admit(t.Context(), Request{
-		Action: ActionBash,
+		Action:      ActionBash,
 		OutputLabel: Label{Trust: User},
 	})
 	assert.Equal(t, Allow, dec)

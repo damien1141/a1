@@ -218,7 +218,7 @@ func parseExports(path string) ([]apiSymbol, error) {
 	return symbols, nil
 }
 
-func countReferences(root, defFile, symbolName string, cwd string) (int, error) {
+func countReferences(root, defFile, symbolName, cwd string) (int, error) {
 	// Use grep to find references, excluding the defining file.
 	args := []string{
 		"-r",

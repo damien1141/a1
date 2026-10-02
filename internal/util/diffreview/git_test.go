@@ -29,6 +29,14 @@ func runGit(t *testing.T, dir string, args ...string) {
 	cmd.Dir = dir
 	cmd.Env = append(
 		os.Environ(),
+		// Hermetic: the developer's global config may sign commits with a
+		// passphrase-protected key, which makes every `git commit` in these
+		// tests fail with "incorrect passphrase" on machines that have one.
+		// Disable signing and the global config file so the tests pass
+		// everywhere, including CI runners with no keys at all.
+		"GIT_CONFIG_GLOBAL=/dev/null",
+		"GIT_CONFIG_SYSTEM=/dev/null",
+		"commit.gpgsign=false",
 		"GIT_AUTHOR_NAME=t",
 		"GIT_AUTHOR_EMAIL=t@t",
 		"GIT_COMMITTER_NAME=t",

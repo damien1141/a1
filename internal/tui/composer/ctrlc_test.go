@@ -80,6 +80,6 @@ type fakeBusy struct {
 	busy bool
 }
 
-func (f *fakeBusy) RunningBash() bool { return f.busy }
-func (f *fakeBusy) IsBusy() bool     { return f.busy }
+func (f *fakeBusy) RunningBash() bool     { return f.busy }
+func (f *fakeBusy) IsBusy() bool          { return f.busy }
 func (f *fakeBusy) SyncBashBorder(string) {}

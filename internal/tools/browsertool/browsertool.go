@@ -22,14 +22,14 @@ var (
 	// can call pw.Stop() to tear down the node driver; otherwise the driver
 	// lingers and the next playwright.Run() fails with "browser is already
 	// in use".
-	pw               *playwright.Playwright
-	profiles         map[string]playwright.BrowserContext
-	pages            map[string]playwright.Page
-	currentProfile   string
-	browserProxyURL  string
-	lastProxyURL     string
-	browserMu        sync.Mutex
-	betterfoxDir     = filepath.Join(".temp", "Betterfox")
+	pw              *playwright.Playwright
+	profiles        map[string]playwright.BrowserContext
+	pages           map[string]playwright.Page
+	currentProfile  string
+	browserProxyURL string
+	lastProxyURL    string
+	browserMu       sync.Mutex
+	betterfoxDir    = filepath.Join(".temp", "Betterfox")
 )
 
 func init() {
@@ -411,7 +411,9 @@ func browserSearch(in browserInput) (tooldef.Result, error) {
 		}
 	}
 	if sel == "" {
-		inputs, err := page.Evaluate(`Array.from(document.querySelectorAll('input')).map(i => i.name || i.id || i.placeholder || '').filter(Boolean).slice(0, 20)`)
+		inputs, err := page.Evaluate(
+			`Array.from(document.querySelectorAll('input')).map(i => i.name || i.id || i.placeholder || '').filter(Boolean).slice(0, 20)`,
+		)
 		if err != nil {
 			return tooldef.Result{}, fmt.Errorf("search input not found: %w", err)
 		}
@@ -763,10 +765,10 @@ func isSchemeToken(s string) bool {
 // picks up the proxy at launch time, so a change takes effect on the next
 // open after a close.
 //
-//   /browser proxy <url>     set an explicit proxy URL
-//   /browser proxy on        re-enable the last-used proxy (or the config
-//                            browser.proxy value if none was set yet)
-//   /browser proxy off       disable the proxy
+//	/browser proxy <url>     set an explicit proxy URL
+//	/browser proxy on        re-enable the last-used proxy (or the config
+//	                         browser.proxy value if none was set yet)
+//	/browser proxy off       disable the proxy
 func browserProxy(in browserInput) (tooldef.Result, error) {
 	url := strings.TrimSpace(in.URL)
 	switch strings.ToLower(url) {

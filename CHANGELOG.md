@@ -766,8 +766,6 @@ Earlier releases are available from GitHub tags only.
 
 [Unreleased]: https://github.com/pulseaiclub/phi/compare/v1.1.0...HEAD
 [1.1.0]: https://github.com/pulseaiclub/phi/releases/tag/v1.1.0
-[1.0.1]: https://github.com/pulseaiclub/phi/compare/v1.0.0...v1.0.1
-[1.0.0]: https://github.com/pulseaiclub/phi/releases/tag/v1.0.0
 [0.27.5]: https://github.com/pulseaiclub/phi/compare/v0.27.4...v0.27.5
 [0.27.4]: https://github.com/pulseaiclub/phi/releases/tag/v0.27.4
 [0.27.3]: https://github.com/pulseaiclub/phi/releases/tag/v0.27.3

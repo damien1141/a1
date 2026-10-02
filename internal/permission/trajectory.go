@@ -64,16 +64,16 @@ type ConfinementPolicy struct {
 
 // ConfinementGate wraps an inner Gate and enforces trajectory limits.
 type ConfinementGate struct {
-	Inner     Gate
-	Policy    ConfinementPolicy
+	Inner      Gate
+	Policy     ConfinementPolicy
 	trajectory *Trajectory
 }
 
 // NewConfinementGate creates a gate that enforces trajectory limits.
 func NewConfinementGate(inner Gate, policy ConfinementPolicy) *ConfinementGate {
 	return &ConfinementGate{
-		Inner:     inner,
-		Policy:    policy,
+		Inner:      inner,
+		Policy:     policy,
 		trajectory: NewTrajectory(policy.MaxSteps),
 	}
 }

@@ -5,9 +5,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/damien1141/a1/internal/llm/skills"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/damien1141/a1/internal/llm/skills"
 )
 
 // TestSkillPathDefaultsToGlobalSkillsDir verifies the todo item "wire default

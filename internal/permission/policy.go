@@ -93,7 +93,7 @@ type Policy struct {
 	SensitivePathDeny   []string // path prefixes
 	WorkspaceOnlyReads  bool     // if true, out-of-workspace reads deny
 	DangerouslyAllowAll bool     // skip all permission checks globally
-	AllowAllSession    bool     // skip all permission checks for this session only
+	AllowAllSession     bool     // skip all permission checks for this session only
 
 	// Step 4: call-scoped authority.
 	// RequiresAuthority forces Ask decisions to consult an external Authority

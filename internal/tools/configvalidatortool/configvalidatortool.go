@@ -123,14 +123,26 @@ func runConfigValidate(ctx context.Context, input json.RawMessage) (tooldef.Resu
 		seenDefault := false
 		for i, m := range cfg.Models {
 			if m.Name == "" {
-				issues = append(issues, validationIssue{Severity: "error", Message: fmt.Sprintf("model[%d] missing name", i)})
+				issues = append(
+					issues,
+					validationIssue{Severity: "error", Message: fmt.Sprintf("model[%d] missing name", i)},
+				)
 			}
 			if m.APIKey == "" {
-				issues = append(issues, validationIssue{Severity: "error", Message: fmt.Sprintf("model %q missing api_key", m.Name)})
+				issues = append(
+					issues,
+					validationIssue{Severity: "error", Message: fmt.Sprintf("model %q missing api_key", m.Name)},
+				)
 			}
 			if m.Name == cfg.DefaultModel {
 				if seenDefault {
-					issues = append(issues, validationIssue{Severity: "warn", Message: fmt.Sprintf("multiple default models configured; using %q", cfg.DefaultModel)})
+					issues = append(
+						issues,
+						validationIssue{
+							Severity: "warn",
+							Message:  fmt.Sprintf("multiple default models configured; using %q", cfg.DefaultModel),
+						},
+					)
 				}
 				seenDefault = true
 			}
@@ -144,7 +156,13 @@ func runConfigValidate(ctx context.Context, input json.RawMessage) (tooldef.Resu
 				}
 			}
 			if !found {
-				issues = append(issues, validationIssue{Severity: "warn", Message: fmt.Sprintf("default_model %q does not match any configured model", cfg.DefaultModel)})
+				issues = append(
+					issues,
+					validationIssue{
+						Severity: "warn",
+						Message:  fmt.Sprintf("default_model %q does not match any configured model", cfg.DefaultModel),
+					},
+				)
 			}
 		}
 	}

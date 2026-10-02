@@ -26,7 +26,7 @@ var defaultSettings = Settings{
 	// ~45% of the window (matching the paper's floor fraction) and requires
 	// at least 50K of growth since the last compression.
 	GrowthThreshold: 50000,
-	FloorFraction:  0.45,
+	FloorFraction:   0.45,
 }
 
 // DefaultSettings returns the default compaction settings for use by callers outside this package.

@@ -257,14 +257,24 @@ func (e *Executor) runOne(
 	}
 
 	if e.telemetry != nil {
-		e.telemetry.Record(telemetry.Event{Kind: telemetry.EventToolCall, Tool: call.Function.Name, CallID: call.ID, When: time.Now()})
+		e.telemetry.Record(
+			telemetry.Event{Kind: telemetry.EventToolCall, Tool: call.Function.Name, CallID: call.ID, When: time.Now()},
+		)
 	}
 
 	result, err := tool.Run(tools.WithToolCallID(ctx, call.ID), args)
 
 	if e.telemetry != nil {
 		if err != nil {
-			e.telemetry.Record(telemetry.Event{Kind: telemetry.EventToolErr, Tool: call.Function.Name, CallID: call.ID, When: time.Now(), Err: err.Error()})
+			e.telemetry.Record(
+				telemetry.Event{
+					Kind:   telemetry.EventToolErr,
+					Tool:   call.Function.Name,
+					CallID: call.ID,
+					When:   time.Now(),
+					Err:    err.Error(),
+				},
+			)
 		}
 	}
 
@@ -341,14 +351,21 @@ func (e *Executor) runOne(
 	run := e.toolRun(call, session.ToolDone, detail, "", output)
 	run.Expanded = result.Expanded
 	if e.telemetry != nil {
-		e.telemetry.Record(telemetry.Event{Kind: telemetry.EventToolOK, Tool: call.Function.Name, CallID: call.ID, When: time.Now()})
+		e.telemetry.Record(
+			telemetry.Event{Kind: telemetry.EventToolOK, Tool: call.Function.Name, CallID: call.ID, When: time.Now()},
+		)
 	}
 	_ = emit(session.ToolData{Run: run})
 	return e.toolMessage(call.ID, modelContent), postStop, postReason
 }
 
 // consultAuthority applies Step 4 call-scoped authority when the policy requires it.
-func (e *Executor) consultAuthority(ctx context.Context, dec permission.Decision, reason string, req permission.Request) (permission.Decision, string) {
+func (e *Executor) consultAuthority(
+	ctx context.Context,
+	dec permission.Decision,
+	reason string,
+	req permission.Request,
+) (permission.Decision, string) {
 	if dec != permission.Ask {
 		return dec, reason
 	}

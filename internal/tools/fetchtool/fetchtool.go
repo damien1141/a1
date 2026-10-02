@@ -237,7 +237,7 @@ func htmlToText(html string) string {
 }
 
 // linkRe matches href / src attributes. It is intentionally loose: any URL
-//-looking value is captured, and the caller resolves relative URLs against
+// -looking value is captured, and the caller resolves relative URLs against
 // the page base.
 var linkRe = regexp.MustCompile(`(?i)(?:href|src)\s*=\s*"([^"]+)"`)
 

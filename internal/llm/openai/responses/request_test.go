@@ -3,9 +3,10 @@ package responses
 import (
 	"testing"
 
-	"github.com/damien1141/a1/internal/llm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/damien1141/a1/internal/llm"
 )
 
 // TestBuildRequest_SystemFirst guards against the bug where a RoleSystem

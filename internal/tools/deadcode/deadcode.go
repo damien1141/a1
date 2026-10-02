@@ -233,7 +233,7 @@ func parseExports(path string) ([]deadcodeSymbol, error) {
 	return symbols, nil
 }
 
-func countReferences(root, defFile, symbolName string, cwd string) (int, error) {
+func countReferences(root, defFile, symbolName, cwd string) (int, error) {
 	args := []string{
 		"-r",
 		"-n",
