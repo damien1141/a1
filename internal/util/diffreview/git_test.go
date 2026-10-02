@@ -25,18 +25,19 @@ func newGitRepo(t *testing.T) string {
 
 func runGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.CommandContext(t.Context(), args[0], args[1:]...)
+	// `git` reads commit.gpgsign from the developer's global config, which
+	// may sign commits with a passphrase-protected key — making every
+	// `git commit` in these tests fail with "incorrect passphrase" on
+	// machines that have one. Pass -c inline so the tests are hermetic
+	// without touching the filesystem (portable across platforms; no
+	// /dev/null on Windows). Author identity is set the same way.
+	// args[0] is the binary ("git"); the inline -c flags must precede the
+	// subcommand, so drop it and re-add it as the command.
+	cmd := exec.CommandContext(t.Context(), "git",
+		append([]string{"-c", "commit.gpgsign=false",
+			"-c", "user.name=t", "-c", "user.email=t@t"}, args[1:]...)...)
 	cmd.Dir = dir
-	cmd.Env = append(
-		os.Environ(),
-		// Hermetic: the developer's global config may sign commits with a
-		// passphrase-protected key, which makes every `git commit` in these
-		// tests fail with "incorrect passphrase" on machines that have one.
-		// Disable signing and the global config file so the tests pass
-		// everywhere, including CI runners with no keys at all.
-		"GIT_CONFIG_GLOBAL=/dev/null",
-		"GIT_CONFIG_SYSTEM=/dev/null",
-		"commit.gpgsign=false",
+	cmd.Env = append(os.Environ(),
 		"GIT_AUTHOR_NAME=t",
 		"GIT_AUTHOR_EMAIL=t@t",
 		"GIT_COMMITTER_NAME=t",

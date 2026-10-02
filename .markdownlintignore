@@ -1,0 +1,15 @@
+# Skill library is AI-authored operating content (SKILL.md + references),
+# not hand-maintained documentation. It ships embedded and is excluded from
+# the markdown gate; keep it out of user-facing doc linting.
+#
+# CI passes the exclusions as negation globs in .github/workflows/markdown.yml
+# (the pinned image's markdownlint-cli2 supports them, but the local CLI
+# ignores this file, so the globs live in the workflow args).
+skills/
+internal/llm/skills/
+
+# Working note, not a user-facing doc.
+todo.md
+
+# Downloaded browser tuning (Betterfox) and provider config, not docs.
+.temp/

@@ -31,4 +31,12 @@ jobs:
         uses: docker://avtodev/markdown-lint:v1@sha256:6aeedc2f49138ce7a1cd0adffc1b1c0321b841dc2102408967d9301c031949ee
         with:
           config: .markdownlint.yaml
-          args: "**/*.md"
+          # Negation globs keep AI-authored skill content and working notes out
+          # of the user-facing doc gate. The pinned image's CLI ignores
+          # .markdownlintignore, so the exclusions live here.
+          args: >-
+            "**/*.md"
+            "!skills/**/*.md"
+            "!internal/llm/skills/**/*.md"
+            "!todo.md"
+            "!**/.temp/**/*.md"
