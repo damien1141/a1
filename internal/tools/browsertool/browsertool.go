@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -230,6 +231,14 @@ func ensureBrowser(ctx context.Context) error {
 		pw = nil
 		return fmt.Errorf("create profile dir: %w", err)
 	}
+	// Firefox leaves a "lock" symlink in the profile dir while it runs, and
+	// Playwright's LaunchPersistentContext will start a SECOND Firefox on
+	// the same profile dir rather than reuse it when the lock is stale —
+	// e.g. after a crash or a killed process left an orphaned content
+	// proc. Clear it so the launch always takes over cleanly.
+	if err := clearStaleProfileLock(userDataDir); err != nil {
+		// Non-fatal: a bad lock is a hint, not a launch blocker.
+	}
 	if err := seedProfileTweaks(userDataDir); err != nil {
 		pw.Stop()
 		pw = nil
@@ -348,6 +357,56 @@ func seedProfileTweaks(dir string) error {
 		return err
 	}
 	return appendTo(smooth)
+}
+
+// clearStaleProfileLock removes a Firefox profile "lock" symlink when no
+// Firefox process is actually holding it. LaunchPersistentContext starts a
+// second browser on the same profile dir rather than reuse it when the lock
+// is stale — e.g. after a crash or a killed process left an orphaned content
+// proc — so the agent opens two windows in one profile.
+func clearStaleProfileLock(dir string) error {
+	lock := filepath.Join(dir, "lock")
+	st, err := os.Lstat(lock)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if st.Mode()&os.ModeSymlink == 0 {
+		return nil
+	}
+	target, err := os.Readlink(lock)
+	if err != nil {
+		return nil
+	}
+	if pid, ok := parseLockPID(target); ok && pidAlive(pid) {
+		return nil
+	}
+	return os.Remove(lock)
+}
+
+// parseLockPID extracts a PID from a Firefox profile lock target, which is
+// formatted as "host:pid" (the pid may be prefixed with "+").
+func parseLockPID(target string) (int, bool) {
+	idx := strings.LastIndex(target, ":")
+	if idx < 0 || idx == len(target)-1 {
+		return 0, false
+	}
+	raw := strings.TrimPrefix(target[idx+1:], "+")
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	return n, true
+}
+
+func pidAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	_, err := os.Stat(fmt.Sprintf("/proc/%d", pid))
+	return err == nil
 }
 
 // SetProxy sets the proxy URL used by the next browser launch. It takes effect
