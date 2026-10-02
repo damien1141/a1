@@ -117,8 +117,10 @@ type stackFrame struct {
 func parseStackFrames(text string) ([]stackFrame, error) {
 	var frames []stackFrame
 
-	// Go-style: "\t/path/to/file.go:123 +0x45"
-	goRe := regexp.MustCompile(`(?m)^\s+([^\s:]+):(\d+)(?:\s+\+\S+)?$`)
+	// Go-style: "\t/path/to/file.go:123 +0x45". A naive [^\s:]+ stops at the
+	// first colon and captures only the drive letter on Windows paths, so
+	// accept an absolute Windows path (C:\...\file.go) explicitly.
+	goRe := regexp.MustCompile(`(?m)^\s+([A-Za-z]:\\[^\s]+|[^\s:]+):(\d+)(?:\s+\+\S+)?$`)
 	for _, m := range goRe.FindAllStringSubmatch(text, -1) {
 		ln, _ := strconv.Atoi(m[2])
 		frames = append(frames, stackFrame{file: m[1], line: ln, text: m[0]})
@@ -132,21 +134,21 @@ func parseStackFrames(text string) ([]stackFrame, error) {
 	}
 
 	// Node-style: "    at main (/path/to/file.js:123:45)"
-	nodeRe := regexp.MustCompile(`(?m)^\s+at\s+(?:\S+\s+)?\(?([^\s:]+):(\d+):\d+\)?`)
+	nodeRe := regexp.MustCompile(`(?m)^\s+at\s+(?:\S+\s+)?\(?([A-Za-z]:\\[^\s]+|[^\s:]+):(\d+):\d+\)?`)
 	for _, m := range nodeRe.FindAllStringSubmatch(text, -1) {
 		ln, _ := strconv.Atoi(m[2])
 		frames = append(frames, stackFrame{file: m[1], line: ln, text: m[0]})
 	}
 
 	// Rust panic format: "thread 'main' panicked at 'x', /path/to/file.rs:2:5"
-	rustPanicRe := regexp.MustCompile(`(?m)panicked at [^,]*,\s*([^\s:]+):(\d+):\d+`)
+	rustPanicRe := regexp.MustCompile(`(?m)panicked at [^,]*,\s*([A-Za-z]:\\[^\s]+|[^\s:]+):(\d+):\d+`)
 	for _, m := range rustPanicRe.FindAllStringSubmatch(text, -1) {
 		ln, _ := strconv.Atoi(m[2])
 		frames = append(frames, stackFrame{file: m[1], line: ln, text: m[0]})
 	}
 
 	// Rust backtrace format: "    at /path/to/file.rs:123:45"
-	rustRe := regexp.MustCompile(`(?m)^\s+at\s+([^\s:]+):(\d+):\d+$`)
+	rustRe := regexp.MustCompile(`(?m)^\s+at\s+([A-Za-z]:\\[^\s]+|[^\s:]+):(\d+):\d+$`)
 	for _, m := range rustRe.FindAllStringSubmatch(text, -1) {
 		ln, _ := strconv.Atoi(m[2])
 		frames = append(frames, stackFrame{file: m[1], line: ln, text: m[0]})

@@ -9,9 +9,9 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/damien1141/a1/internal/tools/tooldef"
-
 	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/tools/tooldef"
+	"github.com/damien1141/a1/internal/util"
 )
 
 const (
@@ -150,24 +150,14 @@ func findSymbolRefs(root, symbol, glob string, limit int) ([]impactRef, error) {
 	lines := strings.Split(string(out), "\n")
 	var refs []impactRef
 	for _, line := range lines {
-		if line == "" {
+		file, lineNum, content, ok := util.SplitGrepLine(line)
+		if !ok {
 			continue
-		}
-		parts := strings.SplitN(line, ":", 3)
-		if len(parts) < 2 {
-			continue
-		}
-		file := parts[0]
-		lineNum := 0
-		fmt.Sscanf(parts[1], "%d", &lineNum)
-		context := ""
-		if len(parts) >= 3 {
-			context = strings.TrimSpace(parts[2])
 		}
 		refs = append(refs, impactRef{
 			file:    file,
 			line:    lineNum,
-			context: context,
+			context: content,
 		})
 		if len(refs) >= limit {
 			break

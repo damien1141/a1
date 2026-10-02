@@ -10,9 +10,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/damien1141/a1/internal/tools/tooldef"
-
 	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/tools/tooldef"
+	"github.com/damien1141/a1/internal/util"
 )
 
 const (
@@ -254,14 +254,10 @@ func countReferences(root, defFile, symbolName, cwd string) (int, error) {
 	lines := strings.Split(string(out), "\n")
 	count := 0
 	for _, line := range lines {
-		if line == "" {
+		file, _, _, ok := util.SplitGrepLine(line)
+		if !ok {
 			continue
 		}
-		parts := strings.SplitN(line, ":", 3)
-		if len(parts) < 2 {
-			continue
-		}
-		file := parts[0]
 		if file == defFile {
 			continue
 		}
