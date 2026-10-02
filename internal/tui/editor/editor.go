@@ -85,6 +85,18 @@ func NewEditor(
 		composer: composer.NewComposerPane(theme, modelLabel, cwd),
 		footer:   footer.NewFooterChrome(theme, contextWindow),
 	}
+	// Seed the label from the controller's startup config so the thinking
+	// level shows even when no ModelChangeMsg fires — e.g. the startup model
+	// ships with think.mode=default and the user never switches models.
+	if e.ctrl != nil {
+		e.composer.SetModelLabel(e.ctrl.ModelName(), string(e.ctrl.ThinkLevel()))
+	}
+	// Seed the label from the controller's startup config so the thinking
+	// level shows even when no ModelChangeMsg fires — e.g. the startup model
+	// ships with think.mode=default and the user never switches models.
+	if e.ctrl != nil {
+		e.composer.SetModelLabel(e.ctrl.ModelName(), string(e.ctrl.ThinkLevel()))
+	}
 	e.transcript = transcript.NewTranscriptPane(theme, e.footer.Spinner(), "A1 "+version.Version)
 	e.transcript.SetUsageCallback(e.footer.UpdateTokenDisplay)
 	e.footer.BindComposer(e.composer)

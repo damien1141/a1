@@ -449,7 +449,15 @@ func browserOpen(in browserInput) (tooldef.Result, error) {
 	}
 	// ensureBrowser was already called by runBrowser before the lock, so
 	// browserMu is held here by the caller for the whole action.
-	if _, exists := profiles[profile]; !exists {
+	if profile == "default" {
+		// The default profile is created once by ensureBrowser and reused
+		// for every open. Never spawn a second Firefox on the same profile
+		// dir — LaunchPersistentContext on an already-open userDataDir leaves
+		// the first process orphaned and opens a second window.
+		if _, exists := profiles["default"]; !exists {
+			return tooldef.Result{}, fmt.Errorf("default profile not initialized; retry the open")
+		}
+	} else if _, exists := profiles[profile]; !exists {
 		if err := createProfile(profile); err != nil {
 			return tooldef.Result{}, err
 		}
