@@ -51,3 +51,36 @@ make build                     # ./a1
 - Packages: lowercase, single word, match the directory (`writetool`, not `write_tool`).
 - Prefer small packages under `internal/`; keep the exported surface small.
 - Tests live beside the code they cover.
+
+## Releases & Pushing
+
+Release procedure (the gates that must all be green before a tag goes out):
+
+1. **Version.** Bump `internal/version/version.go` (`var Version = "vX.Y.Z"`). It
+   is shown on the splash screen next to the sphere and used by `a1 update`.
+2. **Changelog.** Add a `## [X.Y.Z] - YYYY-MM-DD` section to `CHANGELOG.md`
+   (Added / Changed / Deprecated / Removed / Fixed / Security) and add the
+   `[X.Y.Z]: https://github.com/pulseaiclub/phi/compare/vX.Y.Z-1...vX.Y.Z`
+   and `.../releases/tag/vX.Y.Z` link references at the bottom. Never edit
+   text under `<!-- Released section -->` except in a release PR.
+3. **Readmes.** Bump the version in the `# A1 vX.Y.Z` header of both
+   `README.md` and `README.zh-CN.md`.
+4. **CI gates — run these locally before pushing:**
+   - `make test` (and `go test ./...` from `ext/go`). The `internal/util/diffreview`
+     git tests must be hermetic: neutralize `commit.gpgsign` /
+     `user.signingkey` via `GIT_CONFIG_GLOBAL=/dev/null` + `commit.gpgsign=false`,
+     like `runGit` already does for author identity.
+   - `make check` = `make fmt-check` + `make lint` + `make deadcode`.
+     `make fmt` must be run before committing — the repo has formatting drift,
+     so `fmt-check` is red until it is applied. `scripts/deadcode.baseline`
+     must stay in sync: every new unreachable exported function gets added
+     with a one-line rationale (exported public API is the normal excuse).
+   - Markdown lint: `markdownlint-cli2 --config .markdownlint.yaml "**/*.md"`.
+     Drop orphaned link-reference definitions (MD053) — they fail the gate.
+5. **Commit & push.** Conventional commit, lowercase, imperative, ≤72 chars.
+   Push `main` first, then the tag. Only commit files this session changed —
+   leave pre-existing unmodified working-tree files out unless asked.
+6. **Tag & release.** Annotated tag `vX.Y.Z` on the release commit, push it,
+   then `gh release create vX.Y.Z --title "vX.Y.Z" --notes-file CHANGELOG.md
+   --latest`. Release notes come from `scripts/changelog-extract.sh vX.Y.Z`
+   — that script must exit 0 with a non-empty body or GoReleaser fails.
