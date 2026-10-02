@@ -251,13 +251,22 @@ func ensureBrowser(ctx context.Context) error {
 		return fmt.Errorf("launch browser: %w", err)
 	}
 	profiles["default"] = ctx2
-	page, err := ctx2.NewPage()
-	if err != nil {
-		ctx2.Close()
-		delete(profiles, "default")
-		pw.Stop()
-		pw = nil
-		return fmt.Errorf("new page for default profile: %w", err)
+	// LaunchPersistentContext already opens an about:blank page; calling
+	// NewPage() on top of it spawns the second window the agent sees. Reuse
+	// the existing page when there is one.
+	var page playwright.Page
+	if existing := ctx2.Pages(); len(existing) > 0 {
+		page = existing[0]
+	} else {
+		var err error
+		page, err = ctx2.NewPage()
+		if err != nil {
+			ctx2.Close()
+			delete(profiles, "default")
+			pw.Stop()
+			pw = nil
+			return fmt.Errorf("new page for default profile: %w", err)
+		}
 	}
 	pages["default"] = page
 
@@ -294,6 +303,11 @@ func createProfile(name string) error {
 	if err := seedProfileTweaks(userDataDir); err != nil {
 		return fmt.Errorf("seed profile tweaks for %q: %w", name, err)
 	}
+	// Clear stale locks before launch so recreating a crashed profile does
+	// not spawn a secondary browser instance on the same dir.
+	if err := clearStaleProfileLock(userDataDir); err != nil {
+		// Non-fatal
+	}
 	launchOpts := playwright.BrowserTypeLaunchPersistentContextOptions{
 		Headless: playwright.Bool(false),
 	}
@@ -305,11 +319,18 @@ func createProfile(name string) error {
 		return fmt.Errorf("create profile %q: %w", name, err)
 	}
 	profiles[name] = ctx
-	page, err := ctx.NewPage()
-	if err != nil {
-		ctx.Close()
-		delete(profiles, name)
-		return fmt.Errorf("new page for profile %q: %w", name, err)
+	// LaunchPersistentContext already opens an about:blank page; calling
+	// NewPage() on top of it spawns the second window the agent sees.
+	var page playwright.Page
+	if existing := ctx.Pages(); len(existing) > 0 {
+		page = existing[0]
+	} else {
+		page, err = ctx.NewPage()
+		if err != nil {
+			ctx.Close()
+			delete(profiles, name)
+			return fmt.Errorf("new page for profile %q: %w", name, err)
+		}
 	}
 	pages[name] = page
 	return nil
@@ -359,31 +380,35 @@ func seedProfileTweaks(dir string) error {
 	return appendTo(smooth)
 }
 
-// clearStaleProfileLock removes a Firefox profile "lock" symlink when no
-// Firefox process is actually holding it. LaunchPersistentContext starts a
-// second browser on the same profile dir rather than reuse it when the lock
-// is stale — e.g. after a crash or a killed process left an orphaned content
-// proc — so the agent opens two windows in one profile.
+// clearStaleProfileLock removes stale Firefox profile locks when no Firefox
+// process is actually holding them. LaunchPersistentContext starts a second
+// browser on the same profile dir rather than reuse it when a lock survives
+// a crash — e.g. after a killed process left an orphaned content proc — so
+// the agent opens two windows in one profile. Firefox uses several lock files
+// depending on the OS; if .parentlock or parent.lock survive, Playwright
+// still thinks the profile is in use.
 func clearStaleProfileLock(dir string) error {
-	lock := filepath.Join(dir, "lock")
-	st, err := os.Lstat(lock)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
+	for _, name := range []string{"lock", ".parentlock", "parent.lock"} {
+		path := filepath.Join(dir, name)
+		if name == "lock" {
+			st, err := os.Lstat(path)
+			if err != nil {
+				continue
+			}
+			if st.Mode()&os.ModeSymlink == 0 {
+				continue
+			}
+			target, err := os.Readlink(path)
+			if err != nil {
+				continue
+			}
+			if pid, ok := parseLockPID(target); ok && pidAlive(pid) {
+				continue // process is actually alive, don't remove
+			}
 		}
-		return err
+		_ = os.Remove(path)
 	}
-	if st.Mode()&os.ModeSymlink == 0 {
-		return nil
-	}
-	target, err := os.Readlink(lock)
-	if err != nil {
-		return nil
-	}
-	if pid, ok := parseLockPID(target); ok && pidAlive(pid) {
-		return nil
-	}
-	return os.Remove(lock)
+	return nil
 }
 
 // parseLockPID extracts a PID from a Firefox profile lock target, which is
@@ -454,6 +479,13 @@ func browserSearch(in browserInput) (tooldef.Result, error) {
 	url := normalizeURL("https://duckduckgo.com")
 	if _, err := page.Goto(url); err != nil {
 		return tooldef.Result{}, fmt.Errorf("navigate: %w", err)
+	}
+	// Wait for the DOM before hunting for the search input — otherwise the
+	// selectors race the page load and the picker comes back empty.
+	if err := page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
+		State: playwright.LoadStateDomcontentloaded,
+	}); err != nil {
+		return tooldef.Result{}, fmt.Errorf("wait for load: %w", err)
 	}
 	selectors := []string{
 		"#search_form_input",
@@ -793,10 +825,13 @@ func normalizeURL(raw string) string {
 	if raw == "" {
 		return ""
 	}
-	// Already has a scheme (http://, https://, ftp://, about:, javascript:).
+	// Check against a whitelist so "localhost:8080" is not misidentified as
+	// having the scheme "localhost" — that would bypass the https:// prepend
+	// and Goto would fail with a navigation error.
 	if idx := strings.IndexByte(raw, ':'); idx > 0 {
-		scheme := raw[:idx]
-		if isSchemeToken(scheme) {
+		scheme := strings.ToLower(raw[:idx])
+		switch scheme {
+		case "http", "https", "ftp", "file", "about", "javascript", "data", "mailto":
 			return raw
 		}
 	}
@@ -805,27 +840,6 @@ func normalizeURL(raw string) string {
 		return raw
 	}
 	return "https://" + raw
-}
-
-// isSchemeToken reports whether s is a valid URI scheme per RFC 3986
-// (alpha followed by alphanumerics, plus, dot, hyphen).
-func isSchemeToken(s string) bool {
-	if s == "" {
-		return false
-	}
-	for i, r := range s {
-		if r >= 'A' && r <= 'Z' {
-			continue
-		}
-		if r >= 'a' && r <= 'z' {
-			continue
-		}
-		if i > 0 && ((r >= '0' && r <= '9') || r == '+' || r == '.' || r == '-') {
-			continue
-		}
-		return false
-	}
-	return true
 }
 
 // browserProxy sets the proxy URL used by the next browser launch. Firefox
