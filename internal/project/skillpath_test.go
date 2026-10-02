@@ -5,10 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/damien1141/a1/internal/llm/skills"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/damien1141/a1/internal/llm/skills"
 )
 
 // TestSkillPathDefaultsToGlobalSkillsDir verifies the todo item "wire default
@@ -16,8 +15,11 @@ import (
 // config points at ~/.a1/skills, and that directory is populated with the
 // embedded default skills on first discovery.
 func TestSkillPathDefaultsToGlobalSkillsDir(t *testing.T) {
+	// Redirect the home dir to a temp dir so the test never touches the real
+	// ~/.a1 — os.UserHomeDir uses HOME on Unix and USERPROFILE on Windows.
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 
 	// Write a minimal config so LoadConfig succeeds.
 	cfgPath := filepath.Join(home, ".a1", "config.yaml")

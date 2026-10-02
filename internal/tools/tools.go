@@ -19,7 +19,6 @@ import (
 	"github.com/damien1141/a1/internal/tools/errpattern"
 	"github.com/damien1141/a1/internal/tools/fetchtool"
 	"github.com/damien1141/a1/internal/tools/findtool"
-	"github.com/damien1141/a1/internal/tools/gittool"
 	"github.com/damien1141/a1/internal/tools/graphtool"
 	"github.com/damien1141/a1/internal/tools/greptool"
 	"github.com/damien1141/a1/internal/tools/impacttool"
@@ -41,7 +40,6 @@ import (
 	"github.com/damien1141/a1/internal/tools/stacktool"
 	"github.com/damien1141/a1/internal/tools/testimpacttool"
 	"github.com/damien1141/a1/internal/tools/testtool"
-	"github.com/damien1141/a1/internal/tools/todotool"
 	"github.com/damien1141/a1/internal/tools/tokentool"
 	"github.com/damien1141/a1/internal/tools/tooldef"
 	"github.com/damien1141/a1/internal/tools/vectortool"
@@ -115,8 +113,6 @@ func DefaultTools() []Tool {
 		lstool.LsTool(),
 		writetool.EditTool(),
 		findtool.FindTool(),
-		gittool.GitTool(),
-		todotool.TodoTool(),
 		watchertool.WatcherTool(),
 		stacktool.StackTool(),
 		testtool.TestTool(),
@@ -166,8 +162,6 @@ func ReadonlyTools() []Tool {
 		greptool.GrepTool(),
 		lstool.LsTool(),
 		findtool.FindTool(),
-		gittool.GitTool(),
-		todotool.TodoTool(),
 		watchertool.WatcherTool(),
 		stacktool.StackTool(),
 		testtool.TestTool(),
