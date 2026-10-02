@@ -86,7 +86,9 @@ Release procedure (the gates that must all be green before a tag goes out):
 5. **Commit & push.** Conventional commit, lowercase, imperative, ≤72 chars.
    Push `main` first, then the tag. Only commit files this session changed —
    leave pre-existing unmodified working-tree files out unless asked.
-6. **Tag & release.** Annotated tag `vX.Y.Z` on the release commit, push it,
-   then `gh release create vX.Y.Z --title "vX.Y.Z" --notes-file CHANGELOG.md
-   --latest`. Release notes come from `scripts/changelog-extract.sh vX.Y.Z`
-   — that script must exit 0 with a non-empty body or GoReleaser fails.
+6. **Tag & release.** Annotated tag `vX.Y.Z` on the release commit, push it.
+   GoReleaser builds the binaries, creates the GitHub release, and uploads the
+   assets — do **not** pre-create the release with `gh release create`, or the
+   asset uploads fail with `422 already_exists`. Release notes come from
+   `scripts/changelog-extract.sh vX.Y.Z` — that script must exit 0 with a
+   non-empty body or GoReleaser fails.
