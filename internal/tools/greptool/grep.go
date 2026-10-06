@@ -31,19 +31,15 @@ const (
 	grepDefaultMaxBytes = 50 * 1024
 	grepMaxLineRunes    = 500
 	grepTruncatedSuffix = "... [truncated]"
-	// A --json event embeds the whole matched line, so a single minified bundle
-	// or sourcemap line can yield a multi-megabyte event. Events above this cap
-	// are skipped, never fatal.
-	grepMaxEventBytes = 2 << 20
+	grepMaxEventBytes   = 2 << 20
 )
 
-// errOversizedEvent reports a ripgrep event larger than grepMaxEventBytes.
 var errOversizedEvent = errors.New("ripgrep event exceeds size cap")
 
 var grepDescription = fmt.Sprintf(
-	`Search file contents by regex or literal text and return matching lines as LINE#HASH anchors.
+	`Search file contents by regex or literal text and return matching lines.
 
-Each matched file is preceded by an @file path#TAG header (4 hex chars for edit.hash).
+Each matched file is preceded by an @file path header.
 Use the glob parameter to limit files (e.g. *_test.go); that is not the find tool.
 Results are capped at %d matches and %dKB; increase limit or refine the pattern if truncated.
 Use read for full untruncated line text. Prefer this over bash grep/rg.`,
@@ -152,19 +148,15 @@ func runGrep(ctx context.Context, input json.RawMessage) (tooldef.Result, error)
 		return tooldef.Result{}, errors.New("pattern is required: provide a regex or literal search string")
 	}
 
-	// Resolve ripgrep binary.
 	rgPathLocal, err := resolveRipgrepPath()
 	if err != nil {
 		return tooldef.Result{}, err
 	}
 
-	// Resolve search path.
 	searchRel := in.Path
 	if searchRel == "" {
 		searchRel = "."
 	}
-	// rg --json echoes the search path as given. Always pass absolute so match
-	// paths are absolute and ReadFile works regardless of process cwd.
 	searchPath, err := tooldef.ResolveToCwd(ctx, searchRel)
 	if err != nil {
 		return tooldef.Result{}, err
@@ -186,7 +178,6 @@ func runGrep(ctx context.Context, input json.RawMessage) (tooldef.Result, error)
 		glob = in.Include
 	}
 
-	// Build ripgrep args.
 	args := []string{"--json", "--line-number", "--color=never", "--hidden"}
 	if in.IgnoreCase {
 		args = append(args, "--ignore-case")
@@ -266,7 +257,6 @@ func runGrep(ctx context.Context, input json.RawMessage) (tooldef.Result, error)
 		}
 	}
 
-	// Reap ripgrep. Paths that killed it early already waited inside stopRipgrep.
 	var waitErr error
 	if !killedForLimit {
 		waitErr = cmd.Wait()
@@ -299,9 +289,7 @@ func runGrep(ctx context.Context, input json.RawMessage) (tooldef.Result, error)
 		return tooldef.Result{Content: content, Detail: "0 matches", Output: content}, nil
 	}
 
-	// Read matched files to produce output.
 	fileCache := make(map[string][]string)
-	fileTag := make(map[string]string)
 	getFileLines := func(abs string) []string {
 		if cached, ok := fileCache[abs]; ok {
 			return cached
@@ -314,7 +302,6 @@ func runGrep(ctx context.Context, input json.RawMessage) (tooldef.Result, error)
 		text := util.NormalizeLF(string(b))
 		lines := strings.Split(text, "\n")
 		fileCache[abs] = lines
-		fileTag[abs] = util.ComputeFileHash(text)
 		return lines
 	}
 
@@ -329,9 +316,7 @@ func runGrep(ctx context.Context, input json.RawMessage) (tooldef.Result, error)
 		if m.filePath != lastAbs {
 			lastAbs = m.filePath
 			_ = getFileLines(m.filePath)
-			if tag, ok := fileTag[m.filePath]; ok && tag != "" {
-				out = append(out, util.FormatFileHeader(formatPath(m.filePath), tag))
-			}
+			out = append(out, "@file "+formatPath(m.filePath))
 		}
 		block, lt := formatGrepBlock(formatPath, getFileLines, m.filePath, m.lineNumber, contextN)
 		if lt {
@@ -340,8 +325,8 @@ func runGrep(ctx context.Context, input json.RawMessage) (tooldef.Result, error)
 		out = append(out, block...)
 	}
 
-	raw := strings.Join(out, "\n")
-	truncRes := truncateHead(raw, grepDefaultMaxBytes)
+	rawOut := strings.Join(out, "\n")
+	truncRes := truncateHead(rawOut, grepDefaultMaxBytes)
 	output := truncRes.Content
 	byteTrunc := truncRes.Truncated
 
@@ -376,61 +361,6 @@ func runGrep(ctx context.Context, input json.RawMessage) (tooldef.Result, error)
 	return tooldef.Result{Content: output, Detail: detail, Output: output}, nil
 }
 
-// readEvent reads one newline-terminated ripgrep JSON event, buffering at most
-// maxBytes of it. A larger event is consumed but reported as errOversizedEvent.
-//
-// Consuming it is the point: a reader that stops mid-stream leaves ripgrep
-// blocked writing into a full pipe, and cmd.Wait never returns.
-func readEvent(r *bufio.Reader, maxBytes int) ([]byte, error) {
-	buf := make([]byte, 0, 1024)
-	oversized := false
-	for {
-		chunk, err := r.ReadSlice('\n')
-		if len(chunk) > 0 {
-			if oversized || len(buf)+len(chunk) > maxBytes {
-				oversized = true
-				buf = nil
-			} else {
-				buf = append(buf, chunk...)
-			}
-		}
-		switch {
-		case err == nil:
-			if oversized {
-				return nil, errOversizedEvent
-			}
-			return buf, nil
-		case errors.Is(err, bufio.ErrBufferFull):
-			continue
-		case errors.Is(err, io.EOF) && !oversized && len(buf) > 0:
-			// Final event without a trailing newline; report EOF on the next read.
-			return buf, nil
-		default:
-			return nil, err
-		}
-	}
-}
-
-// stopRipgrep kills ripgrep, drains stdout and reaps it. The drain is required:
-// skipping it leaves Wait blocked on a pipe no one is reading.
-func stopRipgrep(cmd *exec.Cmd, stdout io.Reader) {
-	_ = cmd.Process.Kill()
-	_, _ = io.Copy(io.Discard, stdout)
-	_ = cmd.Wait()
-}
-
-func resolveRipgrepPath() (string, error) {
-	rgPathOnce.Do(func() {
-		p, err := project.GetDefaultProject().Global().LookBin("rg")
-		if err != nil {
-			rgPathErr = fmt.Errorf("ripgrep (rg) is not available: %w", err)
-			return
-		}
-		rgPath = p
-	})
-	return rgPath, rgPathErr
-}
-
 func formatGrepBlock(
 	formatPath func(string) string,
 	getLines func(string) []string,
@@ -458,8 +388,6 @@ func formatGrepBlock(
 			lineText = fileLines[cur-1]
 		}
 		lineText = util.ReplaceAll(lineText, "\r", "")
-		h := util.ComputeLineHash(lineText)
-		ref := fmt.Sprintf("%d#%s", cur, h)
 		truncLine, wasTrunc := truncateLine(lineText, grepMaxLineRunes)
 		if wasTrunc {
 			anyLineTruncated = true
@@ -470,7 +398,7 @@ func formatGrepBlock(
 		} else {
 			prefix = "  "
 		}
-		lines = append(lines, fmt.Sprintf("%s:%s%s|%s", rel, prefix, ref, truncLine))
+		lines = append(lines, fmt.Sprintf("%s:%s%4d|%s", rel, prefix, cur, truncLine))
 	}
 	return lines, anyLineTruncated
 }
@@ -508,7 +436,7 @@ func truncateHead(content string, maxBytes int) truncResult {
 	for i, line := range lines {
 		lineLen := len(line)
 		if i > 0 {
-			lineLen++ // account for newline
+			lineLen++
 		}
 		if byteCount+lineLen > maxBytes {
 			break
@@ -534,4 +462,51 @@ func exitCode(err error) int {
 		return ee.ExitCode()
 	}
 	return -1
+}
+
+func readEvent(r *bufio.Reader, maxBytes int) ([]byte, error) {
+	buf := make([]byte, 0, 1024)
+	oversized := false
+	for {
+		chunk, err := r.ReadSlice('\n')
+		if len(chunk) > 0 {
+			if oversized || len(buf)+len(chunk) > maxBytes {
+				oversized = true
+				buf = nil
+			} else {
+				buf = append(buf, chunk...)
+			}
+		}
+		switch {
+		case err == nil:
+			if oversized {
+				return nil, errOversizedEvent
+			}
+			return buf, nil
+		case errors.Is(err, bufio.ErrBufferFull):
+			continue
+		case errors.Is(err, io.EOF) && !oversized && len(buf) > 0:
+			return buf, nil
+		default:
+			return nil, err
+		}
+	}
+}
+
+func stopRipgrep(cmd *exec.Cmd, stdout io.Reader) {
+	_ = cmd.Process.Kill()
+	_, _ = io.Copy(io.Discard, stdout)
+	_ = cmd.Wait()
+}
+
+func resolveRipgrepPath() (string, error) {
+	rgPathOnce.Do(func() {
+		p, err := project.GetDefaultProject().Global().LookBin("rg")
+		if err != nil {
+			rgPathErr = fmt.Errorf("ripgrep (rg) is not available: %w", err)
+			return
+		}
+		rgPath = p
+	})
+	return rgPath, rgPathErr
 }

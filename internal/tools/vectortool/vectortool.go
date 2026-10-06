@@ -20,7 +20,7 @@ const (
 var vectorDescription = `Semantic code search using local embeddings.
 
 Requires semantic search to be enabled in config with a running Ollama instance.
-Returns matching code chunks as @file path#TAG anchors with similarity scores.`
+Returns matching code chunks as @file path headers with similarity scores.`
 
 // VectorTool returns the semantic search tool definition + handler.
 func VectorTool() tooldef.Tool {
@@ -40,8 +40,11 @@ func VectorTool() tooldef.Tool {
 						"description": "Directory to search. Example: ./internal",
 					},
 					"limit": llm.Object{
-						"type":        "integer",
-						"description": fmt.Sprintf("Maximum results. Example: 20 (default: %d)", vectorDefaultLimit),
+						"type": "integer",
+						"description": fmt.Sprintf(
+							"Maximum results. Example: 20 (default: %d)",
+							vectorDefaultLimit,
+						),
 					},
 					"reindex": llm.Object{
 						"type":        "boolean",
@@ -153,20 +156,10 @@ func runVectorSearch(ctx context.Context, input json.RawMessage) (tooldef.Result
 func renderVectorResults(ctx context.Context, chunks []vector.Chunk) string {
 	var sb strings.Builder
 	for _, c := range chunks {
-		hash := editHashFor(c.Text)
-		sb.WriteString(fmt.Sprintf("@file %s#%s\n", c.Path, hash))
+		sb.WriteString(fmt.Sprintf("@file %s\n", c.Path))
 		sb.WriteString(fmt.Sprintf("// lines %d-%d\n", c.StartLine, c.EndLine))
 		sb.WriteString(c.Text)
 		sb.WriteString("\n\n")
 	}
 	return sb.String()
-}
-
-func editHashFor(text string) string {
-	h := 0
-	for i := 0; i < len(text); i++ {
-		h = (h<<5 - h) + int(text[i])
-		h &= 0xFFFFFFFF
-	}
-	return fmt.Sprintf("%04x", uint(h))
 }

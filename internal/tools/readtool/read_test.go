@@ -21,6 +21,6 @@ func TestRunRead_RelativeHeader(t *testing.T) {
 	require.NoError(t, err)
 	out, err := runRead(t.Context(), raw)
 	require.NoError(t, err)
-	assert.True(t, strings.HasPrefix(out.Content, "@file src/main.go#"))
+	assert.True(t, strings.HasPrefix(out.Content, "@file src/main.go\n"))
 	assert.Equal(t, "src/main.go", out.Detail)
 }

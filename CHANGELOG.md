@@ -6,6 +6,54 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+
+- Removed hash-based edit anchors (`@file path#TAG` and `LINE#HASH`) from `edit`, `read`, `grep`, `secret`, `stack`, `test`, and `vector_search`. The new `str_replace`-style `edit` tool uses `old_str` / `new_str` instead.
+
+### Added
+
+- **Curated skill library:** 41 pre-built skills ship embedded and install to
+  `~/.a1/skills/` on first run. Each is a `SKILL.md` with YAML frontmatter, a
+  structured operating loop, and a `references/` directory. The harness loads
+  them into the system prompt and routes by keyword trigger. Covers keel skills
+  (`rigorous-coding`, `agent-orchestration`, `spec-driven-development`,
+  `debugging-wizard`), language skills (Go, Rust, Python, TypeScript, C++, .NET,
+  Swift, JVM, PHP, Ruby, Lua), framework skills (React, Astro, Vue, Angular,
+  HTMX, Alpine), and domain skills (system architecture, API design, cloud-native,
+  SRE, data engineering, LLM engineering, testing, code review).
+- **Skill routing guide** in the system prompt: keel → domain → language →
+  framework loading order, with rules for multi-skill stacking.
+
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [1.2.0] - 2026-10-05
+
+### Added
+
+### Changed
+
+- **Version bump to v1.2.0.**
+
+### Deprecated
+
+### Removed
+
+- Removed hash-based edit anchors (`@file path#TAG` and `LINE#HASH`) from `edit`, `read`, `grep`, `secret`, `stack`, `test`, and `vector_search`. The new `str_replace`-style `edit` tool uses `old_str` / `new_str` instead, which is what LLMs are actually good at.
+
+### Fixed
+
+### Security
+
 ## [1.1.0] - 2026-10-02
 
 ### Added
@@ -32,40 +80,6 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Removed
 
 ### Fixed
-
-- **Browser tool:** the Firefox switch left the old `browser playwright.Browser`
-  global declared but never assigned (`LaunchPersistentContext` returns a
-  context, not a browser). `browserClose` called `browser.Close()` on a nil
-  browser, so every `/browser close` (and the close on exit) panicked with a
-  nil-pointer dereference. Removed the dead global; close now stops the
-  Playwright driver and closes the persistent contexts.
-- **Thinking mode switcher:** the on-the-fly Tab cycle and the
-  `settings → think` palette only offered `off / minimal / low / medium /
-  high / xhigh / max`. The provider-adaptive "default" was missing — it is
-  what `buildThinkingConfig` maps to Anthropic's `thinking.type=adaptive`, and
-  what the config UI already exposes as `(default)`. Added a `default`
-  `ThinkMode` sentinel plus `AllThinkModes()`; the cycle and palette now
-  include it, and the controller resolves it to the active model preset's
-  thinking config before any request is sent, so providers never see the
-  sentinel.
-- **Auto-compaction on context overflow:** `runCompact(force=true)` skipped
-  both the safety and growth triggers by design, but the guard that no-ops
-  when neither trigger fired also applied to the force path — so the
-  overflow-recovery branch never compacted and burned its single retry on a
-  second overflow. The guard now requires `!force`, so force-compaction runs
-  whenever there is history to summarize. Added `TestRunCompact_ForceCompactsWhenHistoryExists`.
-- **Default skills directory:** the directory wiring was already correct —
-  `Discover` installs the embedded skill library into `~/.a1/skills` and
-  `loadConfig` defaults `skill_path` to that dir — but every installed skill
-  failed to parse. `parseFrontmatter` rejected any indented frontmatter line
-  with `ErrInvalidYAML`, and every shipped skill carries a nested `metadata:`
-  map block, so `LoadSkills` silently returned an empty list and the skills
-  palette showed "No skills found". Indented continuation lines are now
-  skipped (the parser only needs the flat top-level keys) instead of erroring.
-
-### Security
-
-## [Unreleased]
 
 - **Browser tool:** the Firefox switch left the old `browser playwright.Browser`
   global declared but never assigned (`LaunchPersistentContext` returns a
@@ -130,7 +144,6 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   and the footer branch label refreshes immediately.
 - `/branch <name>`: switch to that branch, or create it from HEAD when nothing
   carries the name yet. Remote rows check out the local branch that tracks them.
-
 - TypeSafe System One client support via `internal/llm/jev`.
 
 ### Changed
@@ -143,12 +156,6 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Removed
 
 ### Fixed
-
-- `grep` no longer hangs on a matched line larger than its read buffer (minified
-  bundles, one-line JSON/sourcemaps). Events over 2MB are now skipped with a
-  notice instead of deadlocking the tool against ripgrep's stdout pipe.
-- The composer border label carries the active think mode: it reads `model::think`
-  when think is enabled, and just the model name when it is off.
 
 ### Security
 
@@ -222,7 +229,6 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   provider stopped at that cap is rejected instead of persisted. A truncated
   summary used to overwrite the session checkpoint and drop every message it
   stood in for, with no way back.
-
 - Compaction now measures the cut budget per message instead of summing the
   provider's reported usage. Each assistant message reports the size of the
   whole conversation up to that turn, so the budget overflowed on the newest
@@ -329,9 +335,6 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   unused GitHub-shaped comment fields and the redundant `w` save key.
 
 ### Security
-
-<!-- Released section -->
-<!-- Don't change this section unless doing release -->
 
 ## [0.25.1] - 2026-09-10
 
@@ -560,7 +563,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - TUI: `agent_spawn` / `agent_wait` tool rows show role in the detail line (`explore · …`).
 - **Breaking:** Shell `plugin.json` hooks (`internal/hooks`, `PHI_HOOKS`, `.phi/hooks`) are removed. Rewrite policy as extensions (migration table in doc/extensions.md).
-- **Breaking:** Yaegi-interpreted `.go` extensions are no longer loaded. Migrate to PXB binaries + `phi.yaml`.
+- **Breaking:** Yaegi-interpreted `.go` extensions are no longer loaded. Migrate to PXB binaries + `phi plugin install`.
 
 ### Deprecated
 
@@ -764,7 +767,8 @@ Earlier releases are available from GitHub tags only.
 
 <!-- Released section ended -->
 
-[Unreleased]: https://github.com/pulseaiclub/phi/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/pulseaiclub/phi/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/pulseaiclub/phi/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/pulseaiclub/phi/releases/tag/v1.1.0
 [0.27.5]: https://github.com/pulseaiclub/phi/compare/v0.27.4...v0.27.5
 [0.27.4]: https://github.com/pulseaiclub/phi/releases/tag/v0.27.4

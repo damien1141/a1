@@ -1,4 +1,4 @@
-# A1 v1.1.0
+# A1 v1.2.0
 
 A terminal coding-agent harness for people who want an agent that can actually reason over long sessions, inspect its own permissions, and browse the web without leaving the shell.
 
@@ -76,6 +76,7 @@ Everything else is still phi under the hood: same TUI, same sub-agent model, sam
 
 What changed:
 
+- **Replaced hash-based edit anchors:** the old `edit` tool required copying `@file path#TAG` and `LINE#HASH` anchors from `read`/`grep` output. That forced the LLM to act as a hash calculator — something it is bad at — and burned tokens on mechanical copying. The new `edit` tool uses plain `old_str` / `new_str` matching, which plays to the LLM's actual strength (pattern matching and text copying) and matches the standard format used by aider, cursor, and cline.
 - **Rebranded identity:** CLI is `a1`, config dir is `~/.a1/`, env vars are `A1_*`.
 - **Expanded tool surface:** 30+ built-in analysis, search, graph, browser, and permission tools.
 - **Session memory bank:** JSONL-backed memory under `~/.a1/sessions/memory/`; successful and failed tool calls are journaled and injected as system messages.

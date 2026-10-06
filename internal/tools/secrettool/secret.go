@@ -20,7 +20,7 @@ const (
 
 var secretDescription = `Scan files for common secret patterns: API keys, tokens, passwords, private keys, and credentials.
 
-Returns file headers plus line anchors with the matched secret type.
+Returns file headers plus line references with the matched secret type.
 Use glob to limit file types. Results are capped; increase limit or refine if truncated.`
 
 // SecretTool returns the secret scanner tool definition + handler.
@@ -112,7 +112,7 @@ func runSecret(ctx context.Context, input json.RawMessage) (tooldef.Result, erro
 
 	glob := strings.TrimSpace(in.Glob)
 
-	matches, err := scanForSecrets(searchPath, glob, limit)
+	matches, err := scanForSecrets(ctx, searchPath, glob, limit)
 	if err != nil {
 		return tooldef.Result{}, err
 	}
@@ -126,8 +126,13 @@ func runSecret(ctx context.Context, input json.RawMessage) (tooldef.Result, erro
 	return tooldef.Result{Content: content, Detail: detail, Output: content}, nil
 }
 
-func scanForSecrets(root, glob string, limit int) ([]string, error) {
-	var matches []string
+type secretFileResult struct {
+	rel     string
+	matches []string
+}
+
+func scanForSecrets(ctx context.Context, root, glob string, limit int) ([]string, error) {
+	var files []secretFileResult
 	count := 0
 
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
@@ -158,50 +163,44 @@ func scanForSecrets(root, glob string, limit int) ([]string, error) {
 		text := strings.ReplaceAll(string(b), "\r\n", "\n")
 		lines := strings.Split(text, "\n")
 
-		fileTag := computeFileHash(text)
 		rel := path
 		if cwd, err := os.Getwd(); err == nil {
 			if r, err := filepath.Rel(cwd, path); err == nil && !strings.HasPrefix(r, "..") {
 				rel = r
 			}
 		}
-		if fileTag != "" {
-			matches = append(matches, formatFileHeader(rel, fileTag))
-		}
 
+		var matches []string
 		for i, line := range lines {
 			for _, pattern := range secretPatterns {
 				if pattern.re.MatchString(line) {
 					count++
 					if count > limit {
-						matches = append(
-							matches,
-							fmt.Sprintf("... (%d secrets limit reached; use limit=%d for more)", limit, limit*2),
+						return fmt.Errorf(
+							"... (%d secrets limit reached; use limit=%d for more)",
+							limit, limit*2,
 						)
-						return filepath.SkipDir
 					}
 					lineText := strings.TrimRight(line, "\r")
-					h := computeLineHash(lineText)
-					ref := fmt.Sprintf("%d#%s", i+1, h)
-					matches = append(matches, fmt.Sprintf("%s:>>%s|[%s] %s", rel, ref, pattern.name, lineText))
+					matches = append(matches, fmt.Sprintf("%s:>>%4d|[%s] %s", rel, i+1, pattern.name, lineText))
 				}
 			}
+		}
+
+		if len(matches) > 0 {
+			files = append(files, secretFileResult{rel: rel, matches: matches})
 		}
 
 		return nil
 	})
 
-	return matches, err
-}
-
-func computeFileHash(text string) string {
-	return ""
-}
-
-func computeLineHash(line string) string {
-	return ""
-}
-
-func formatFileHeader(path, tag string) string {
-	return fmt.Sprintf("@file %s#%s", path, tag)
+	var out []string
+	for _, f := range files {
+		out = append(out, "@file "+f.rel)
+		out = append(out, f.matches...)
+	}
+	if err != nil {
+		out = append(out, err.Error())
+	}
+	return out, nil
 }

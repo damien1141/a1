@@ -12,6 +12,7 @@ import (
 	"github.com/damien1141/a1/internal/tools/tooldef"
 
 	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/util"
 )
 
 var writeDescription = `Write content to a file. Creates the file if it does not exist; overwrites the entire file if it does. Creates parent directories.`
@@ -69,12 +70,30 @@ func runWrite(ctx context.Context, input json.RawMessage) (tooldef.Result, error
 		return tooldef.Result{}, fmt.Errorf("failed to create parent directories: %w", err)
 	}
 
+	oldContent, readErr := os.ReadFile(path)
+	fileExisted := readErr == nil
+
 	//nolint:gosec // G306: source files should stay world-readable
 	if err := os.WriteFile(path, []byte(in.Content), 0o644); err != nil {
 		return tooldef.Result{}, fmt.Errorf("failed to write file %s: %w", path, err)
 	}
 
 	display := tooldef.RelToCwd(ctx, path)
-	detail := fmt.Sprintf("wrote %d bytes to %s", len(in.Content), display)
-	return tooldef.Result{Content: detail, Detail: display, Output: detail}, nil
+	var body string
+	if fileExisted {
+		oldStr := util.NormalizeLF(string(oldContent))
+		newStr := util.NormalizeLF(in.Content)
+		if oldStr == newStr {
+			body = fmt.Sprintf("wrote %d bytes to %s (no changes)", len(in.Content), display)
+		} else {
+			newTag := util.ComputeFileHash(newStr)
+			diff := util.GenerateFileDiff(path, oldStr, newStr, 3)
+			body = util.FormatFileHeader(display, newTag) + "\n\n" + diff
+		}
+	} else {
+		newTag := util.ComputeFileHash(util.NormalizeLF(in.Content))
+		body = util.FormatFileHeader(display, newTag) + "\n\nCreated new file."
+	}
+
+	return tooldef.Result{Content: body, Detail: display, Output: body}, nil
 }

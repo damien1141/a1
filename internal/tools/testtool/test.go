@@ -112,9 +112,6 @@ func runTest(ctx context.Context, input json.RawMessage) (tooldef.Result, error)
 func parseTestFailures(text string) []testFailure {
 	var failures []testFailure
 
-	// Go test: "=== RUN   TestName"
-	// followed by "=== FAIL: TestName (0.00s)"
-	// and "    file.go:42: assertion failed"
 	goTestRe := regexp.MustCompile(`(?m)^===\s+FAIL:\s+(\S+)\s+\(.*\)\s*$\n(?:\s+.*\n)*?\s+([^\s:]+):(\d+):\s+(.*)$`)
 	for _, m := range goTestRe.FindAllStringSubmatch(text, -1) {
 		ln, _ := strconv.Atoi(m[3])
@@ -125,7 +122,6 @@ func parseTestFailures(text string) []testFailure {
 		})
 	}
 
-	// Go panic: "panic: message" followed by file:line
 	goPanicRe := regexp.MustCompile(`(?m)^panic:\s*(.*?)\s*$\n\s*([^\s:]+):(\d+)\s+\+\S+`)
 	for _, m := range goPanicRe.FindAllStringSubmatch(text, -1) {
 		ln, _ := strconv.Atoi(m[3])
@@ -136,7 +132,6 @@ func parseTestFailures(text string) []testFailure {
 		})
 	}
 
-	// Pytest: "FAILED test_file.py::test_name - AssertionError"
 	pytestFailRe := regexp.MustCompile(`(?m)^FAILED\s+([^\s]+)::([^\s]+)\s+-\s+(.*)$`)
 	for _, m := range pytestFailRe.FindAllStringSubmatch(text, -1) {
 		failures = append(failures, testFailure{
@@ -146,7 +141,6 @@ func parseTestFailures(text string) []testFailure {
 		})
 	}
 
-	// Pytest traceback: "file.py:42: AssertionError"
 	pytestTracebackRe := regexp.MustCompile(`(?m)^\s+([^\s:]+):(\d+):\s+(.*)$`)
 	for _, m := range pytestTracebackRe.FindAllStringSubmatch(text, -1) {
 		ln, _ := strconv.Atoi(m[2])
@@ -157,9 +151,6 @@ func parseTestFailures(text string) []testFailure {
 		})
 	}
 
-	// Cargo test: "test result: FAILED. 1 passed; 1 failed; 0 ignored"
-	// followed by "---- test_name stdout ----"
-	// and "file.rs:42: assertion failed"
 	cargoSectionRe := regexp.MustCompile(`(?m)^----\s+(\S+)\s+stdout\s*----\s*$`)
 	cargoFileRe := regexp.MustCompile(`([^\s:]+):(\d+):\s*(.*)`)
 	lines := strings.Split(text, "\n")
@@ -169,7 +160,6 @@ func parseTestFailures(text string) []testFailure {
 			continue
 		}
 		testName := m[1]
-		// Collect body until next section header or end.
 		var bodyLines []string
 		for j := i + 1; j < len(lines); j++ {
 			if cargoSectionRe.MatchString(lines[j]) {
@@ -193,7 +183,6 @@ func parseTestFailures(text string) []testFailure {
 		}
 	}
 
-	// Deduplicate by file:line
 	seen := make(map[string]bool)
 	var unique []testFailure
 	for _, f := range failures {
@@ -234,21 +223,16 @@ func formatTestFailure(ctx context.Context, f testFailure, contextLines int) []s
 		start = end
 	}
 
-	fileTag := computeFileTag(lines)
-	if fileTag != "" {
-		out = append(out, formatFileHeader(rel, fileTag))
-	}
+	out = append(out, "@file "+rel)
 
 	for ln := start; ln <= end; ln++ {
 		lineText := lines[ln-1]
 		lineText = strings.TrimRight(lineText, "\r")
-		h := computeLineHash(lineText)
-		ref := fmt.Sprintf("%d#%s", ln, h)
 		prefix := "  "
 		if ln == f.line {
 			prefix = ">>"
 		}
-		out = append(out, fmt.Sprintf("%s:%s%s|%s", rel, prefix, ref, lineText))
+		out = append(out, fmt.Sprintf("%s:%s%4d|%s", rel, prefix, ln, lineText))
 	}
 
 	return out
@@ -277,28 +261,3 @@ func readFileLines(abs string) ([]string, error) {
 func utilNormalizeLF(s string) string {
 	return strings.ReplaceAll(s, "\r\n", "\n")
 }
-
-func computeFileTag(lines []string) string {
-	text := strings.Join(lines, "\n")
-	return utilComputeFileHash(text)
-}
-
-func computeLineHash(line string) string {
-	return utilComputeLineHash(line)
-}
-
-func formatFileHeader(path, tag string) string {
-	return utilFormatFileHeader(path, tag)
-}
-
-var (
-	utilComputeFileHash = func(text string) string {
-		return ""
-	}
-	utilComputeLineHash = func(line string) string {
-		return ""
-	}
-	utilFormatFileHeader = func(path, tag string) string {
-		return fmt.Sprintf("@file %s#%s", path, tag)
-	}
-)

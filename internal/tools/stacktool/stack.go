@@ -23,8 +23,8 @@ const (
 
 var stackDescription = `Parse a runtime stack trace and resolve file paths to line-accurate source references.
 
-Accepts Go, Python, Node, and Rust-style stack traces. Returns file:line#hash
-anchors plus surrounding context so the agent can jump directly to the failure.`
+Accepts Go, Python, Node, and Rust-style stack traces. Returns file:line references
+plus surrounding context so the agent can jump directly to the failure.`
 
 // StackTool returns the stack trace navigator tool definition + handler.
 func StackTool() tooldef.Tool {
@@ -117,44 +117,36 @@ type stackFrame struct {
 func parseStackFrames(text string) ([]stackFrame, error) {
 	var frames []stackFrame
 
-	// Go-style: "\t/path/to/file.go:123 +0x45". A naive [^\s:]+ stops at the
-	// first colon and captures only the drive letter on Windows paths, so
-	// accept an absolute Windows path (C:\...\file.go) explicitly.
 	goRe := regexp.MustCompile(`(?m)^\s+([A-Za-z]:\\[^\s]+|[^\s:]+):(\d+)(?:\s+\+\S+)?$`)
 	for _, m := range goRe.FindAllStringSubmatch(text, -1) {
 		ln, _ := strconv.Atoi(m[2])
 		frames = append(frames, stackFrame{file: m[1], line: ln, text: m[0]})
 	}
 
-	// Python-style: '  File "file.py", line 123, in module'
 	pythonRe := regexp.MustCompile(`(?m)^\s+File\s+"([^"]+)",\s+line\s+(\d+),`)
 	for _, m := range pythonRe.FindAllStringSubmatch(text, -1) {
 		ln, _ := strconv.Atoi(m[2])
 		frames = append(frames, stackFrame{file: m[1], line: ln, text: m[0]})
 	}
 
-	// Node-style: "    at main (/path/to/file.js:123:45)"
 	nodeRe := regexp.MustCompile(`(?m)^\s+at\s+(?:\S+\s+)?\(?([A-Za-z]:\\[^\s]+|[^\s:]+):(\d+):\d+\)?`)
 	for _, m := range nodeRe.FindAllStringSubmatch(text, -1) {
 		ln, _ := strconv.Atoi(m[2])
 		frames = append(frames, stackFrame{file: m[1], line: ln, text: m[0]})
 	}
 
-	// Rust panic format: "thread 'main' panicked at 'x', /path/to/file.rs:2:5"
 	rustPanicRe := regexp.MustCompile(`(?m)panicked at [^,]*,\s*([A-Za-z]:\\[^\s]+|[^\s:]+):(\d+):\d+`)
 	for _, m := range rustPanicRe.FindAllStringSubmatch(text, -1) {
 		ln, _ := strconv.Atoi(m[2])
 		frames = append(frames, stackFrame{file: m[1], line: ln, text: m[0]})
 	}
 
-	// Rust backtrace format: "    at /path/to/file.rs:123:45"
 	rustRe := regexp.MustCompile(`(?m)^\s+at\s+([A-Za-z]:\\[^\s]+|[^\s:]+):(\d+):\d+$`)
 	for _, m := range rustRe.FindAllStringSubmatch(text, -1) {
 		ln, _ := strconv.Atoi(m[2])
 		frames = append(frames, stackFrame{file: m[1], line: ln, text: m[0]})
 	}
 
-	// Deduplicate by file:line
 	seen := make(map[string]bool)
 	var unique []stackFrame
 	for _, f := range frames {
@@ -187,21 +179,16 @@ func formatFrame(ctx context.Context, f stackFrame, contextLines int) []string {
 	start := max(1, f.line-contextLines)
 	end := min(len(lines), f.line+contextLines)
 
-	fileTag := computeFileTag(lines)
-	if fileTag != "" {
-		out = append(out, util.FormatFileHeader(rel, fileTag))
-	}
+	out = append(out, "@file "+rel)
 
 	for ln := start; ln <= end; ln++ {
 		lineText := lines[ln-1]
 		lineText = strings.TrimRight(lineText, "\r")
-		h := util.ComputeLineHash(lineText)
-		ref := fmt.Sprintf("%d#%s", ln, h)
 		prefix := "  "
 		if ln == f.line {
 			prefix = ">>"
 		}
-		out = append(out, fmt.Sprintf("%s:%s%s|%s", rel, prefix, ref, lineText))
+		out = append(out, fmt.Sprintf("%s:%s%4d|%s", rel, prefix, ln, lineText))
 	}
 
 	return out
@@ -225,9 +212,4 @@ func readFileLines(abs string) ([]string, error) {
 	}
 	text := util.NormalizeLF(string(b))
 	return strings.Split(text, "\n"), nil
-}
-
-func computeFileTag(lines []string) string {
-	text := strings.Join(lines, "\n")
-	return util.ComputeFileHash(text)
 }

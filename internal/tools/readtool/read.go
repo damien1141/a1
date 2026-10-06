@@ -17,15 +17,12 @@ import (
 const (
 	readDefaultMaxLines = 1000
 	readDefaultMaxBytes = 50 * 1024
-	// Cap whole-file reads used for @file tags; larger files must be handled outside edit.
-	readMaxHashBytes = 8 << 20 // 8 MiB
 )
 
-var readDescription = fmt.Sprintf(`Read a file and return its contents with an @file path#TAG header.
+var readDescription = fmt.Sprintf(`Read a file and return its contents.
 
-Pass the file path; use offset (1-based) and limit to paginate. The TAG is 4 hex
-chars after # (required by edit.hash, e.g. A1B2 from @file src/app.py#A1B2).
-Body lines are N#abc|content — copy N#abc into edit from/to, not the |content.
+Pass the file path; use offset (1-based) and limit to paginate.
+Body lines are formatted as 'line_number|content'.
 Output body is capped at %d lines and %d KiB per call.`,
 	readDefaultMaxLines, readDefaultMaxBytes/1024)
 
@@ -84,17 +81,6 @@ func runRead(ctx context.Context, input json.RawMessage) (tooldef.Result, error)
 		return tooldef.Result{}, err
 	}
 
-	st, err := os.Stat(path)
-	if err != nil {
-		return tooldef.Result{}, err
-	}
-	if st.Size() > readMaxHashBytes {
-		return tooldef.Result{}, fmt.Errorf(
-			"file %s is %d bytes; refuse to hash files larger than %d bytes for edit anchors",
-			path, st.Size(), readMaxHashBytes,
-		)
-	}
-
 	select {
 	case <-ctx.Done():
 		return tooldef.Result{}, ctx.Err()
@@ -106,9 +92,8 @@ func runRead(ctx context.Context, input json.RawMessage) (tooldef.Result, error)
 		return tooldef.Result{}, err
 	}
 	text := util.NormalizeLF(string(raw))
-	tag := util.ComputeFileHash(text)
 	display := tooldef.RelToCwd(ctx, path)
-	header := util.FormatFileHeader(display, tag)
+	header := "@file " + display
 
 	startLine := in.Offset
 	startLine = max(startLine, 1)
@@ -143,8 +128,7 @@ func runRead(ctx context.Context, input json.RawMessage) (tooldef.Result, error)
 			fmt.Fprintf(&b, "\n... truncated at %d bytes. Next offset: %d\n", readDefaultMaxBytes, lineNo)
 			break
 		}
-		hash := util.ComputeLineHash(line)
-		fmt.Fprintf(&b, "%d#%s|%s\n", lineNo, hash, line)
+		fmt.Fprintf(&b, "%4d|%s\n", lineNo, line)
 		bytesN += len(line) + 1
 		collected++
 		if collected >= limit {

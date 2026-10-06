@@ -16,14 +16,14 @@ func TestRunWriteCreatesAndOverwrites(t *testing.T) {
 
 	created, err := tool.Run(t.Context(), mustWriteArgs(t, path, "first\n"))
 	require.NoError(t, err)
-	require.Contains(t, created.Content, "wrote")
+	require.Contains(t, created.Content, "Created new file")
 	got, err := os.ReadFile(path)
 	require.NoError(t, err)
 	require.Equal(t, "first\n", string(got))
 
 	overwritten, err := tool.Run(t.Context(), mustWriteArgs(t, path, "second\n"))
 	require.NoError(t, err)
-	require.Contains(t, overwritten.Content, "wrote")
+	require.Contains(t, overwritten.Content, "@file ")
 	got, err = os.ReadFile(path)
 	require.NoError(t, err)
 	require.Equal(t, "second\n", string(got))
@@ -36,7 +36,7 @@ func TestRunWriteRelativePathInResult(t *testing.T) {
 
 	created, err := tool.Run(t.Context(), mustWriteArgs(t, "nested/out.txt", "first\n"))
 	require.NoError(t, err)
-	require.Equal(t, "wrote 6 bytes to nested/out.txt", created.Content)
+	require.Contains(t, created.Content, "Created new file")
 	require.Equal(t, "nested/out.txt", created.Detail)
 }
 

@@ -34,7 +34,7 @@ main.main()
 	out, err := runStack(t.Context(), raw)
 	require.NoError(t, err)
 	assert.Contains(t, out.Content, "main.go")
-	assert.Contains(t, out.Content, ">>3#")
+	assert.Contains(t, out.Content, ">>   3|")
 	assert.Contains(t, out.Detail, "1 frame")
 }
 

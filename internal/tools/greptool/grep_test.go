@@ -30,7 +30,7 @@ func TestRunGrep_CwdRelativeHeaders(t *testing.T) {
 		t.Skip(err.Error())
 	}
 	require.NoError(t, err)
-	assert.Contains(t, out.Content, "@file src/main.go#")
+	assert.Contains(t, out.Content, "@file src/main.go\n")
 	assert.Contains(t, out.Content, "src/main.go:>>")
 	assert.NotContains(t, out.Content, "@file main.go#")
 }
@@ -49,12 +49,9 @@ func TestRunGrep_DefaultPathUsesCwdRelative(t *testing.T) {
 		t.Skip(err.Error())
 	}
 	require.NoError(t, err)
-	assert.Contains(t, out.Content, "@file src/main.go#")
+	assert.Contains(t, out.Content, "@file src/main.go\n")
 }
 
-// A matched line bigger than the read cap used to end the scan while ripgrep was
-// still writing; Wait then blocked forever on the full stdout pipe. Now the event
-// is skipped and the rest of the search still comes back.
 func TestRunGrep_OversizedMatchDoesNotHang(t *testing.T) {
 	dir := t.TempDir()
 	big := append([]byte("needle"), bytes.Repeat([]byte("x"), 3<<20)...)
@@ -64,12 +61,11 @@ func TestRunGrep_OversizedMatchDoesNotHang(t *testing.T) {
 	out, err := runGrepBounded(t, grepInput{Pattern: "needle", Path: dir})
 
 	require.NoError(t, err)
-	require.Contains(t, out.Content, "small.js:>>2")
+	assert.Contains(t, out.Content, "small.js:>>   2|")
 	assert.NotContains(t, out.Content, "bundle.min.js")
 	assert.Contains(t, out.Content, "1 match lines exceeded 2048KB and were skipped")
 }
 
-// Only oversized events: report the skip instead of claiming there was no match.
 func TestRunGrep_AllOversizedMatches(t *testing.T) {
 	dir := t.TempDir()
 	big := append([]byte("needle"), bytes.Repeat([]byte("x"), 3<<20)...)
@@ -82,7 +78,6 @@ func TestRunGrep_AllOversizedMatches(t *testing.T) {
 	assert.Contains(t, out.Content, "No matches found: 1 match lines exceeded 2048KB and were skipped")
 }
 
-// A minified bundle between good matches must not truncate the result set.
 func TestRunGrep_OversizedMatchKeepsLaterMatches(t *testing.T) {
 	dir := t.TempDir()
 	big := append([]byte("needle"), bytes.Repeat([]byte("x"), 3<<20)...)
@@ -92,11 +87,9 @@ func TestRunGrep_OversizedMatchKeepsLaterMatches(t *testing.T) {
 	out, err := runGrepBounded(t, grepInput{Pattern: "needle", Path: dir})
 
 	require.NoError(t, err)
-	assert.Contains(t, out.Content, "z_after.js:>>1")
+	assert.Contains(t, out.Content, "z_after.js:>>   1|")
 }
 
-// Reaching the match limit kills ripgrep mid-stream; the drain-and-reap path
-// must still return instead of blocking on stderr or a second Wait.
 func TestRunGrep_LimitReachedStopsCleanly(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{"a.js", "b.js", "c.js", "d.js"} {
@@ -110,7 +103,6 @@ func TestRunGrep_LimitReachedStopsCleanly(t *testing.T) {
 	assert.Contains(t, out.Content, "2 matches limit reached")
 }
 
-// runGrepBounded fails the test instead of hanging the suite.
 func runGrepBounded(t *testing.T, in grepInput) (tooldef.Result, error) {
 	t.Helper()
 	raw, err := json.Marshal(in)
