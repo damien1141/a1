@@ -36,6 +36,27 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Security
 
+## [1.2.1] - 2026-10-05
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+- **Browser tool:** the LLM-facing tool path no longer auto-launches Firefox.
+  `runBrowser` only controls an already-open browser, so the model cannot
+  spawn the browser on its own. If the browser is closed, the tool returns a
+  clear message asking the user to open it with `/browser open <url>` or to
+  use `fetch` instead. The slash command still auto-launches the browser as
+  before.
+
+### Security
+
 ## [1.2.0] - 2026-10-05
 
 ### Added
@@ -767,7 +788,8 @@ Earlier releases are available from GitHub tags only.
 
 <!-- Released section ended -->
 
-[Unreleased]: https://github.com/pulseaiclub/phi/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/pulseaiclub/phi/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/pulseaiclub/phi/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/pulseaiclub/phi/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/pulseaiclub/phi/releases/tag/v1.1.0
 [0.27.5]: https://github.com/pulseaiclub/phi/compare/v0.27.4...v0.27.5

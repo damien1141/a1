@@ -55,7 +55,7 @@ func (b *BrowserCommands) Register(r *CommandRegistry) {
 			// Slash commands run on the UI goroutine and receive a TUI
 			// Context, not a context.Context. Use a background context so
 			// ensureBrowser can build its own cancel context.
-			_, err := browsertool.BrowserTool().Run(context.Background(), raw)
+			_, err := browsertool.RunBrowserCommand(context.Background(), raw)
 			return err
 		},
 	})

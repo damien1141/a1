@@ -13,7 +13,7 @@ func TestBrowserOpenNilContext(t *testing.T) {
 	if os.Getenv("A1_BROWSER_E2E") != "1" {
 		t.Skip("set A1_BROWSER_E2E=1 to run real browser launch")
 	}
-	res, err := runBrowser(nil, json.RawMessage(`{"action":"open","url":"https://example.com"}`))
+	res, err := RunBrowserCommand(nil, json.RawMessage(`{"action":"open","url":"https://example.com"}`))
 	if err != nil {
 		t.Fatalf("open with nil ctx failed: %v\ncontent=%s", err, res.Content)
 	}

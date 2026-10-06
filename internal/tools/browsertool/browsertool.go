@@ -45,10 +45,10 @@ const (
 	contentMaxChars       = 12_000
 )
 
-var browserDescription = `Control a live web browser via Playwright.
+var browserDescription = `Control an already-open web browser via Playwright.
 
-Spawns a visible Firefox window and exposes navigation, clicking, typing,
-screenshots, and page inspection. Supports multiple isolated browser profiles.
+If the browser is not open, this tool will ask the user to open it first
+with /browser open <url>. It does not spawn Firefox itself.
 
 Actions:
 - open <url>: open a URL in the current profile (scheme auto-prepended, so
@@ -124,6 +124,10 @@ type browserInput struct {
 	Text     string `json:"text,omitempty"`
 }
 
+// runBrowser is the LLM-facing tool handler. It does NOT auto-launch the
+// browser; it only controls an already-open browser. This prevents the model
+// from spawning Firefox on its own. If the browser is not open, it returns an
+// error directing the user to /browser open <url>.
 func runBrowser(ctx context.Context, input json.RawMessage) (tooldef.Result, error) {
 	var in browserInput
 	if err := json.Unmarshal(input, &in); err != nil {
@@ -144,21 +148,52 @@ func runBrowser(ctx context.Context, input json.RawMessage) (tooldef.Result, err
 		return browserProxy(in)
 	}
 
-	// ensureBrowser launches Firefox on first use. It must run BEFORE this
-	// function takes browserMu: ensureBrowser acquires browserMu itself for
-	// the whole launch, so calling it while already holding the lock would
-	// deadlock (sync.Mutex is not re-entrant). Because browser is Readable and
-	// can run in a concurrent batch, ensureBrowser also serializes launch so
-	// two concurrent opens cannot both spawn a browser.
-	if err := ensureBrowser(ctx); err != nil {
-		return tooldef.Result{}, err
-	}
-
 	// Hold browserMu for the whole action so every sub-call can read and
 	// mutate the shared maps without a race. No sub-action re-acquires it.
 	browserMu.Lock()
 	defer browserMu.Unlock()
 
+	for _, p := range pages {
+		if p != nil {
+			return dispatchBrowserAction(action, in)
+		}
+	}
+	return tooldef.Result{}, fmt.Errorf(
+		"browser is not open; please ask the user nicely to open the browser with /browser open <url> or use the fetch tool",
+	)
+}
+
+// RunBrowserCommand is the slash-command handler. It auto-launches the
+// browser if needed, then runs the requested action. Only the user-facing
+// /browser command should call this; the LLM tool uses runBrowser instead.
+func RunBrowserCommand(ctx context.Context, input json.RawMessage) (tooldef.Result, error) {
+	var in browserInput
+	if err := json.Unmarshal(input, &in); err != nil {
+		return tooldef.Result{}, fmt.Errorf("failed to parse browser arguments: %w", err)
+	}
+
+	action := strings.ToLower(strings.TrimSpace(in.Action))
+	if action == "" {
+		return tooldef.Result{}, fmt.Errorf(
+			"action is required: open, navigate, search, click, type, screenshot, content, close, profile, proxy",
+		)
+	}
+
+	if action == "proxy" {
+		return browserProxy(in)
+	}
+
+	if err := ensureBrowser(ctx); err != nil {
+		return tooldef.Result{}, err
+	}
+
+	browserMu.Lock()
+	defer browserMu.Unlock()
+
+	return dispatchBrowserAction(action, in)
+}
+
+func dispatchBrowserAction(action string, in browserInput) (tooldef.Result, error) {
 	switch action {
 	case "open":
 		return browserOpen(in)

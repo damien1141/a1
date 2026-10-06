@@ -19,9 +19,7 @@ func TestBrowserCloseThenReopen(t *testing.T) {
 		t.Skip("set A1_BROWSER_E2E=1 to run real browser launch")
 	}
 	ctx := context.Background()
-
-	// First open.
-	res, err := runBrowser(ctx, json.RawMessage(`{"action":"open","url":"https://example.com"}`))
+	res, err := RunBrowserCommand(ctx, json.RawMessage(`{"action":"open","url":"https://example.com"}`))
 	if err != nil {
 		t.Fatalf("first open failed: %v\ncontent=%s", err, res.Content)
 	}
@@ -35,7 +33,7 @@ func TestBrowserCloseThenReopen(t *testing.T) {
 	assert.Contains(t, res.Content, "Browser closed")
 
 	// Reopen — must not fail with "browser is already in use".
-	res, err = runBrowser(ctx, json.RawMessage(`{"action":"open","url":"https://example.org"}`))
+	res, err = RunBrowserCommand(ctx, json.RawMessage(`{"action":"open","url":"https://example.org"}`))
 	if err != nil {
 		t.Fatalf("reopen after close failed: %v\ncontent=%s", err, res.Content)
 	}

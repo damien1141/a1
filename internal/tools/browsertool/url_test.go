@@ -48,14 +48,15 @@ func TestContentMaxChars(t *testing.T) {
 	assert.Less(t, contentMaxChars, 20_000, "content cap must stay well under a context window")
 }
 
-// TestBrowserOpenBareHostname opens a bare hostname to confirm the scheme is
-// auto-prepended. Requires A1_BROWSER_E2E=1 and a working display.
+// TestBrowserOpenBareHostname verifies the slash-command browser path can
+// open a bare hostname; the scheme is auto-prepended. Requires
+// A1_BROWSER_E2E=1 and a working display.
 func TestBrowserOpenBareHostname(t *testing.T) {
 	if os.Getenv("A1_BROWSER_E2E") != "1" {
 		t.Skip("set A1_BROWSER_E2E=1 to run real browser launch")
 	}
 	ctx := context.Background()
-	res, err := runBrowser(ctx, json.RawMessage(`{"action":"open","url":"example.com"}`))
+	res, err := RunBrowserCommand(ctx, json.RawMessage(`{"action":"open","url":"example.com"}`))
 	if err != nil {
 		t.Fatalf("open example.com failed: %v\ncontent=%s", err, res.Content)
 	}
