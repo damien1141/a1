@@ -1,4 +1,4 @@
-# A1 v1.5.0
+# A1 v1.5.1
 
 A terminal coding-agent harness for people who want an agent that can actually reason over long sessions, inspect its own permissions, and browse the web without leaving the shell.
 
@@ -6,7 +6,7 @@ Fork of [phi](https://github.com/pulseaiclub/phi) with fold-based context manage
 
 **Docs:** [pulseaiclub.github.io](https://pulseaiclub.github.io/)
 
-**Recommended local models:** for local LLM inference, [el4/Agents-A1-ONYX-GGUF](https://huggingface.co/el4/Agents-A1-ONYX-GGUF); for embeddings, [nomic-ai/nomic-embed-text-v2-moe-GGUF](https://huggingface.co/nomic-ai/nomic-embed-text-v2-moe-GGUF).
+**Recommended local models:** for local LLM inference, [GRM-3.2-Sky-ONYX-GGUF](https://huggingface.co/el4/GRM-3.2-Sky-ONYX-GGUF); for embeddings, [nomic-ai/nomic-embed-text-v2-moe-GGUF](https://huggingface.co/nomic-ai/nomic-embed-text-v2-moe-GGUF).
 
 ## Why use this
 
@@ -17,6 +17,26 @@ phi is already the leanest practical terminal coding-agent harness available. Th
 3. **Live browser in the terminal** - `browser` spawns a visible Chromium via Playwright. Navigate, click, type, screenshot, and read page content without leaving the session. Isolated profiles, proxy support, and trimmed output so one page never blows the context window.
 
 On top of that, 30+ analysis tools, semantic code search, dependency graphs, batch edits ordered by import topology, test-impact selection, snapshot/rollback, multi-language error normalization, build-system awareness, and a system doctrine that biases toward evidence over narration.
+
+## Quick start
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/damien1141/a1/main/scripts/install.sh | bash
+```
+
+```sh
+a1 config
+a1 run -p "fix the failing test in internal/tools"
+```
+
+Build from source:
+
+```sh
+make build          # produces ./a1
+make install        # build and install into $GOBIN
+```
+
+On first start, A1 creates `~/.a1/{bin,skills,hooks,session}`. Search tools (`fd`, `rg`) download into `~/.a1/bin` when missing.
 
 ## Philosophy
 
@@ -96,15 +116,6 @@ What changed:
 
 - Context management: training-free multi-generational compression for long-lived coding agents - [billion-context-pi](https://github.com/ranxianglei/billion-context-pi/blob/master/paper/model-driven-incremental-hierarchical-compression-training-free-multi-generational-context-management-for-long-lived-coding-agents.md)
 - APPA: Recoverable Information-Flow Control - [arXiv:2607.24625](https://arxiv.org/abs/2607.24625)
-
-## Footprint
-
-- Release binary: ~15 MB
-- Idle RSS: ~21 MB
-- Time to first frame: ~31 ms
-- Go source: ~82.7k LOC / 551 files / 115 packages
-- Session memory bank: `~/.a1/sessions/memory/<session_id>.jsonl`
-- Vector search index: workspace-local, created on demand when `vector_search` is used
 
 ## Tools
 

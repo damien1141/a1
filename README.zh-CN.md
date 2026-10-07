@@ -1,4 +1,4 @@
-# A1 v1.5.0
+# A1 v1.5.1
 
 一个终端编码代理框架，专为希望在长会话中保持推理能力、能自检权限、且无需离开终端即可浏览网页的人设计。
 
@@ -6,7 +6,7 @@
 
 **文档：** [pulseaiclub.github.io](https://pulseaiclub.github.io/)
 
-**推荐本地模型：** 本地 LLM 推理推荐 [el4/Agents-A1-ONYX-GGUF](https://huggingface.co/el4/Agents-A1-ONYX-GGUF)；嵌入模型推荐 [nomic-ai/nomic-embed-text-v2-moe-GGUF](https://huggingface.co/nomic-ai/nomic-embed-text-v2-moe-GGUF)。
+**推荐本地模型：** 本地 LLM 推理推荐 [GRM-3.2-Sky-ONYX-GGUF](https://huggingface.co/el4/GRM-3.2-Sky-ONYX-GGUF)；嵌入模型推荐 [nomic-ai/nomic-embed-text-v2-moe-GGUF](https://huggingface.co/nomic-ai/nomic-embed-text-v2-moe-GGUF)。
 
 ## 为什么用这个
 
@@ -17,6 +17,26 @@ phi 已经是我用过的最精简、最实用的终端编码代理框架。这�
 3. **终端里的实时浏览器** - `browser` 启动一个可见的 Chromium 窗口。用 `/browser` 导航，再用 `browser_*` 工具交互。`content` 返回修剪后的可见文本而非原始 HTML，避免单个页面撑爆上下文窗口。隔离 profile、代理支持、以及 `close`/`open` 生命周期管理，让网页交互成为代理循环的一部分。
 
 此外还有 30+ 分析工具、语义代码搜索、依赖图、按导入拓扑排序的批量编辑、测试影响选择、快照/回滚、多语言错误归一化、构建系统感知，以及一个让模型默认“证据优先、叙述其次”的系统 doctrine。
+
+## 快速开始
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/damien1141/a1/main/scripts/install.sh | bash
+```
+
+```sh
+a1 config
+a1 run -p "fix the failing test in internal/tools"
+```
+
+从源码构建：
+
+```sh
+make build          # 生成 ./a1
+make install        # 构建并安装到 $GOBIN
+```
+
+首次启动时，A1 会自动创建 `~/.a1/{bin,skills,hooks,session}`。搜索工具（`fd`、`rg`）缺失时会在后台下载到 `~/.a1/bin`。
 
 ## 哲学
 
@@ -97,15 +117,6 @@ Shift-Tab 在 `interactive`、`readonly`、`autopilot` 和 `headless-strict` 之
 - 上下文管理：面向长生命周期 coding agents 的无训练多代压缩 - [billion-context-pi](https://github.com/ranxianglei/billion-context-pi/blob/master/paper/model-driven-incremental-hierarchical-compression-training-free-multi-generational-context-management-for-long-lived-coding-agents.md)
 - APPA：可恢复信息流控制 - [arXiv:2607.24625](https://arxiv.org/abs/2607.24625)
 
-## 资源占用
-
-- 发布二进制：~15 MB
-- 空闲 RSS：~21 MB
-- 首帧时间：~31 ms
-- Go 源码：~82.7k LOC / 551 文件 / 115 个包
-- 会话记忆库：`~/.a1/sessions/memory/<session_id>.jsonl`
-- 向量搜索索引：工作区本地，启用 `vector_search` 时按需创建
-
 ## 工具
 
 | 工具            | 用途                                      |
@@ -157,25 +168,5 @@ Shift-Tab 在 `interactive`、`readonly`、`autopilot` 和 `headless-strict` 之
 | `agent_cancel`  | 取消运行中的任务                          |
 
 子代理完整记录存放在 `~/.a1/jobs/<id>/`，子代理上下文**不会**注入父代理上下文。
-
-## 快速开始
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/damien1141/a1/main/scripts/install.sh | bash
-```
-
-```sh
-a1 config
-a1 run -p "fix the failing test in internal/tools"
-```
-
-从源码构建：
-
-```sh
-make build          # 生成 ./a1
-make install        # 构建并安装到 $GOBIN
-```
-
-首次启动时，A1 会自动创建 `~/.a1/{bin,skills,hooks,session}`。搜索工具（`fd`、`rg`）缺失时会在后台下载到 `~/.a1/bin`。
 
 开发环境搭建、代码风格与提交规范见 [CONTRIBUTING.md](CONTRIBUTING.md)。
