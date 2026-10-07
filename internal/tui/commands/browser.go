@@ -30,7 +30,7 @@ func (b *BrowserCommands) Register(r *CommandRegistry) {
 	}
 	r.Register(Command{
 		Name:        "browser",
-		Description: "Control a live web browser — /browser open <url>",
+		Description: "Control a live web browser — /browser open <url>|proxy <socks|http(s) url>|close|profile",
 		Slash:       true,
 		NeedsArgs:   true,
 		Insert:      "/browser ",
@@ -57,6 +57,17 @@ func (b *BrowserCommands) Register(r *CommandRegistry) {
 			// ensureBrowser can build its own cancel context.
 			_, err := browsertool.RunBrowserCommand(context.Background(), raw)
 			return err
+		},
+		ArgCompleter: func(args []string) []ArgItem {
+			if len(args) == 0 {
+				return []ArgItem{
+					{Insert: "open", Description: "open url"},
+					{Insert: "proxy", Description: "set proxy"},
+					{Insert: "close", Description: "close browser"},
+					{Insert: "profile", Description: "manage profiles"},
+				}
+			}
+			return nil
 		},
 	})
 }

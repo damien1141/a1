@@ -303,6 +303,9 @@ func (e *Editor) Update(m controller.Msg) {
 		e.footer.Apply(msg)
 	case controller.ToastMsg:
 		e.toast.Show(msg.Message, msg.Kind, msg.Duration)
+		if e.App != nil {
+			e.App.RequestRedraw()
+		}
 	case controller.ThemeMsg:
 		e.applyTheme(msg.Name)
 	case controller.ModelChangeMsg:

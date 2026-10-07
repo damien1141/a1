@@ -6,6 +6,9 @@ type AskReply struct {
 	Feedback        string
 	AllowSession    bool // Allow All for This Session
 	AllowPersistent bool // Allow All for Every Session
+	// AllowlistPattern, when non-empty, means the command is approved and this
+	// regex should be persisted to the bash allowlist in config.yaml.
+	AllowlistPattern string
 }
 
 // ExtConfirmReply is the user's response for an extension Confirm dialog.

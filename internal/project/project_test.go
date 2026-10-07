@@ -401,3 +401,29 @@ models:
 	assert.Zero(t, custom.ContextWindow)
 	assert.False(t, custom.ImageEnabled)
 }
+
+func TestAppendBashAllowFourSpaceIndent(t *testing.T) {
+	p := discoverInTempHome(t)
+	require.NoError(t, os.WriteFile(p.Global().ConfigFile(), []byte(`
+models:
+  - name: m
+    api_key: k
+permissions:
+  dangerously_allow_all: false
+  bash:
+    default: ask
+    allow: []
+    deny: []
+`), 0o644))
+
+	require.NoError(t, AppendBashAllow(p.Global(), "^make build\\b"))
+	cfg, err := loadConfig(p.Global())
+	require.NoError(t, err)
+	assert.Equal(t, []string{"^make build\\b"}, cfg.Permissions.BashAllow)
+
+	// Duplicate append should be a no-op.
+	require.NoError(t, AppendBashAllow(p.Global(), "^make build\\b"))
+	cfg2, err := loadConfig(p.Global())
+	require.NoError(t, err)
+	assert.Equal(t, []string{"^make build\\b"}, cfg2.Permissions.BashAllow)
+}

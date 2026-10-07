@@ -184,6 +184,19 @@ func (c *EngineController) PermissionMode() permission.Mode {
 	return permission.ModeOf(c.gate)
 }
 
+// PermissionGate returns the inner StaticGate for APPA inspection.
+func (c *EngineController) PermissionGate() *permission.StaticGate {
+	if c.gate == nil {
+		return nil
+	}
+	if sg, ok := c.gate.(*permission.SessionAllowGate); ok {
+		if inner, ok := sg.Inner.(*permission.StaticGate); ok {
+			return inner
+		}
+	}
+	return nil
+}
+
 func (c *EngineController) CyclePermissionMode() {
 	modes := []permission.Mode{
 		permission.ModeInteractive,
@@ -231,6 +244,13 @@ func (c *EngineController) SetPermissionMode(mode permission.Mode) {
 	if c.askTimeoutSec > 0 {
 		policy.AskTimeoutSec = c.askTimeoutSec
 	}
+	// Preserve APPA trajectory state across mode switches.
+	var prevTrajectory *permission.TrajectoryState
+	if sg, ok := c.gate.(*permission.SessionAllowGate); ok {
+		if inner, ok := sg.Inner.(*permission.StaticGate); ok {
+			prevTrajectory = inner.Trajectory()
+		}
+	}
 	var inner permission.Gate
 	var err error
 	inner, err = permission.NewGate(policy, permission.WorkspaceRoot())
@@ -239,6 +259,11 @@ func (c *EngineController) SetPermissionMode(mode permission.Mode) {
 	}
 	if err != nil {
 		inner = permission.AllowAll{}
+	}
+	if prevTrajectory != nil {
+		if sg, ok := inner.(*permission.StaticGate); ok {
+			sg.SetTrajectory(prevTrajectory)
+		}
 	}
 	c.gate = &permission.SessionAllowGate{Inner: inner, Enabled: &c.allowAll}
 	if c.engine != nil {
@@ -438,11 +463,14 @@ func (c *EngineController) askPermission(
 	if err != nil {
 		return permission.AskResult{}, err
 	}
-	if r.AllowSession || r.AllowPersistent {
+	if r.AllowSession {
 		c.allowAll.Store(true)
 	}
-	if r.AllowPersistent && c.proj != nil {
-		_ = project.SetDangerouslyAllowAll(c.proj.Global(), true)
+	if r.AllowlistPattern != "" && c.proj != nil {
+		_ = project.AppendBashAllow(c.proj.Global(), r.AllowlistPattern)
+		if sg := c.PermissionGate(); sg != nil {
+			_, _ = sg.AppendBashAllow(r.AllowlistPattern)
+		}
 	}
 	return permission.AskResult{Approved: r.Approved, Feedback: r.Feedback}, nil
 }

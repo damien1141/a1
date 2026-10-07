@@ -38,5 +38,16 @@ func (s *SnapshotCommands) Register(r *CommandRegistry) {
 			_, err := snapshottool.SnapshotTool().Run(nil, raw)
 			return err
 		},
+		ArgCompleter: func(args []string) []ArgItem {
+			if len(args) == 0 {
+				return []ArgItem{
+					{Insert: "create", Description: "create snapshot"},
+					{Insert: "rollback", Description: "rollback snapshot"},
+					{Insert: "list", Description: "list snapshots"},
+					{Insert: "delete", Description: "delete snapshot"},
+				}
+			}
+			return nil
+		},
 	})
 }

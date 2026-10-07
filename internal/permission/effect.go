@@ -97,3 +97,28 @@ func (l *EffectLog) CheckNoPrior(token string) error {
 	}
 	return nil
 }
+
+// Support returns the set of committed effect tokens (the support of E(ℓ)).
+// The returned slice is a snapshot and safe to iterate without locking.
+func (l *EffectLog) Support() []string {
+	if l == nil {
+		return []string{}
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := make([]string, 0, len(l.index))
+	for token := range l.index {
+		out = append(out, token)
+	}
+	return out
+}
+
+// Len returns the number of committed effect entries.
+func (l *EffectLog) Len() int {
+	if l == nil {
+		return 0
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.entries)
+}

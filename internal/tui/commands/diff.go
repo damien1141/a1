@@ -21,5 +21,14 @@ func (d *DiffCommands) Register(r *CommandRegistry) {
 			}
 			return nil
 		},
+		ArgCompleter: func(args []string) []ArgItem {
+			if len(args) == 0 {
+				return []ArgItem{
+					{Insert: "staged", Description: "staged changes"},
+					{Insert: "HEAD", Description: "compare against HEAD"},
+				}
+			}
+			return nil
+		},
 	})
 }

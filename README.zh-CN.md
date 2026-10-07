@@ -1,8 +1,8 @@
-# A1 v1.2.1
+# A1 v1.5.0
 
 一个终端编码代理框架，专为希望在长会话中保持推理能力、能自检权限、且无需离开终端即可浏览网页的人设计。
 
-基于 [phi](https://github.com/pulseaiclub/phi) 扩展而来，核心差异在于：fold-based 上下文管理、实时 APPA 权限控制、以及 Playwright 驱动的浏览器自动化。
+基于 [phi](https://github.com/pulseaiclub/phi) 扩展而来，核心差异在于：fold-based 上下文管理、实时 APPA 权限控制、以及 Playwright 驱动的浏览器自动化。约 85k 行 Go，没有运行时膨胀。
 
 **文档：** [pulseaiclub.github.io](https://pulseaiclub.github.io/)
 

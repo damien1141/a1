@@ -8,6 +8,12 @@ import (
 	"github.com/damien1141/a1/internal/components/palette"
 )
 
+// ArgItem is one suggestion in the arg completer.
+type ArgItem struct {
+	Insert      string // text to insert into the composer
+	Description string // optional hint
+}
+
 // Command is one registered slash and/or palette entry.
 type Command struct {
 	Name        string
@@ -27,6 +33,10 @@ type Command struct {
 
 	// Build builds a Ctrl+K palette entry. Nil for slash-only commands.
 	Build func(ctx Context) palette.PaletteCommand
+
+	// ArgCompleter returns suggestions for the next arg token given the
+	// already-typed args. Empty slice means no arg completion available.
+	ArgCompleter func(args []string) []ArgItem
 
 	fromExt bool // dropped on extensions reload; cannot replace builtins
 }
@@ -166,6 +176,36 @@ func (r *CommandRegistry) LookupInsert(name string) string {
 		return ""
 	}
 	return cmd.Insert
+}
+
+// Lookup returns the Command for a slash command name.
+func (r *CommandRegistry) Lookup(name string) (Command, bool) {
+	return r.lookup(name)
+}
+
+// FilterSlashArgs returns arg suggestions for a slash command after the command
+// token. The query is the current unfinished arg token (may be empty). Returned
+// items use Insert as the full token to insert into the composer.
+func (r *CommandRegistry) FilterSlashArgs(name, query string, args []string) []mention.Item {
+	q := strings.ToLower(strings.TrimSpace(query))
+	r.mu.RLock()
+	cmd, ok := r.lookup(name)
+	r.mu.RUnlock()
+	if !ok || cmd.ArgCompleter == nil {
+		return nil
+	}
+	items := cmd.ArgCompleter(args)
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]mention.Item, 0, len(items))
+	for _, it := range items {
+		if q != "" && !strings.HasPrefix(strings.ToLower(it.Insert), q) {
+			continue
+		}
+		out = append(out, mention.Item{Path: it.Insert, Description: it.Description})
+	}
+	return out
 }
 
 // IncompleteSlash reports whether text is a known NeedsArgs slash with no

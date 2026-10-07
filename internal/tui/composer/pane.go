@@ -748,7 +748,7 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 			ctx.ConsumeAndRedraw()
 			return
 		}
-		if ev.Press && ev.Mods.Has(xui.ModShift) && ev.Code == xui.KeyTab {
+		if ev.Press && ev.Mods.Has(xui.ModShift) && (ev.Code == xui.KeyTab || (ev.Code == xui.KeyRune && ev.Rune == '\t')) {
 			if c.cyclePermissionMode != nil {
 				c.cyclePermissionMode()
 			}
@@ -908,16 +908,26 @@ func (c *ComposerPane) onSlashChange(active bool, query string) {
 	if c == nil {
 		return
 	}
-	if !active {
-		c.slash.Hide()
-		c.Chat.SlashOpen = false
-		return
-	}
 	c.question.Hide()
 	c.Chat.QuestionOpen = false
 	c.mention.Hide()
 	c.Chat.MentionOpen = false
 	c.abandonMentionSearch()
+
+	// If the cursor is in the args of a slash command, show arg completions
+	// even when the command token itself is no longer the active slash.
+	if cmd, argQuery, _, _, _, _, ok := chat.ActiveSlashArgs(c.Chat.Value, c.Chat.Cursor); ok {
+		args := strings.Fields(c.Chat.Value[len(cmd)+2:])
+		c.onSlashArgsChange(cmd, argQuery, args)
+		return
+	}
+
+	if !active {
+		c.slash.Hide()
+		c.Chat.SlashOpen = false
+		return
+	}
+
 	var items []mention.Item
 	if c.commands != nil {
 		items = c.commands.FilterSlash(query)
@@ -925,6 +935,25 @@ func (c *ComposerPane) onSlashChange(active bool, query string) {
 	status := ""
 	if len(items) == 0 {
 		status = "No matching commands"
+	}
+	c.slash.SetResults(items, status)
+	c.slash.Show()
+	c.Chat.SlashOpen = true
+}
+
+func (c *ComposerPane) onSlashArgsChange(command, query string, args []string) {
+	if c == nil || c.commands == nil {
+		return
+	}
+	c.question.Hide()
+	c.Chat.QuestionOpen = false
+	c.mention.Hide()
+	c.Chat.MentionOpen = false
+	c.abandonMentionSearch()
+	items := c.commands.FilterSlashArgs(command, query, args)
+	status := ""
+	if len(items) == 0 {
+		status = "No matching args"
 	}
 	c.slash.SetResults(items, status)
 	c.slash.Show()
@@ -1120,6 +1149,16 @@ func (c *ComposerPane) acceptSlash(item mention.Item) {
 		return
 	}
 	start, end, insert := c.slashTarget(item)
+	if cmd, _, _, _, _, _, ok := chat.ActiveSlashArgs(c.Chat.Value, c.Chat.Cursor); ok && cmd != "" {
+		// In args mode: replace the current arg token and submit if complete.
+		start, end, insert = c.slashArgTarget(item)
+		if strings.TrimSpace(insert) == "" {
+			insert = item.Path
+		}
+		if !strings.HasPrefix(c.Chat.Value[start:], item.Path) {
+			insert = item.Path + " "
+		}
+	}
 	c.Chat.ReplaceRange(start, end, insert)
 	c.slash.Hide()
 	c.Chat.SlashOpen = false
@@ -1130,19 +1169,46 @@ func (c *ComposerPane) acceptSlash(item mention.Item) {
 
 // completeSlash fills the composer with the command and stops there.
 // Enter on a no-arg command runs it; Tab must only complete.
+// For commands that take args, reopen the arg picker immediately (fish-style).
 func (c *ComposerPane) completeSlash(item mention.Item) {
 	if c == nil {
 		return
 	}
 	start, end, insert := c.slashTarget(item)
-	// The trailing space closes the command token; without it ActiveSlash keeps
-	// matching and the picker would reopen on the command just inserted.
-	if !strings.HasSuffix(insert, " ") {
+	if cmd, _, _, _, _, _, ok := chat.ActiveSlashArgs(c.Chat.Value, c.Chat.Cursor); ok && cmd != "" {
+		// In args mode: complete the current arg token only.
+		start, end, insert = c.slashArgTarget(item)
+		if strings.TrimSpace(insert) == "" {
+			insert = item.Path
+		}
+		if !strings.HasPrefix(c.Chat.Value[start:], item.Path) {
+			insert = item.Path + " "
+		}
+	} else if !strings.HasSuffix(insert, " ") {
+		// The trailing space closes the command token; without it ActiveSlash keeps
+		// matching and the picker would reopen on the command just inserted.
 		insert += " "
 	}
 	c.Chat.ReplaceRange(start, end, insert)
+	// If this completed a command that has arg completion, reopen arg picker.
+	if c.commands != nil {
+		if regCmd, ok := c.commands.Lookup(item.Path); ok && regCmd.ArgCompleter != nil {
+			args := strings.Fields(c.Chat.Value[len(item.Path)+2:])
+			c.onSlashArgsChange(item.Path, "", args)
+			return
+		}
+	}
 	c.slash.Hide()
 	c.Chat.SlashOpen = false
+}
+
+// slashArgTarget resolves the composer range to replace for an arg completion.
+func (c *ComposerPane) slashArgTarget(item mention.Item) (start, end int, insert string) {
+	_, _, _, _, start, end, ok := chat.ActiveSlashArgs(c.Chat.Value, c.Chat.Cursor)
+	if !ok {
+		return 0, 0, item.Path
+	}
+	return start, end, item.Path
 }
 
 // slashTarget resolves the composer range to replace and the insert text.

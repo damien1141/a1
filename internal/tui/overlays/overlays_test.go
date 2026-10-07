@@ -38,7 +38,7 @@ func TestResolvePermissionSendsReply(t *testing.T) {
 	}
 }
 
-func TestPermissionDenyWithFeedback(t *testing.T) {
+func TestPermissionDenySendsReject(t *testing.T) {
 	o := testOverlays(controller.NewActivityHandler(nil))
 	reply := make(chan controller.AskReply, 1)
 	o.beginPermissionAsk(controller.OverlayMsg{
@@ -46,13 +46,14 @@ func TestPermissionDenyWithFeedback(t *testing.T) {
 		Request:   permission.Request{Tool: "bash", Action: permission.ActionBash, Command: "curl https://x"},
 		PermReply: reply,
 	})
-	o.acceptPermissionOption(askOptDenyFeedback)
-	require.True(t, o.perm != nil && o.perm.feedbackMode, "expected feedback mode")
-	o.perm.feedback = "use docs instead"
-	o.resolvePermission(controller.AskReply{Feedback: o.perm.feedback})
-	r := <-reply
-	require.False(t, r.Approved)
-	require.Equal(t, "use docs instead", r.Feedback)
+	o.acceptPermissionOption(askOptDeny)
+	require.Nil(t, o.perm, "overlay should clear")
+	select {
+	case r := <-reply:
+		require.False(t, r.Approved)
+	default:
+		require.Fail(t, "expected reply")
+	}
 }
 
 func TestPermissionDismissClearsOverlay(t *testing.T) {

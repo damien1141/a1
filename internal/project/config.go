@@ -426,56 +426,72 @@ func firstEnv(keys ...string) string {
 }
 
 // SetDangerouslyAllowAll persists permissions.dangerously_allow_all in config.yaml
-// ("Allow All for Every Session"). Best-effort rewrite of that key.
+// ("Allow All for Every Session"). Uses a YAML-aware rewrite so indentation
+// and structure remain valid.
 func SetDangerouslyAllowAll(global GlobalLayout, enabled bool) error {
 	path := global.ConfigFile()
+	var doc map[string]any
+	if err := readYAML(path, &doc); err != nil {
+		return err
+	}
+	perms, _ := doc["permissions"].(map[string]any)
+	if perms == nil {
+		perms = map[string]any{}
+		doc["permissions"] = perms
+	}
+	perms["dangerously_allow_all"] = enabled
+	return writeYAML(path, doc)
+}
+
+// AppendBashAllow appends a regex pattern to permissions.bash.allow in
+// config.yaml, creating the section if needed. Duplicates are skipped.
+// Uses a YAML-aware rewrite so indentation and structure remain valid.
+func AppendBashAllow(global GlobalLayout, pattern string) error {
+	trimmed := strings.TrimSpace(pattern)
+	if trimmed == "" {
+		return nil
+	}
+	path := global.ConfigFile()
+	var doc map[string]any
+	if err := readYAML(path, &doc); err != nil {
+		return err
+	}
+	perms, _ := doc["permissions"].(map[string]any)
+	if perms == nil {
+		perms = map[string]any{}
+		doc["permissions"] = perms
+	}
+	bash, _ := perms["bash"].(map[string]any)
+	if bash == nil {
+		bash = map[string]any{}
+		perms["bash"] = bash
+	}
+	allow, _ := bash["allow"].([]string)
+	for _, existing := range allow {
+		if existing == trimmed {
+			return nil
+		}
+	}
+	bash["allow"] = append(allow, trimmed)
+	return writeYAML(path, doc)
+}
+
+func readYAML(path string, out any) error {
 	data, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	lines := []string{}
-	if len(data) > 0 {
-		lines = strings.Split(string(data), "\n")
+	if len(data) == 0 {
+		return nil
 	}
-	val := "false"
-	if enabled {
-		val = "true"
-	}
-	inPerm := false
-	found := false
-	out := make([]string, 0, len(lines)+2)
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		indent := countIndent(line)
-		if indent == 0 && strings.HasPrefix(trimmed, "permissions:") {
-			inPerm = true
-			out = append(out, line)
-			continue
-		}
-		if indent == 0 && trimmed != "" && !strings.HasPrefix(trimmed, "#") {
-			if inPerm && !found {
-				out = append(out, "  dangerously_allow_all: "+val)
-				found = true
-			}
-			inPerm = false
-		}
-		if inPerm && indent == 1 && strings.HasPrefix(trimmed, "dangerously_allow_all:") {
-			out = append(out, "  dangerously_allow_all: "+val)
-			found = true
-			continue
-		}
-		out = append(out, line)
-	}
-	if inPerm && !found {
-		out = append(out, "  dangerously_allow_all: "+val)
-		found = true
-	}
-	if !found {
-		if len(out) > 0 && out[len(out)-1] != "" {
-			out = append(out, "")
-		}
-		out = append(out, "permissions:", "  dangerously_allow_all: "+val)
+	return yaml.Unmarshal(data, out)
+}
+
+func writeYAML(path string, in any) error {
+	out, err := yaml.Marshal(in)
+	if err != nil {
+		return err
 	}
 	//nolint:gosec // G306: config.yaml is meant to be user-readable
-	return os.WriteFile(path, []byte(strings.Join(out, "\n")+"\n"), 0o644)
+	return os.WriteFile(path, append(out, '\n'), 0o644)
 }

@@ -320,15 +320,23 @@ func (o *Overlays) acceptPermissionOption(opt askOption) {
 	switch opt {
 	case askOptApprove:
 		o.resolvePermission(controller.AskReply{Approved: true})
-	case askOptAllowSession:
-		o.resolvePermission(controller.AskReply{Approved: true, AllowSession: true})
-	case askOptAllowPersistent:
-		o.resolvePermission(controller.AskReply{Approved: true, AllowPersistent: true})
-	case askOptDenyFeedback:
-		st.feedbackMode = true
-		st.feedback = ""
-		st.feedbackCur = 0
+	case askOptAllowForever:
+		pattern := allowlistPatternForRequest(st.req)
+		o.resolvePermission(controller.AskReply{Approved: true, AllowPersistent: true, AllowlistPattern: pattern})
+	case askOptDeny:
+		o.resolvePermission(controller.AskReply{})
 	}
+}
+
+func allowlistPatternForRequest(req permission.Request) string {
+	switch req.Action {
+	case permission.ActionBash:
+		cmd := strings.TrimSpace(req.Command)
+		if cmd != "" {
+			return cmd
+		}
+	}
+	return req.Tool
 }
 
 func (o *Overlays) handlePermissionFeedbackKey(ctx *components.EventContext, e xui.KeyEvent) bool {
@@ -466,12 +474,19 @@ func (o *Overlays) drawPermissionAsk(ctx components.DrawContext, width, height i
 		body = append(body, components.WrapSpans(spans, innerW, ctx.Method)...)
 	}
 
-	add(components.Span{Text: st.header, Style: th.Foreground})
-	body = append(body, st.detailLines(th, innerW, ctx.Method)...)
-	if st.reason != "" {
-		add(components.Span{Text: "(" + st.reason + ")", Style: th.Muted})
+	if st.header != "" || st.detail != "" || st.reason != "" {
+		if st.header != "" {
+			add(components.Span{Text: st.header, Style: th.Foreground})
+		}
+		body = append(body, st.detailLines(th, innerW, ctx.Method)...)
+		if st.reason != "" {
+			add(components.Span{Text: "(" + st.reason + ")", Style: th.Muted})
+		}
+		body = append(body, components.RichLine{})
+	} else {
+		add(components.Span{Text: permission.Summarize(st.req), Style: th.Foreground})
+		body = append(body, components.RichLine{})
 	}
-	body = append(body, components.RichLine{})
 
 	if st.feedbackMode {
 		body = append(body, st.feedbackLines(th, primary, innerW, ctx.Method)...)
@@ -524,16 +539,14 @@ type askOption int
 
 const (
 	askOptApprove askOption = iota
-	askOptAllowSession
-	askOptAllowPersistent
-	askOptDenyFeedback
+	askOptAllowForever
+	askOptDeny
 )
 
 var askOptionLabels = []string{
-	"Approve",
-	"Allow All for This Session",
-	"Allow All for Every Session",
-	"Deny with feedback",
+	"Allow once",
+	"Allow forever",
+	"Reject",
 }
 
 var continueOptionLabels = []string{

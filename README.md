@@ -1,8 +1,8 @@
-# A1 v1.2.1
+# A1 v1.5.0
 
 A terminal coding-agent harness for people who want an agent that can actually reason over long sessions, inspect its own permissions, and browse the web without leaving the shell.
 
-Fork of [phi](https://github.com/pulseaiclub/phi) with fold-based context management, live APPA permission control, and Playwright-driven browser automation baked in.
+Fork of [phi](https://github.com/pulseaiclub/phi) with fold-based context management, live APPA permission control, and Playwright-driven browser automation baked in. ~85k LOC of Go, no runtime bloat.
 
 **Docs:** [pulseaiclub.github.io](https://pulseaiclub.github.io/)
 

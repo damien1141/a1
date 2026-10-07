@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/damien1141/a1/internal/configserver"
 	"github.com/damien1141/a1/internal/project"
 )
 
@@ -47,13 +48,13 @@ func TestConfigHandlerGETAndRoundTrip(t *testing.T) {
 	path := filepath.Join(phiDir, "config.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(configUIFixture), 0o644))
 
-	h := &configHandler{configPath: path}
+	h := &configserver.Handler{ConfigPath: path}
 
 	// GET serves the current document.
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, newLocalAPIRequest(http.MethodGet, "/api/config", nil))
 	require.Equal(t, http.StatusOK, rr.Code)
-	var got configDoc
+	var got configserver.ConfigDoc
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
 	require.Len(t, got.Models, 2)
 	assert.Equal(t, "model-a", got.Models[0].Name)
@@ -102,28 +103,28 @@ func TestConfigHandlerGETAndRoundTrip(t *testing.T) {
 }
 
 func TestConfigHandlerMissingFile(t *testing.T) {
-	h := &configHandler{configPath: filepath.Join(t.TempDir(), "nope.yaml")}
+	h := &configserver.Handler{ConfigPath: filepath.Join(t.TempDir(), "nope.yaml")}
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, newLocalAPIRequest(http.MethodGet, "/api/config", nil))
 	require.Equal(t, http.StatusOK, rr.Code)
-	var doc configDoc
+	var doc configserver.ConfigDoc
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &doc))
 	assert.Empty(t, doc.Models)
 }
 
 func TestConfigHandlerValidation(t *testing.T) {
-	h := &configHandler{configPath: filepath.Join(t.TempDir(), "config.yaml")}
+	h := &configserver.Handler{ConfigPath: filepath.Join(t.TempDir(), "config.yaml")}
 
 	cases := []struct {
 		name string
-		doc  configDoc
+		doc  configserver.ConfigDoc
 	}{
-		{"no models", configDoc{}},
-		{"default missing api_key", configDoc{Models: []modelDoc{{Name: "m"}}}},
+		{"no models", configserver.ConfigDoc{}},
+		{"default missing api_key", configserver.ConfigDoc{Models: []configserver.ModelDoc{{Name: "m"}}}},
 		{
 			"two defaults",
-			configDoc{
-				Models: []modelDoc{{Name: "a", APIKey: "k", Default: true}, {Name: "b", APIKey: "k", Default: true}},
+			configserver.ConfigDoc{
+				Models: []configserver.ModelDoc{{Name: "a", APIKey: "k", Default: true}, {Name: "b", APIKey: "k", Default: true}},
 			},
 		},
 	}
@@ -138,21 +139,21 @@ func TestConfigHandlerValidation(t *testing.T) {
 	}
 
 	// A minimal valid document saves and marks the first model default.
-	doc := configDoc{Models: []modelDoc{{Name: "m", APIKey: "k"}}}
+	doc := configserver.ConfigDoc{Models: []configserver.ModelDoc{{Name: "m", APIKey: "k"}}}
 	body, err := json.Marshal(doc)
 	require.NoError(t, err)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, newJSONAPIRequest("/api/config", strings.NewReader(string(body))))
 	require.Equal(t, http.StatusOK, rr.Code)
 
-	data, err := os.ReadFile(h.configPath)
+	data, err := os.ReadFile(h.ConfigPath)
 	require.NoError(t, err)
 	require.Contains(t, string(data), "default: true")
 	require.Contains(t, string(data), "name: m")
 }
 
 func TestConfigHandlerServesPage(t *testing.T) {
-	h := &configHandler{configPath: filepath.Join(t.TempDir(), "config.yaml")}
+	h := &configserver.Handler{ConfigPath: filepath.Join(t.TempDir(), "config.yaml")}
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", http.NoBody))
 	require.Equal(t, http.StatusOK, rr.Code)
@@ -228,7 +229,7 @@ func TestConfigHandlerListsModels(t *testing.T) {
 			}))
 			defer server.Close()
 
-			body, err := json.Marshal(modelListRequest{
+			body, err := json.Marshal(configserver.ModelListRequest{
 				BaseURL: server.URL + "/v1",
 				APIKey:  "test-key",
 				Model:   tc.model,
@@ -236,7 +237,7 @@ func TestConfigHandlerListsModels(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			h := &configHandler{configPath: filepath.Join(t.TempDir(), "config.yaml")}
+			h := &configserver.Handler{ConfigPath: filepath.Join(t.TempDir(), "config.yaml")}
 			rr := httptest.NewRecorder()
 			h.ServeHTTP(rr, newJSONAPIRequest("/api/models", strings.NewReader(string(body))))
 			require.Equal(t, http.StatusOK, rr.Code)
@@ -380,7 +381,7 @@ func TestConfigHandlerRejectsUnsafePOSTs(t *testing.T) {
 			"/api/models",
 			modelBody,
 			"application/json",
-			"attacker.example",
+			localHost,
 			"http://attacker.example",
 			http.StatusForbidden,
 		},
@@ -389,7 +390,7 @@ func TestConfigHandlerRejectsUnsafePOSTs(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			before := targetRequests.Load()
-			h := &configHandler{configPath: filepath.Join(t.TempDir(), "config.yaml")}
+			h := &configserver.Handler{ConfigPath: filepath.Join(t.TempDir(), "config.yaml")}
 			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, tc.path, strings.NewReader(tc.body))
 			req.Host = tc.host
 			req.Header.Set("Content-Type", tc.contentType)
@@ -402,7 +403,7 @@ func TestConfigHandlerRejectsUnsafePOSTs(t *testing.T) {
 
 			assert.Equal(t, tc.wantStatus, rr.Code)
 			assert.Equal(t, before, targetRequests.Load())
-			_, err := os.Stat(h.configPath)
+			_, err := os.Stat(h.ConfigPath)
 			assert.ErrorIs(t, err, os.ErrNotExist)
 		})
 	}
@@ -416,7 +417,7 @@ func TestConfigHandlerRejectsNonLoopbackGET(t *testing.T) {
     default: true
 `), 0o600))
 
-	h := &configHandler{configPath: path}
+	h := &configserver.Handler{ConfigPath: path}
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", http.NoBody)
 	req.Host = "attacker.example"
 	rr := httptest.NewRecorder()
@@ -429,14 +430,14 @@ func TestConfigHandlerRejectsNonLoopbackGET(t *testing.T) {
 
 func requestModelList(t *testing.T, baseURL, model string) *httptest.ResponseRecorder {
 	t.Helper()
-	body, err := json.Marshal(modelListRequest{
+	body, err := json.Marshal(configserver.ModelListRequest{
 		BaseURL: baseURL,
 		APIKey:  "test-key",
 		Model:   model,
 	})
 	require.NoError(t, err)
 
-	h := &configHandler{configPath: filepath.Join(t.TempDir(), "config.yaml")}
+	h := &configserver.Handler{ConfigPath: filepath.Join(t.TempDir(), "config.yaml")}
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, newJSONAPIRequest("/api/models", strings.NewReader(string(body))))
 	return rr

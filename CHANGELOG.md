@@ -36,6 +36,28 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Security
 
+## [1.5.0] - 2026-10-06
+
+### Added
+- Fish-style slash command autocomplete with arg-level completion.
+- `/permission` slash command with arg completion for `trajectory`, `recovery`, `authority`.
+- `ArgCompleter` support on `Command` with `FilterSlashArgs` in the registry.
+- `ActiveSlashArgs` cursor detection in `internal/components/chat/slash.go`.
+- Chained tab completion: completing a command with args immediately reopens the arg picker.
+- Permission prompt now offers three options: **Allow once**, **Allow forever** (persists to `~/.a1/config.yaml` allowlist), **Reject**.
+- `StaticGate.AppendBashAllow` and `project.AppendBashAllow` for runtime allowlist mutation.
+
+### Changed
+- `/permission` command executes directly instead of inserting text.
+
+### Fixed
+- APPA end-to-end behavior verified; autopilot mode still bypasses checks for allowlist matches.
+
+### Security
+
+[1.5.0]: https://github.com/pulseaiclub/phi/compare/v1.2.1...v1.5.0
+[1.5.0]: https://github.com/pulseaiclub/phi/releases/tag/v1.5.0
+
 ## [1.2.1] - 2026-10-05
 
 ### Added

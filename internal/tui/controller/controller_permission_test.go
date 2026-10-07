@@ -46,4 +46,17 @@ func TestPermissionMode_CycleAndSet(t *testing.T) {
 	// Cycle again -> interactive.
 	ctrl.CyclePermissionMode()
 	assert.Equal(t, permission.ModeInteractive, ctrl.PermissionMode())
+
+	// Verify APPA trajectory state survives mode switches.
+	inner := ctrl.gate.(*permission.SessionAllowGate).Inner.(*permission.StaticGate)
+	inner.Trajectory().Effects.Commit("setup", "setup_done")
+	inner.Trajectory().Label = permission.NewPartialLabel(
+		permission.Label{Trust: permission.Untrusted, ReaderSet: []string{}},
+		[]string{"src1"},
+	)
+
+	ctrl.SetPermissionMode(permission.ModeReadonly)
+	inner = ctrl.gate.(*permission.SessionAllowGate).Inner.(*permission.StaticGate)
+	assert.True(t, inner.Trajectory().Effects.Has("setup_done"), "trajectory effects should survive mode switch")
+	assert.Equal(t, 1, len(inner.Trajectory().Label.Unresolved), "unresolved sources should survive mode switch")
 }

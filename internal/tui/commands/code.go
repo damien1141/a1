@@ -23,5 +23,11 @@ func (c *CodeCommands) Register(r *CommandRegistry) {
 			}
 			return nil
 		},
+		ArgCompleter: func(args []string) []ArgItem {
+			if len(args) == 0 {
+				return []ArgItem{{Insert: "./", Description: "current directory"}}
+			}
+			return nil
+		},
 	})
 }

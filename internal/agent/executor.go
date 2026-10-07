@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -348,6 +349,13 @@ func (e *Executor) runOne(
 		_ = emit(session.ToolData{Run: e.toolRun(call, session.ToolError, detail, errText, output)})
 		return e.toolMessage(call.ID, modelContent), postStop, postReason
 	}
+
+	// APPA Phase 1 post-execution admission: fold realized output into trajectory.
+	if admitErr := e.admitExecution(ctx, call, content, output, emit); admitErr != nil {
+		_ = emit(session.ToolData{Run: e.toolRun(call, session.ToolError, detail, admitErr.Error(), output)})
+		return e.toolMessage(call.ID, admitErr.Error()), postStop, postReason
+	}
+
 	run := e.toolRun(call, session.ToolDone, detail, "", output)
 	run.Expanded = result.Expanded
 	if e.telemetry != nil {
@@ -359,7 +367,58 @@ func (e *Executor) runOne(
 	return e.toolMessage(call.ID, modelContent), postStop, postReason
 }
 
-// consultAuthority applies Step 4 call-scoped authority when the policy requires it.
+// admitExecution performs the APPA Phase 1 post-execution admission check.
+// It folds the realized output label into the trajectory state via gate.Admit.
+func (e *Executor) admitExecution(
+	ctx context.Context,
+	call llm.ToolCall,
+	content, output string,
+	emit func(session.ToolData) bool,
+) error {
+	req := permission.Request{
+		Action:      toolAction(call.Function.Name),
+		Tool:        call.Function.Name,
+		OutputLabel: permission.DefaultTrustForToolOutput(call.Function.Name),
+	}
+
+	dec, reason := e.gate.Admit(ctx, req)
+	switch dec {
+	case permission.Allow:
+		return nil
+	case permission.Deny:
+		if reason == "" {
+			reason = "tool execution denied by admission check"
+		}
+		_ = emit(session.ToolData{Run: e.toolRun(call, session.ToolRejected, "", reason, output)})
+		return errors.New(reason)
+	case permission.Ask:
+		if reason == "" {
+			reason = "tool execution requires admission approval"
+		}
+		_ = emit(session.ToolData{Run: e.toolRun(call, session.ToolRejected, "", reason, output)})
+		return errors.New(reason)
+	default:
+		return errors.New("unknown admission decision")
+	}
+}
+
+func toolAction(name string) permission.Action {
+	switch name {
+	case "read", "grep", "find", "ls":
+		return permission.ActionRead
+	case "write", "edit":
+		return permission.ActionWrite
+	case "bash":
+		return permission.ActionBash
+	case "agent":
+		return permission.ActionAgent
+	default:
+		return permission.Action(name)
+	}
+}
+
+// consultAuthority delegates to the gate's built-in authority handler so that
+// call-scoped rulings are logged atomically in trajectory state.
 func (e *Executor) consultAuthority(
 	ctx context.Context,
 	dec permission.Decision,
@@ -370,19 +429,10 @@ func (e *Executor) consultAuthority(
 		return dec, reason
 	}
 	static, ok := e.gate.(*permission.StaticGate)
-	if !ok || !static.Policy.RequiresAuthority {
+	if !ok {
 		return dec, reason
 	}
-	authority, _ := static.Policy.Authority.(permission.Authority)
-	if authority == nil {
-		return dec, reason
-	}
-	callHash := permission.CallHash(req)
-	dec, reason = authority.Authorize(ctx, callHash, req)
-	if dec == permission.Allow || dec == permission.Deny {
-		return dec, reason
-	}
-	return permission.Ask, reason
+	return static.ConsultAuthority(ctx, dec, reason, req)
 }
 
 func (e *Executor) checkPermission(

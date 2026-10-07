@@ -62,6 +62,14 @@ func NewBuiltinRegistry(
 	code := &CodeCommands{Open: openCode}
 	browser := &BrowserCommands{}
 	snapshot := &SnapshotCommands{}
+	permission := &PermissionCommands{
+		Bus:  bus,
+		Ctrl: ctrl,
+	}
+	config := &ConfigCommands{
+		Bus:  bus,
+		Ctrl: ctrl,
+	}
 
 	sessions.Register(r)
 	branches.Register(r)
@@ -72,6 +80,8 @@ func NewBuiltinRegistry(
 	code.Register(r)
 	browser.Register(r)
 	snapshot.Register(r)
+	permission.Register(r)
+	config.Register(r)
 
 	return &Builtin{Registry: r, Sessions: sessions, Branches: branches, Ext: ext}
 }

@@ -18,6 +18,7 @@ const (
 	ToastSuccess ToastKind = iota
 	ToastError
 	ToastWarning
+	ToastInfo
 )
 
 // Toast is a top overlay notification (green border + ✓ for success).
@@ -146,6 +147,8 @@ func toastChrome(kind ToastKind, th components.Theme) (border xui.Style, icon st
 		return th.Destructive, chrome.Err
 	case ToastWarning:
 		return th.Warning, ""
+	case ToastInfo:
+		return th.Foreground, ""
 	default:
 		return th.Success, chrome.Ok
 	}
