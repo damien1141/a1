@@ -169,24 +169,4 @@ What changed:
 
 Sub-agent transcripts live under `~/.a1/jobs/<id>/` and are **not** injected into the parent context.
 
-## Quick start
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/damien1141/a1/main/scripts/install.sh | bash
-```
-
-```sh
-a1 config
-a1 run -p "fix the failing test in internal/tools"
-```
-
-Build from source:
-
-```sh
-make build          # produces ./a1
-make install        # build and install into $GOBIN
-```
-
-On first start, A1 creates `~/.a1/{bin,skills,hooks,session}`. Search tools (`fd`, `rg`) download into `~/.a1/bin` when missing.
-
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and commit conventions.
