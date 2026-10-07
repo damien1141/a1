@@ -20,20 +20,17 @@ On top of that, 30+ analysis tools, semantic code search, dependency graphs, bat
 
 ## Quick start
 
+Build from source:
+
 ```sh
-curl -fsSL https://raw.githubusercontent.com/damien1141/a1/main/scripts/install.sh | bash
+git clone https://github.com/damien1141/a1 && cd a1
+make build          # produces ./a1
+make install        # build and install into $GOBIN
 ```
 
 ```sh
 a1 config
 a1 run -p "fix the failing test in internal/tools"
-```
-
-Build from source:
-
-```sh
-make build          # produces ./a1
-make install        # build and install into $GOBIN
 ```
 
 On first start, A1 creates `~/.a1/{bin,skills,hooks,session}`. Search tools (`fd`, `rg`) download into `~/.a1/bin` when missing.

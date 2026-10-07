@@ -20,20 +20,17 @@ phi 已经是我用过的最精简、最实用的终端编码代理框架。这�
 
 ## 快速开始
 
+从源码构建：
+
 ```sh
-curl -fsSL https://raw.githubusercontent.com/damien1141/a1/main/scripts/install.sh | bash
+git clone https://github.com/damien1141/a1 && cd a1
+make build          # 生成 ./a1
+make install        # 构建并安装到 $GOBIN
 ```
 
 ```sh
 a1 config
 a1 run -p "fix the failing test in internal/tools"
-```
-
-从源码构建：
-
-```sh
-make build          # 生成 ./a1
-make install        # 构建并安装到 $GOBIN
 ```
 
 首次启动时，A1 会自动创建 `~/.a1/{bin,skills,hooks,session}`。搜索工具（`fd`、`rg`）缺失时会在后台下载到 `~/.a1/bin`。
