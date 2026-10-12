@@ -362,13 +362,52 @@ func applyPermissions(p *permission.Policy, raw *permConfig) {
 		if b.Default != nil {
 			p.BashDefault = parseDecision(*b.Default, p.BashDefault)
 		}
+		// The user's list extends the built-in safe patterns rather than
+		// replacing them. Replacing meant one entry — `allow: [make]` — silently
+		// discarded the fourteen defaults, so git status, ls, and go test all
+		// fell through to `default: ask` and every command started prompting.
+		//
+		// An explicitly empty list is the opt-out, and YAML distinguishes it from
+		// an absent key: absent unmarshals to nil, `[]` to a non-nil zero-length
+		// slice. So `allow: []` is the one case that really means "no built-ins".
 		if b.Allow != nil {
-			p.BashAllow = *b.Allow
+			if len(*b.Allow) == 0 {
+				p.BashAllow = nil
+			} else {
+				p.BashAllow = unionStrings(p.BashAllow, *b.Allow)
+			}
 		}
+		// The deny list unions rather than replaces, because the hard defaults
+		// are safety-net patterns (sudo, rm -rf, curl|sh) that exist to be
+		// non-overridable. A config that narrows safety must say so explicitly
+		// with an empty list.
 		if b.Deny != nil {
-			p.BashDeny = *b.Deny
+			if len(*b.Deny) == 0 {
+				p.BashDeny = nil
+			} else {
+				p.BashDeny = unionStrings(p.BashDeny, *b.Deny)
+			}
 		}
 	}
+}
+
+// unionStrings concatenates the two lists while dropping duplicates from extra,
+// so a config's deny patterns add to the hard defaults instead of silently
+// discarding sudo / rm -rf / curl|sh. Order is preserved: defaults first, then
+// anything the user added, so the first match wins for the common patterns.
+func unionStrings(base, extra []string) []string {
+	seen := make(map[string]bool, len(base)+len(extra))
+	out := make([]string, 0, len(base)+len(extra))
+	for _, list := range [][]string{base, extra} {
+		for _, s := range list {
+			if seen[s] {
+				continue
+			}
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // stringList accepts either a single YAML scalar or a sequence, so both

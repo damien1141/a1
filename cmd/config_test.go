@@ -93,7 +93,12 @@ func TestConfigHandlerGETAndRoundTrip(t *testing.T) {
 	assert.True(t, cfg.Model().ImageEnabled)
 	assert.Equal(t, "readonly", string(cfg.Permissions.Mode))
 	assert.True(t, cfg.Permissions.DangerouslyAllowAll)
-	assert.Equal(t, []string{"^git "}, cfg.Permissions.BashAllow)
+	// BashAllow is merged over the built-in defaults at load time: a config
+	// pattern extends the safe list rather than replacing it, so the file's
+	// "^git " survives alongside the defaults. The GET above still returns the
+	// raw document, so saving does not bloat the file with the merged set.
+	assert.Contains(t, cfg.Permissions.BashAllow, "^git ")
+	assert.Greater(t, len(cfg.Permissions.BashAllow), 1, "the built-in defaults survive the merge")
 	assert.False(t, cfg.Agents.Enabled)
 
 	// The previous file content is kept as a backup.
@@ -124,7 +129,10 @@ func TestConfigHandlerValidation(t *testing.T) {
 		{
 			"two defaults",
 			configserver.ConfigDoc{
-				Models: []configserver.ModelDoc{{Name: "a", APIKey: "k", Default: true}, {Name: "b", APIKey: "k", Default: true}},
+				Models: []configserver.ModelDoc{
+					{Name: "a", APIKey: "k", Default: true},
+					{Name: "b", APIKey: "k", Default: true},
+				},
 			},
 		},
 	}

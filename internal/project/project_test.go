@@ -11,7 +11,7 @@ import (
 )
 
 // discoverInTempHome runs Discover("") with HOME redirected to a temp dir so
-// tests never touch the real ~/.phi.
+// tests never touch the real ~/.a1.
 func discoverInTempHome(t *testing.T) *Project {
 	t.Helper()
 	home := t.TempDir()
@@ -177,8 +177,15 @@ permissions:
 	perm := p.Config().Permissions
 	assert.Equal(t, "headless-strict", string(perm.Mode))
 	assert.Equal(t, 30, perm.AskTimeoutSec)
-	assert.Equal(t, []string{`^echo\b`}, perm.BashAllow)
-	assert.Equal(t, []string{`\bsudo\b`}, perm.BashDeny)
+	// The lists extend the built-ins: `^echo\b` is already a default and the
+	// union keeps one copy of it, and `\bsudo\b` likewise. What must not happen
+	// is the config's list *replacing* the defaults, which is what made a
+	// single-entry allow list turn git status and go test into prompts.
+	assert.Contains(t, perm.BashAllow, `^echo\b`)
+	assert.Equal(t, 1, countPattern(perm.BashAllow, `^echo\b`), "a duplicate default is not added twice")
+	assert.Greater(t, len(perm.BashAllow), 1, "the other built-in safe patterns survive")
+	assert.Contains(t, perm.BashDeny, `\bsudo\b`)
+	assert.Greater(t, len(perm.BashDeny), 1, "the hard deny defaults survive")
 	assert.True(t, p.Config().Agents.Enabled) // default on when agents: absent
 }
 
@@ -284,8 +291,14 @@ permissions:
 
 	require.NoError(t, p.LoadConfig())
 	perm := p.Config().Permissions
-	assert.Equal(t, []string{"go test ./..."}, perm.BashAllow)
-	assert.Equal(t, []string{"rm -rf", "sudo"}, perm.BashDeny)
+	// Both forms extend the built-in list. A config that names its own patterns
+	// should add to the safe defaults, not discard them — the old replace
+	// semantics meant `allow: make` alone turned git status and go test into
+	// prompts.
+	assert.Contains(t, perm.BashAllow, "go test ./...", "the scalar form still parses")
+	assert.Contains(t, perm.BashDeny, "rm -rf")
+	assert.Contains(t, perm.BashDeny, "sudo", "the flow form still parses")
+	assert.Contains(t, perm.BashDeny, `\bsudo\b`, "and the hard defaults survive")
 }
 
 func TestLoadConfigInvalidYAML(t *testing.T) {
@@ -416,14 +429,175 @@ permissions:
     deny: []
 `), 0o644))
 
+	// A non-empty allow list extends the built-in safe patterns rather than
+	// replacing them: a config listing one pattern used to silently discard all
+	// fourteen defaults and turn git status and go test into prompts.
 	require.NoError(t, AppendBashAllow(p.Global(), "^make build\\b"))
 	cfg, err := loadConfig(p.Global())
 	require.NoError(t, err)
-	assert.Equal(t, []string{"^make build\\b"}, cfg.Permissions.BashAllow)
+	assert.Contains(t, cfg.Permissions.BashAllow, "^make build\\b", "the appended pattern is allowed")
+	assert.Greater(t, len(cfg.Permissions.BashAllow), 1, "the built-in defaults survive")
 
-	// Duplicate append should be a no-op.
+	// Duplicate append should be a no-op: present once, not twice.
 	require.NoError(t, AppendBashAllow(p.Global(), "^make build\\b"))
 	cfg2, err := loadConfig(p.Global())
 	require.NoError(t, err)
-	assert.Equal(t, []string{"^make build\\b"}, cfg2.Permissions.BashAllow)
+	assert.Equal(t, 1, countPattern(cfg2.Permissions.BashAllow, "^make build\\b"))
+	assert.Equal(t, len(cfg.Permissions.BashAllow), len(cfg2.Permissions.BashAllow),
+		"a duplicate append adds nothing")
+}
+
+func countPattern(list []string, want string) int {
+	n := 0
+	for _, s := range list {
+		if s == want {
+			n++
+		}
+	}
+	return n
+}
+
+func TestUIAutoExpandDefaultsTrue(t *testing.T) {
+	// An absent key means on, so a fresh config shows tool output without setup.
+	assert.True(t, UIConfig{}.AutoExpandToolOutputResolved(), "absent defaults to true")
+
+	off := false
+	assert.False(t, UIConfig{AutoExpandToolOutput: &off}.AutoExpandToolOutputResolved(),
+		"an explicit false opts out")
+
+	on := true
+	assert.True(t, UIConfig{AutoExpandToolOutput: &on}.AutoExpandToolOutputResolved(),
+		"an explicit true stays on")
+}
+
+func TestParseConfigUIAutoExpandRoundTrip(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	path := filepath.Join(home, ".a1", "config.yaml")
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+
+	// Absent → nil → resolves true.
+	require.NoError(t, os.WriteFile(path, []byte("models:\n  - name: m\n    api_key: k\n"), 0o644))
+	cfg, err := parseConfigFile(path)
+	require.NoError(t, err)
+	assert.Nil(t, cfg.UI.AutoExpandToolOutput, "an absent key stays nil so it can round-trip as absent")
+	assert.True(t, cfg.UI.AutoExpandToolOutputResolved())
+
+	// Explicit false parses and is honored.
+	require.NoError(
+		t,
+		os.WriteFile(
+			path,
+			[]byte("models:\n  - name: m\n    api_key: k\nui:\n  auto_expand_tool_output: false\n"),
+			0o644,
+		),
+	)
+	cfg, err = parseConfigFile(path)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.UI.AutoExpandToolOutput)
+	assert.False(t, cfg.UI.AutoExpandToolOutputResolved(), "an explicit false is honored")
+}
+
+// The regression this guards: a config with one allow entry silently discarded
+// every built-in safe pattern, so git status, ls, and go test all fell through
+// to `default: ask` and every command prompted. The user's entry is meant to
+// widen the allowlist, not replace it.
+func TestLoadConfigSingleAllowEntryKeepsDefaults(t *testing.T) {
+	p := discoverInTempHome(t)
+	require.NoError(t, os.WriteFile(p.Global().ConfigFile(), []byte(`
+models:
+  - name: m
+    api_key: k
+permissions:
+  bash:
+    default: ask
+    allow:
+      - make
+    deny: []
+`), 0o644))
+
+	require.NoError(t, p.LoadConfig())
+	perm := p.Config().Permissions
+
+	assert.Contains(t, perm.BashAllow, "make", "the user's entry is allowed")
+	// The defaults that matter most in day-to-day use.
+	for _, pat := range []string{`^ls\b`, `^cat\b`, `^go (test|build|vet|fmt|mod|list|env|version)\b`} {
+		assert.Contains(t, perm.BashAllow, pat, "the built-in default %q must survive", pat)
+	}
+	assert.Len(t, perm.BashAllow, defaultBashAllowCount(t)+1,
+		"the built-in defaults plus the one user entry")
+}
+
+// An explicitly empty list is the opt-out, and YAML tells it apart from an
+// absent key: `allow: []` unmarshals to a non-nil empty slice, so it means
+// "no built-ins" rather than "inherit them".
+func TestLoadConfigEmptyAllowListOptsOutOfDefaults(t *testing.T) {
+	p := discoverInTempHome(t)
+	require.NoError(t, os.WriteFile(p.Global().ConfigFile(), []byte(`
+models:
+  - name: m
+    api_key: k
+permissions:
+  bash:
+    allow: []
+`), 0o644))
+
+	require.NoError(t, p.LoadConfig())
+	assert.Empty(t, p.Config().Permissions.BashAllow,
+		"an explicit empty list drops the built-in safe patterns")
+}
+
+// An absent allow key inherits the defaults rather than clearing them.
+func TestLoadConfigAbsentAllowListInheritsDefaults(t *testing.T) {
+	p := discoverInTempHome(t)
+	require.NoError(t, os.WriteFile(p.Global().ConfigFile(), []byte(`
+models:
+  - name: m
+    api_key: k
+permissions:
+  bash:
+    default: ask
+`), 0o644))
+
+	require.NoError(t, p.LoadConfig())
+	assert.Len(t, p.Config().Permissions.BashAllow, defaultBashAllowCount(t),
+		"an absent list inherits the built-in safe patterns")
+}
+
+// A config's deny list must not be able to silently drop the hard safety-net
+// patterns (sudo, rm -rf, curl|sh) by naming its own.
+func TestLoadConfigDenyListExtendsHardDefaults(t *testing.T) {
+	p := discoverInTempHome(t)
+	require.NoError(t, os.WriteFile(p.Global().ConfigFile(), []byte(`
+models:
+  - name: m
+    api_key: k
+permissions:
+  bash:
+    deny:
+      - 'terraform destroy'
+`), 0o644))
+
+	require.NoError(t, p.LoadConfig())
+	deny := p.Config().Permissions.BashDeny
+	assert.Contains(t, deny, "terraform destroy", "the user's deny pattern is added")
+	assert.Contains(t, deny, `\bsudo\b`, "sudo stays denied")
+	assert.Contains(t, deny, `\brm\s+-[a-zA-Z]*[rf][a-zA-Z]*\b`, "rm -rf stays denied")
+}
+
+// defaultBashAllowCount is how many patterns the built-in list ships, so the
+// arithmetic assertions above stay honest if that list changes. It is derived
+// from a config with no permissions block — that yields DefaultPolicy — rather
+// than a literal, and without importing permission, which imports this package.
+func defaultBashAllowCount(t *testing.T) int {
+	// A config with no permissions block yields DefaultPolicy. The temp home is
+	// written directly rather than through discoverInTempHome, because that
+	// helper calls t.Setenv and calling it here would repoint HOME underneath
+	// the test already using its own.
+	p, err := Discover(t.TempDir())
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(p.Global().ConfigFile(),
+		[]byte("models:\n  - name: m\n    api_key: k\n"), 0o644))
+	require.NoError(t, p.LoadConfig())
+	return len(p.Config().Permissions.BashAllow)
 }
