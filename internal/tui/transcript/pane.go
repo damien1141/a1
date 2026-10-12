@@ -229,6 +229,23 @@ func (t *TranscriptPane) ApplyJobProgress(p job.Progress) bool {
 	return t.subagents.ApplyProgress(p)
 }
 
+// Entries exposes the projected widgets. Read-only: callers use it to assert on
+// what the transcript currently shows without driving a full draw cycle.
+func (t *TranscriptPane) Entries() []components.Widget {
+	if t == nil {
+		return nil
+	}
+	return t.list.Entries
+}
+
+// EntryIDs exposes the projected ids in order, parallel to Entries.
+func (t *TranscriptPane) EntryIDs() []string {
+	if t == nil {
+		return nil
+	}
+	return t.listIDs
+}
+
 // Sync rebuilds transcript widgets from snap.
 func (t *TranscriptPane) Sync() {
 	if t == nil || t.mapper == nil {

@@ -33,12 +33,16 @@ func writeChecklist(t *testing.T, dir, body string) string {
 	return path
 }
 
-func TestMapperChecklistRowLeadsTranscript(t *testing.T) {
+// The row trails the transcript so it sits just above the composer, where the
+// eye already is. It used to lead, which put it above the fold where it was
+// invisible until you scrolled up — and it drifted further away as the
+// conversation grew.
+func TestMapperChecklistRowTrailsTranscript(t *testing.T) {
 	dir := t.TempDir()
 	m := transcript.NewMapper(components.DefaultTheme(), nil, nil)
 	m.Checklist = transcript.NewChecklistSource(writeChecklist(t, dir, checklistText))
 
-	entries, ids, _ := m.Sync(nil, nil, session.Snapshot{
+	entries, ids, dirty := m.Sync(nil, nil, session.Snapshot{
 		Messages: []session.Message{{
 			ID: "m1", Role: session.RoleAssistant, State: session.StateComplete,
 			Content: []session.ContentBlock{{Type: session.BlockToolUse, ID: "c1", Name: "read", Complete: true}},
@@ -48,10 +52,13 @@ func TestMapperChecklistRowLeadsTranscript(t *testing.T) {
 		}},
 	})
 
-	require.Len(t, entries, 2, "the checklist row plus the tool row")
-	assert.Equal(t, transcript.ChecklistSourceEntryID, ids[0], "the row leads")
-	cl, ok := entries[0].(*block.ChecklistBlock)
-	require.True(t, ok, "got %T", entries[0])
+	require.Len(t, entries, 2, "the tool row plus the checklist row")
+	require.Len(t, ids, 2)
+	assert.Equal(t, "tool-c1", ids[0], "session rows keep their order")
+	assert.Equal(t, transcript.ChecklistSourceEntryID, ids[1], "the checklist trails")
+	cl, ok := entries[1].(*block.ChecklistBlock)
+	require.True(t, ok, "got %T", entries[1])
+	assert.Contains(t, dirty, 1, "the trailing row is dirtied at its own index")
 
 	done, open, _ := cl.Counts()
 	assert.Equal(t, 1, done)
@@ -149,6 +156,8 @@ func TestMapperChecklistStalenessCountsEdits(t *testing.T) {
 			"e2": {ToolUseID: "e2", Name: "write", Status: session.ToolDone, Detail: "c.go"},
 		},
 	})
-	cl := entries[0].(*block.ChecklistBlock)
+	// Three tool rows, then the trailing checklist row.
+	cl := entries[3].(*block.ChecklistBlock)
+	require.Len(t, entries, 4)
 	assert.Equal(t, 2, cl.StaleFor, "edit and write count; the read does not")
 }

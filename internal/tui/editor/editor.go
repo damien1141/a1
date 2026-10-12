@@ -2,6 +2,7 @@
 package editor
 
 import (
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -73,6 +74,7 @@ func NewEditor(
 	cwd, modelLabel, skillPath string,
 	contextWindow int,
 	modelNames []string,
+	autoExpandToolOutput bool,
 ) *Editor {
 	e := &Editor{
 		vx:       vx,
@@ -91,14 +93,15 @@ func NewEditor(
 	if e.ctrl != nil {
 		e.composer.SetModelLabel(e.ctrl.ModelName(), string(e.ctrl.ThinkLevel()))
 	}
-	// Seed the label from the controller's startup config so the thinking
-	// level shows even when no ModelChangeMsg fires — e.g. the startup model
-	// ships with think.mode=default and the user never switches models.
-	if e.ctrl != nil {
-		e.composer.SetModelLabel(e.ctrl.ModelName(), string(e.ctrl.ThinkLevel()))
-	}
 	e.transcript = transcript.NewTranscriptPane(theme, e.footer.Spinner(), "A1 "+version.Version)
+	e.transcript.SetAutoExpandToolOutput(autoExpandToolOutput)
+	e.transcript.SetChecklistFile(filepath.Join(cwd, ChecklistFileName))
 	e.transcript.SetUsageCallback(e.footer.UpdateTokenDisplay)
+	// Sync once at startup. The transcript is normally synced from a session
+	// event (drainBus), but the checklist row is synthesized by the mapper
+	// rather than projected from the session — so with no session events yet,
+	// an existing TODO.md never appeared until the first prompt was sent.
+	e.transcript.Sync()
 	e.footer.BindComposer(e.composer)
 	e.footer.SetLabelContext(e.transcript.Snapshot)
 	e.footer.SetLiveJobs(func() int {
@@ -210,9 +213,11 @@ func NewEditor(
 		func() bool { return e.ctrl != nil && e.ctrl.ImageEnabled() },
 		e.blocksComposer,
 		e.overlays.HandlePermissionKey,
+		e.overlays.HandleQuestionKey,
 		e.overlays.HandleContinueKey,
 		e.overlays.HandleConfirmKey,
 		e.handleCopyKey,
+		e.handleMessageActionsKey,
 		func() {
 			if e.App != nil {
 				e.App.RequestFocus(e)
@@ -457,6 +462,58 @@ func (e *Editor) handleCopyKey(ctx *components.EventContext, ke xui.KeyEvent) bo
 	return e.transcript.HandleCopyKey(ctx, ke)
 }
 
+// handleMessageActionsKey owns the transcript cursor.
+//
+// shift+up enters the mode (and is not a plain Up, so it never moves the caret).
+// While the mode is active it takes every key first, so typing a message is
+// impossible until Esc leaves — which is the same trade Claude Code makes, and
+// the footer hint says so.
+func (e *Editor) handleMessageActionsKey(ctx *components.EventContext, ke xui.KeyEvent) bool {
+	if e.transcript == nil {
+		return false
+	}
+	actions := e.transcript.Actions()
+	if actions == nil {
+		return false
+	}
+	if !actions.Active {
+		if ke.Press && ke.Code == xui.KeyUp && ke.Mods.Has(xui.ModShift) {
+			if actions.Enter() {
+				e.showActionsHint()
+				ctx.ConsumeAndRedraw()
+				return true
+			}
+		}
+		return false
+	}
+	if actions.Handle(ctx, ke) {
+		e.showActionsHint()
+		ctx.ConsumeAndRedraw()
+		return true
+	}
+	return true
+}
+
+// showActionsHint puts the mode's copy in the composer status slot, where the
+// operator is already looking — the same slot that names a running tool. Using
+// it here means the keys are discoverable without a help screen, and it goes away
+// the moment the mode exits.
+func (e *Editor) showActionsHint() {
+	if e.footer == nil || e.transcript == nil {
+		return
+	}
+	actions := e.transcript.Actions()
+	if actions == nil || !actions.Active {
+		e.footer.SetActionsHint("")
+		return
+	}
+	hint := "↑↓ move · c copy · Esc close"
+	if pos := actions.Position(); pos != "" {
+		hint += " · " + pos
+	}
+	e.footer.SetActionsHint(hint)
+}
+
 // Draw renders the editor surface for the given draw context.
 func (e *Editor) Draw(ctx components.DrawContext) components.Surface {
 	e.drainBus()
@@ -623,3 +680,8 @@ func (e *Editor) applyTheme(name string) {
 		e.vx.QueueRefresh()
 	}
 }
+
+// ChecklistFileName is the project task file rendered as a live progress row.
+// The agent writes it with the ordinary write/edit tools; nothing in a1 owns
+// the format, so the user can edit it too.
+const ChecklistFileName = "TODO.md"

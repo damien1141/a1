@@ -118,9 +118,11 @@ func (m *Mapper) Sync(
 		}
 	}
 
-	// The checklist row is not part of the projected items: it leads the
-	// transcript when a task file exists, because "what am I doing" is the first
-	// question during a long run.
+	// The checklist row is not part of the projected items: it trails the
+	// transcript when a task file exists. It answers "what am I doing" at the
+	// point just above the composer, where the eye already is — leading the list
+	// put it above the fold, where it was invisible until you scrolled up, and
+	// it drifted further away as the conversation grew.
 	newEntries = make([]components.Widget, 0, n+1)
 	newIDs = make([]string, 0, n+1)
 	// The staleness count comes from the projected rows, so it has to be
@@ -130,21 +132,6 @@ func (m *Mapper) Sync(
 	if m.Checklist != nil && m.Checklist.Path != "" {
 		m.Checklist.refresh()
 		m.Checklist.StaleFor = countEditTools(items)
-	}
-	if cl := m.checklistWidget(); cl != nil {
-		// The row is rebuilt every frame because a file edit can change it
-		// without any session event. Marking it dirty only when the content
-		// actually moved keeps the height cache stable: a frame where the file
-		// is untouched costs one stat and no relayout.
-		// byID is keyed by entry id, and index 0 was captured into it before
-		// this row was appended — so a present checklist resolves to whichever
-		// entry previously held the id, not blindly to entries[0].
-		prevIdx, seen := byID[ChecklistSourceEntryID]
-		if !seen || !checklistEqual(entries[prevIdx], cl) {
-			dirty = append(dirty, 0)
-		}
-		newEntries = append(newEntries, cl)
-		newIDs = append(newIDs, ChecklistSourceEntryID)
 	}
 	for _, it := range items {
 		idx := len(newEntries)
@@ -160,6 +147,21 @@ func (m *Mapper) Sync(
 		}
 		newEntries = append(newEntries, m.widgetFor(it))
 		dirty = append(dirty, idx)
+	}
+	if cl := m.checklistWidget(); cl != nil {
+		// The row is rebuilt every frame because a file edit can change it
+		// without any session event. Marking it dirty only when the content
+		// actually moved keeps the height cache stable: a frame where the file
+		// is untouched costs one stat and no relayout.
+		// byID is keyed by entry id, and its index was captured before anything
+		// was appended — so a present checklist resolves to whichever entry
+		// previously held the id, not blindly to entries[0].
+		prevIdx, seen := byID[ChecklistSourceEntryID]
+		if !seen || !checklistEqual(entries[prevIdx], cl) {
+			dirty = append(dirty, len(newEntries))
+		}
+		newEntries = append(newEntries, cl)
+		newIDs = append(newIDs, ChecklistSourceEntryID)
 	}
 	return newEntries, newIDs, dirty
 }
