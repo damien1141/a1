@@ -30,6 +30,13 @@ func checklistItems() []todo.Item {
 	}
 }
 
+// drawChecklist renders a checklist row into text so these tests can assert on
+// what the terminal shows. The DiffBlock-typed draw helper does not generalize.
+func drawChecklist(c *block.ChecklistBlock, width int) string {
+	s := c.Draw(components.DrawContext{Max: components.Size{Width: width, Height: 60}})
+	return components.SurfaceText(s)
+}
+
 func TestChecklistBlockHeaderCounts(t *testing.T) {
 	c := &block.ChecklistBlock{Path: "TODO.md", Items: checklistItems(), Theme: components.DefaultTheme()}
 	got := checklistCard(t, c)
@@ -164,4 +171,37 @@ func countChecklistRows(s string) int {
 		}
 	}
 	return n
+}
+
+// The editor hands the block a joined path; printing it whole spent most of a
+// narrow terminal's row on a directory the user is already in.
+func TestChecklistBlockHeaderUsesBaseName(t *testing.T) {
+	c := &block.ChecklistBlock{
+		Path:  "/home/solis/Documentos/Code/phi/TODO.md",
+		Items: checklistItems(),
+		Theme: components.DefaultTheme(),
+	}
+	got := drawChecklist(c, 60)
+	assert.Contains(t, got, "☑ TODO.md")
+	assert.NotContains(t, got, "/home/solis", "the directory is not printed")
+}
+
+// The in-progress item answers "what is it doing right now", which is the first
+// question during a run. It was counted but the header never showed it.
+func TestChecklistBlockHeaderShowsInProgress(t *testing.T) {
+	c := &block.ChecklistBlock{
+		Path: "TODO.md",
+		Items: []todo.Item{
+			{Text: "done one", Done: true},
+			{Text: "live one", InProgress: true},
+			{Text: "open one"},
+			{Text: "a note under it", Detail: true},
+		},
+		Theme: components.DefaultTheme(),
+	}
+	got := drawChecklist(c, 80)
+	assert.Contains(t, got, "1 done")
+	assert.Contains(t, got, "1 in progress")
+	assert.Contains(t, got, "1 open")
+	assert.NotContains(t, got, "note", "details are not counted as open")
 }

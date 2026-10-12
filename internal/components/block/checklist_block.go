@@ -2,6 +2,7 @@ package block
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/pulseaiclub/xui"
@@ -230,17 +231,25 @@ func (c *ChecklistBlock) toggle(ctx *components.EventContext) {
 	ctx.ConsumeAndRedraw()
 }
 
-// titleSpans builds "☑ TODO.md 3 done, 2 open ▼". The counts are the glanceable
+// titleSpans builds "☑ TODO.md 2 done, 2 open ▼". The counts are the glanceable
 // part, so they are always present even when the list is collapsed.
 func (c *ChecklistBlock) titleSpans(th components.Theme) []components.Span {
-	done, open, _ := c.tasks()
+	done, open, inProgress := c.tasks()
 	spans := []components.Span{{Text: "☑ ", Style: th.Success}}
-	spans = append(spans, components.Span{Text: c.Path, Style: th.ToolName})
+	spans = append(spans, components.Span{Text: c.headerName(), Style: th.ToolName})
 	spans = append(spans, components.Span{Text: " ", Style: th.Muted})
 
 	var stats []components.BylineItem
 	if done > 0 {
 		stats = append(stats, components.BylineItem{Text: fmt.Sprintf("%d done", done), Style: th.Success})
+	}
+	// An in-flight item is the answer to "what is it doing right now", which is
+	// the first question during a run. It was counted but never printed.
+	if inProgress > 0 {
+		stats = append(stats, components.BylineItem{
+			Text:  fmt.Sprintf("%d in progress", inProgress),
+			Style: th.ToolName,
+		})
 	}
 	if open > 0 {
 		stats = append(stats, components.BylineItem{Text: fmt.Sprintf("%d open", open), Style: th.Muted})
@@ -251,6 +260,13 @@ func (c *ChecklistBlock) titleSpans(th components.Theme) []components.Span {
 		spans = append(spans, components.Span{Text: chrome.ExpandArrow(c.Expanded), Style: th.Muted})
 	}
 	return spans
+}
+
+// headerName is the file's base name, not the path it was read from. The editor
+// hands the block a joined path, and printing "/home/user/project/TODO.md" spent
+// most of a narrow terminal's row on a directory the user is already in.
+func (c *ChecklistBlock) headerName() string {
+	return filepath.Base(strings.TrimSpace(c.Path))
 }
 
 // itemSpans renders one row with the reference's boxes: ✓ done, ◦ open, ▸ the
