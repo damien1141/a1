@@ -1,6 +1,7 @@
 package block
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -12,15 +13,22 @@ import (
 	"github.com/damien1141/a1/internal/util"
 )
 
-// BashBlock renders bash tool / "!cmd" output:
+// BashBlock renders a bash tool / "!cmd" row:
 //
-//	$ ls
-//	  parser.go
-//	  ...
-//	  [Showing lines 10-100 of 100. Full/retained output: /tmp/a1-bash-….log]
+//	$ go test ./...
+//	  ok      github.com/x/y  0.4s
+//	  ok      github.com/x/z  0.1s
+//	  … +118 more lines ▶
 //
-// Long output is truncated by the bash tool with a /tmp dump — this widget
-// does not invent a useless "Show more" chrome.
+//	$ go test ./...
+//	  FAIL github.com/x/y
+//	  --- FAIL: TestFoo
+//	  [Showing lines 1-1000 of 1000. Full output: /tmp/a1-bash-….log]
+//
+// A collapsed row always keeps a tail of the output (BashCollapsedTailLines)
+// so the user can see how a command ended without expanding. Expanding shows
+// everything the tool retained, including its own truncation notice and
+// temp-file dump link.
 type BashBlock struct {
 	Command  string
 	Output   string
@@ -84,8 +92,37 @@ func (bashBlock *BashBlock) CopyText() string {
 	return sb.String()
 }
 
+// BashCollapsedTailLines is how many trailing output lines a collapsed bash
+// row keeps. Enough to show a test summary, a build error, or a diffstat
+// without flooding the transcript; the rest is one Enter away.
+const BashCollapsedTailLines = 8
+
 func (bashBlock *BashBlock) hasBody() bool {
 	return strings.TrimSpace(bashBlock.Output) != "" || bashBlock.Status == status.ToolError
+}
+
+// collapsedBody renders the tail shown when the row is closed: the last
+// BashCollapsedTailLines of output, plus a dim trailer naming the hidden count.
+// A row within the budget shows all of its lines and no trailer, so a short
+// command reads exactly like an expanded one.
+//
+// The budget is measured on wrapped lines rather than source lines, because a
+// single 400-column log line occupies eight surface rows once wrapped — and an
+// untrimmed row would still blow the budget it exists to bound.
+func (bashBlock *BashBlock) collapsedBody(
+	th components.Theme,
+	width int,
+	method xui.WidthMethod,
+) []components.RichLine {
+	lines := bashBodyLines(bashBlock.Output, th, width, method)
+	if len(lines) <= BashCollapsedTailLines {
+		return lines
+	}
+	out := make([]components.RichLine, 0, BashCollapsedTailLines+1)
+	out = append(out, lines[len(lines)-BashCollapsedTailLines:]...)
+	trailer := fmt.Sprintf("… +%d more lines", len(lines)-BashCollapsedTailLines)
+	out = append(out, components.WrapSpans([]components.Span{{Text: trailer, Style: th.Muted}}, width, method)...)
+	return out
 }
 
 // Draw renders the "$ command" title and, when expanded, the truncated output body.
@@ -101,8 +138,24 @@ func (bashBlock *BashBlock) Draw(ctx components.DrawContext) components.Surface 
 	bashBlock.titleH = titleH
 
 	var bodyLines []components.RichLine
-	if bashBlock.Expanded && bashBlock.hasBody() {
-		bodyLines = bashBodyLines(bashBlock.Output, th, w-2, ctx.Method)
+	if bashBlock.hasBody() {
+		bodyW := w
+		if bodyW > 2 {
+			bodyW -= 2
+		}
+		switch {
+		case bashBlock.Expanded:
+			// Everything the tool retained, including its own "[Showing lines
+			// …]" notice and the temp-file dump link.
+			bodyLines = bashBodyLines(bashBlock.Output, th, bodyW, ctx.Method)
+		case bashBlock.Status == status.ToolError:
+			// A failure is the one case where a collapsed row must not hide
+			// anything: the reason is the only thing on screen.
+			bodyLines = bashBodyLines(bashBlock.Output, th, bodyW, ctx.Method)
+		default:
+			// Tail preview: what happened, without the flood.
+			bodyLines = bashBlock.collapsedBody(th, bodyW, ctx.Method)
+		}
 	}
 
 	h := titleH + len(bodyLines)

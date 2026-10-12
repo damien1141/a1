@@ -25,6 +25,7 @@ type Config struct {
 	SemanticSearch SemanticSearchConfig
 	Judge          JudgeConfig
 	Browser        BrowserConfig
+	UI             UIConfig
 }
 
 // AgentsConfig controls whether the main agent may spawn sub-agents
@@ -64,6 +65,26 @@ type BrowserConfig struct {
 	// "http://127.0.0.1:8885". Empty → no proxy. Set at launch time, so the
 	// browser must be closed and reopened for a change to take effect.
 	Proxy string `yaml:"proxy,omitempty"`
+}
+
+// UIConfig controls transcript presentation.
+type UIConfig struct {
+	// AutoExpandToolOutput starts file-editing rows expanded, so a diff is
+	// visible without a keypress. Read/grep rows stay collapsed to one line and
+	// bash rows stay a tail preview regardless — they are the highest-volume
+	// rows and their bodies are one Enter away. Individual rows can always be
+	// collapsed or opened, and the choice sticks for the session. Defaults to
+	// true; set `auto_expand_tool_output: false` to opt out.
+	AutoExpandToolOutput *bool `yaml:"auto_expand_tool_output"`
+}
+
+// AutoExpandToolOutput resolves the setting, defaulting to true when the key is
+// absent so a fresh config shows tool output without extra setup.
+func (c UIConfig) AutoExpandToolOutputResolved() bool {
+	if c.AutoExpandToolOutput == nil {
+		return true
+	}
+	return *c.AutoExpandToolOutput
 }
 
 func (c *Config) Model() llm.ModelConfig {
@@ -208,6 +229,9 @@ func parseConfigFile(path string) (*Config, error) {
 			Proxy:    strings.TrimSpace(raw.Browser.Proxy),
 		}
 	}
+	if raw.UI != nil {
+		cfg.UI = UIConfig{AutoExpandToolOutput: raw.UI.AutoExpandToolOutput}
+	}
 	return cfg, nil
 }
 
@@ -264,6 +288,7 @@ type fileConfig struct {
 	SemanticSearch *semanticSearchConfig `yaml:"semantic_search"`
 	Judge          *judgeConfig          `yaml:"judge"`
 	Browser        *browserConfig        `yaml:"browser"`
+	UI             *uiConfig             `yaml:"ui"`
 }
 
 type agentsConfig struct {
@@ -286,6 +311,10 @@ type judgeConfig struct {
 type browserConfig struct {
 	Profiles []string `yaml:"profiles"`
 	Proxy    string   `yaml:"proxy,omitempty"`
+}
+
+type uiConfig struct {
+	AutoExpandToolOutput *bool `yaml:"auto_expand_tool_output"`
 }
 
 type modelEntry struct {

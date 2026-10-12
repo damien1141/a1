@@ -16,11 +16,15 @@
     --text: #ccd0d9;
     --text-muted: #8a8f9c;
     --text-subtle: #6a6a75;
+    --accent: #8AB4F8;
+    --accent-dim: #8AB4F899;
     --blue: #8AB4F8;
     --blue-strong: #6a9cf8;
     --green: #589979;
+    --green-3: #19502a;
     --amber: #e5c07b;
     --red: #F85E4D;
+    --red-3: #9C474C;
   }
 
   * { box-sizing: border-box; }
@@ -52,6 +56,51 @@
     width: min(100% - 32px, 1200px);
     margin: 0 auto;
     padding: 32px 0 44px;
+  }
+
+  /* ---------- shared chrome with the chat UI (chat.html) ---------- */
+  /* These three blocks mirror chat.html's .icon-btn / .brand / .brand-dot so
+     the two surfaces read as one product. Keep them in sync with chat.html. */
+  .web-chrome {
+    border-bottom: 1px solid var(--border);
+    /* Room to breathe under the back link: the chrome sits against the sticky
+       save footer, and 2px made the two read as one slab. */
+    padding-bottom: 14px;
+  }
+
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 11px 6px 9px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--surface);
+    color: var(--text-muted);
+    font-size: 12.5px;
+    text-decoration: none;
+    transition: border-color .14s ease, color .14s ease;
+  }
+  .back-link:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .brand-dot { color: var(--accent); }
+
+  .lang-toggle {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 11px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--surface);
+    color: var(--text-muted);
+    font-size: 12.5px;
+  }
+  .lang-toggle:hover {
+    border-color: var(--accent);
+    color: var(--accent);
   }
 
   .page-header { padding-bottom: 16px; }
@@ -171,17 +220,19 @@
   }
 
   .button {
-    min-height: 38px;
+    min-height: 32px;
     border: 1px solid var(--border-strong);
-    border-radius: 6px;
-    padding: 8px 14px;
+    border-radius: 8px;
+    padding: 6px 13px;
     background: var(--surface-strong);
     color: var(--text);
-    font-weight: 600;
+    font-size: 12.5px;
+    font-weight: 550;
     line-height: 1.2;
   }
 
-  .button:not(:disabled):hover { border-color: var(--blue); background: #1e1e28; }
+  /* Hover tints toward --accent, matching chat.html's .btn:hover. */
+  .button:not(:disabled):hover { border-color: var(--accent); background: #26262b; color: var(--accent); }
 
   .button:focus-visible,
   .secret-toggle:focus-visible {
@@ -189,14 +240,17 @@
     outline-offset: 2px;
   }
 
-  .button.primary {
-    border-color: var(--blue-strong);
-    background: var(--blue-strong);
-    color: #fff;
-    box-shadow: 0 6px 16px rgba(106, 156, 248, .22);
+  .button.primary,
+  #save {
+    border-color: var(--green-3);
+    background: var(--green-3);
+    color: #e6f2ea;
   }
+  .button.primary:not(:disabled):hover,
+  #save:not(:disabled):hover { border-color: var(--green); background: var(--green); color: #e6f2ea; }
 
-  .button.primary:not(:disabled):hover { border-color: #7aacf9; background: #6a9cf8; }
+  /* Secondary actions recede to the page background, so the green Save button
+     is the only filled control in the footer. */
   .button.secondary { background: transparent; }
 
   .button.tertiary {
@@ -634,7 +688,9 @@
     bottom: 0;
     left: 0;
     border-top: 1px solid var(--border);
-    background: var(--surface-muted);
+    /* Same frosted surface as chat.html's composer so the bar reads as part
+       of the same shell rather than a foreign overlay. */
+    background: var(--bg);
   }
 
   .footer-inner {
@@ -845,22 +901,29 @@
 </head>
 <body>
 <div class="page-shell">
-  <header class="page-header">
-    <div class="header-top">
-      <div class="brand-line">
-        <span class="brand">A1</span>
-        <span class="brand-divider">/</span>
-        <span data-i18n="brandLocal">Local config</span>
+  <div class="web-chrome">
+    <header class="page-header">
+      <div class="header-top">
+        <a class="back-link" href="/" aria-label="Back to chat">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M14 8H3M7 4L3 8l4 4"/>
+          </svg>
+          <span data-i18n="backToChat">Back to chat</span>
+        </a>
+        <button class="lang-toggle" id="langToggle" type="button" aria-label="Switch language">中文</button>
       </div>
-      <button class="lang-toggle" id="langToggle" type="button" aria-label="Switch language">中文</button>
-    </div>
-    <h1 data-i18n="pageTitle">Config</h1>
-    <p class="lede" data-i18n="pageLede">Manage model connections, skills path, and agent permissions. Saves write straight to the local config file.</p>
-    <div class="path-strip">
-      <span class="path-label" data-i18n="configFile">Config file</span>
-      <code id="path">Loading...</code>
-    </div>
-  </header>
+      <div class="brand-line">
+        <span class="brand">a1<span class="brand-dot">.</span>web</span>
+        <span class="brand-divider">/</span>
+        <span data-i18n="brandSettings">Settings</span>
+      </div>
+      <p class="lede" data-i18n="pageLede">Manage model connections, skills path, and agent permissions. Saves write straight to the local config file.</p>
+      <div class="path-strip">
+        <span class="path-label" data-i18n="configFile">Config file</span>
+        <code id="path">Loading...</code>
+      </div>
+    </header>
+  </div>
 
   <section class="section stats-section" id="statsSection">
     <div class="section-head">
@@ -1022,6 +1085,24 @@
           </div>
         </div>
       </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title" data-i18n="uiHeading">Terminal UI</div>
+            <p class="panel-help" data-i18n="uiHelp">How the TUI presents tool activity.</p>
+          </div>
+        </div>
+        <div class="panel-body settings-fields" id="uiFields">
+          <div class="field field-full">
+            <label class="rule-head" for="autoExpand">
+              <input id="autoExpand" type="checkbox">
+              <span data-i18n="autoExpandLabel">Expand tool output by default</span>
+            </label>
+            <div class="field-help" data-i18n="autoExpandHelp">Start file edits open, so diffs are visible without pressing Enter. Reads stay collapsed to one line and bash stays a tail preview — they are the highest-volume rows. Collapsing a row still sticks for the rest of the session.</div>
+          </div>
+        </div>
+      </section>
     </div>
 
     <section class="section rules-section">
@@ -1089,7 +1170,9 @@ const I18N = {
   en: {
     documentTitle: "A1 config",
     brandLocal: "Local config",
-    pageTitle: "Config",
+    pageTitle: "Settings",
+    brandSettings: "Settings",
+    backToChat: "Back to chat",
     pageLede: "Manage model connections, skills path, and agent permissions. Saves write straight to the local config file.",
     configFile: "Config file",
     loadingPath: "Loading...",
@@ -1237,6 +1320,10 @@ const I18N = {
     browserProxyLabel: "Proxy",
     browserProxyHelp: "Optional HTTP/HTTPS/SOCKS proxy for the browser, e.g. http://127.0.0.1:8885. Empty → no proxy. Takes effect on the next open after a close.",
     browserProxyPlaceholder: "http://127.0.0.1:8885",
+    uiHeading: "Terminal UI",
+    uiHelp: "How the TUI presents tool activity.",
+    autoExpandLabel: "Expand tool output by default",
+    autoExpandHelp: "Start file edits open, so diffs are visible without pressing Enter. Reads stay collapsed to one line and bash stays a tail preview — they are the highest-volume rows. Collapsing a row still sticks for the rest of the session.",
     statsHeading: "Tool usage",
     statsHelp: "Most-used tools during this session.",
     refreshStats: "Refresh",
@@ -1255,7 +1342,9 @@ const I18N = {
   zh: {
     documentTitle: "A1 配置中心",
     brandLocal: "本地配置",
-    pageTitle: "配置中心",
+    pageTitle: "设置",
+    brandSettings: "设置",
+    backToChat: "返回对话",
     pageLede: "管理模型连接、技能目录和 Agent 权限。保存后会立即写入本地配置文件。",
     configFile: "配置文件",
     loadingPath: "正在加载...",
@@ -1403,6 +1492,10 @@ const I18N = {
     browserProxyLabel: "代理",
     browserProxyHelp: "浏览器的可选 HTTP/HTTPS/SOCKS 代理，例如 http://127.0.0.1:8885。留空则不使用代理。关闭后重新打开浏览器时生效。",
     browserProxyPlaceholder: "http://127.0.0.1:8885",
+    uiHeading: "终端界面",
+    uiHelp: "TUI 如何展示工具活动。",
+    autoExpandLabel: "默认展开工具输出",
+    autoExpandHelp: "让文件编辑行默认展开，无需按回车即可看到文件差异。读取行保持折叠为一行摘要，bash 行保持输出尾部预览——它们是数量最多的行。折叠某一行后，本次会话内仍然保持折叠。",
     statsHeading: "工具使用情况",
     statsHelp: "当前会话中最常用的工具。",
     refreshStats: "刷新",
@@ -2149,6 +2242,11 @@ async function load(messageKey, expectedVersion) {
     $("browserProfiles").value = (browser.profiles || []).join("\n");
     $("browserProxy").value = browser.proxy || "";
 
+    const ui = doc.ui || {};
+    // Absent defaults to true, so the box reflects the effective setting rather
+    // than an undefined that reads as off.
+    $("autoExpand").checked = ui.autoExpandToolOutput == null ? true : !!ui.autoExpandToolOutput;
+
     updateModeHint();
     resetDirty();
     if (messageKey) setStatusKey(messageKey, "success");
@@ -2195,6 +2293,9 @@ function buildPayload() {
       profiles: $("browserProfiles").value.split("\n").map(s => s.trim()).filter(Boolean),
       proxy: $("browserProxy").value.trim() || null,
     } : (orig && orig.browser != null ? orig.browser : null),
+    ui: dirty.autoExpand ? {
+      autoExpandToolOutput: $("autoExpand").checked,
+    } : (orig && orig.ui != null ? orig.ui : { autoExpandToolOutput: true }),
   };
 
   if (permissions.bash && !dirty.bash) {
@@ -2266,6 +2367,8 @@ $("judgeModel").addEventListener("input", () => markDirty("judge"));
 
 $("browserProfiles").addEventListener("input", () => markDirty("browser"));
 $("browserProxy").addEventListener("input", () => markDirty("browser"));
+
+$("autoExpand").addEventListener("change", () => markDirty("autoExpand"));
 
 applyLang();
 load();

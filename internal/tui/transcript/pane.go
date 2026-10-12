@@ -45,7 +45,9 @@ type TranscriptPane struct {
 	welcome   splash.Screen
 	startedAt time.Time
 
-	sel          textSel
+	sel textSel
+	// actions is the keyboard cursor over the transcript (copy / edit a block).
+	actions      *MessageActions
 	listH        int
 	lastListSurf components.Surface
 
@@ -75,7 +77,48 @@ func NewTranscriptPane(theme components.Theme, spin *status.Spinner, brand strin
 	})
 	t.mapper.Children = t.subagents.Children
 	t.mapper.ChildrenByJob = t.subagents.ChildrenByJob
+	t.actions = NewMessageActions(t)
 	return t
+}
+
+// SelectedEntryForTest reports the list's selected entry index. Exported for
+// tests only; production code drives the cursor through Actions.
+func (t *TranscriptPane) SelectedEntryForTest() int {
+	if t == nil {
+		return -1
+	}
+	return t.list.Selected
+}
+
+// Actions exposes the message-action cursor.
+func (t *TranscriptPane) Actions() *MessageActions {
+	if t == nil {
+		return nil
+	}
+	return t.actions
+}
+
+// SetAutoExpandToolOutput opens file-editing rows, so a diff is visible without
+// a keypress. Read/grep and bash rows keep their compact collapsed forms either
+// way. A row the user collapses still wins for the rest of the session.
+func (t *TranscriptPane) SetAutoExpandToolOutput(v bool) {
+	if t != nil {
+		t.mapper.AutoExpand = v
+	}
+}
+
+// SetChecklistFile points the Mapper at a project task file. The row appears
+// only while the file exists and holds at least one checklist item, so calling
+// this before anything is written is safe.
+func (t *TranscriptPane) SetChecklistFile(path string) {
+	if t == nil || t.mapper == nil {
+		return
+	}
+	if strings.TrimSpace(path) == "" {
+		t.mapper.Checklist = nil
+		return
+	}
+	t.mapper.Checklist = NewChecklistSource(path)
 }
 
 // SetUsageCallback fires when an assistant message reports token usage.
@@ -193,10 +236,29 @@ func (t *TranscriptPane) Sync() {
 	}
 	oldIDs := t.listIDs
 	entries, ids, dirty := t.mapper.Sync(t.list.Entries, t.listIDs, t.snap)
+	// A rebuild moves every entry, so a cursor sitting on an index would point
+	// at a different block after the sync. Exit rather than silently retarget.
+	if t.actions != nil && t.actions.Active && !sameIDSet(oldIDs, ids) {
+		t.actions.Exit()
+	}
 	t.list.ReindexHeights(oldIDs, ids)
 	t.list.Entries = entries
 	t.listIDs = ids
 	t.list.InvalidateHeightsAt(dirty...)
+}
+
+// sameIDSet reports whether two id lists hold the same entries in the same
+// order. Order matters: the cursor is an index, not a set membership.
+func sameIDSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // LoadReplay replaces snap and clears widget cache after ctrl replay.
