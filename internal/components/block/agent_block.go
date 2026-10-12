@@ -17,6 +17,44 @@ type ChildTool struct {
 	Name   string
 	Detail string
 	Status status.ToolStatus
+	// Summary is the tool's one-line outcome, shown after Detail in a nested
+	// row. Used by read groups, where a fetch member carries its status and
+	// size rather than showing a bare url.
+	Summary string
+}
+
+// LastRunningChild picks the child tool to name in an AgentBlock header.
+//
+// The SubagentStore appends children in completion order, so there is no
+// ordering to trust for "which one is still running" — scanning is the honest
+// answer. A running or queued child wins; otherwise the most recent child is
+// returned, so a finished sub-agent still shows what it last did rather than
+// going blank.
+func LastRunningChild(children []ChildTool) string {
+	label := func(c ChildTool) string {
+		name := strings.TrimSpace(c.Name)
+		if name == "" {
+			return ""
+		}
+		if d := strings.TrimSpace(c.Detail); d != "" {
+			return components.Byline(name, d)
+		}
+		return name
+	}
+	var latest string
+	for _, c := range children {
+		switch c.Status {
+		case status.ToolRunning, status.ToolQueued:
+			if l := label(c); l != "" {
+				return l
+			}
+		case status.ToolDone, status.ToolError, status.ToolCancelled, status.ToolRejected:
+			if l := label(c); l != "" {
+				latest = l
+			}
+		}
+	}
+	return latest
 }
 
 // AgentBlock renders agent_spawn / agent_wait with an optional
@@ -26,6 +64,10 @@ type AgentBlock struct {
 	Detail   string
 	Status   status.ToolStatus
 	Children []ChildTool
+	// Activity names the child tool currently running, so the header shows
+	// what a sub-agent is doing without expanding the tree. Claude Code calls
+	// this lastToolInfo on AgentProgressLine.
+	Activity string
 	Summary  string // markdown; shown only when set
 	Error    string
 	Expanded bool
@@ -118,7 +160,16 @@ func (a *AgentBlock) Draw(ctx components.DrawContext) components.Surface {
 		{Text: icon + " ", Style: iconSt},
 		{Text: a.Name, Style: th.ToolName},
 	}
-	if a.Detail != "" {
+	// The tree rows already name each child tool, but only when expanded. The
+	// header is where the operator looks while a run is in flight, so the live
+	// child goes there too.
+	if a.Activity != "" && a.Status == status.ToolRunning {
+		if d := strings.TrimSpace(a.Detail); d != "" {
+			spans = append(spans, components.Span{Text: " " + d, Style: th.Muted})
+		}
+		spans = append(spans, components.Span{Text: " ", Style: th.Muted})
+		spans = append(spans, components.Span{Text: "→ " + a.Activity, Style: th.Muted})
+	} else if a.Detail != "" {
 		spans = append(spans, components.Span{Text: " " + a.Detail, Style: th.Muted})
 	}
 	if suf := chrome.StatusSuffix(a.Status); suf != "" {

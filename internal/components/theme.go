@@ -43,7 +43,7 @@ func ThemeNames() []string {
 // DefaultTheme returns the curated Dark palette (product default).
 func DefaultTheme() Theme { return DarkTheme() }
 
-// DarkTheme is Phi's curated dark palette — cool info, teal identity, mint success.
+// DarkTheme is a1's curated dark palette — cool info, teal identity, mint success.
 func DarkTheme() Theme {
 	info := xui.Style{Fg: xui.RGBColor(0x8a, 0xb4, 0xf8)}
 	title := xui.Style{Fg: xui.RGBColor(0xe5, 0xe7, 0xeb), Bold: true}
@@ -64,7 +64,7 @@ func DarkTheme() Theme {
 	}
 }
 
-// DarculaTheme follows IntelliJ Darcula temperatures with Phi role separation.
+// DarculaTheme follows IntelliJ Darcula temperatures with a1 role separation.
 func DarculaTheme() Theme {
 	info := xui.Style{Fg: xui.RGBColor(0x68, 0x97, 0xbb)}
 	title := xui.Style{Fg: xui.RGBColor(0xbb, 0xbb, 0xbb)}

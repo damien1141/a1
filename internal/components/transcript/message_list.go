@@ -314,6 +314,30 @@ func (m *MessageList) IndexAtPoint(x, y int) int {
 	return -1
 }
 
+// ScrollToEntry brings entry i into view, scrolling the minimum distance that
+// shows it. Used by the message-action cursor, which has to work for entries far
+// above the viewport.
+func (m *MessageList) ScrollToEntry(i int) {
+	if m == nil || i < 0 || i >= len(m.Entries) {
+		return
+	}
+	// Heights are only valid after a Draw; a stale cache would scroll to the
+	// wrong place, so fall back to the last painted geometry when available.
+	first, last := m.VisibleRange()
+	_ = first
+	_ = last
+	m.StickToBottom()
+	if i == len(m.Entries)-1 {
+		return
+	}
+	// Walk up from the bottom: entry i's distance from the end is the scroll.
+	above := 0
+	for j := i + 1; j < len(m.Entries); j++ {
+		above += m.CachedHeight(j) + m.spacing()
+	}
+	m.ScrollFromBottom = above
+}
+
 // SelectedCopyText returns the copyable text of the selected entry.
 func (m *MessageList) SelectedCopyText() string {
 	if m.Selected < 0 || m.Selected >= len(m.Entries) {

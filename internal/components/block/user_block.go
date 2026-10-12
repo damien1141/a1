@@ -10,6 +10,19 @@ import (
 type UserBlock struct {
 	Text  string
 	Theme components.Theme
+	// ItemID is the session item id this prompt came from. The transcript
+	// cursor uses it to name a message for re-editing, so it has to survive
+	// being a row rather than a raw message.
+	ItemID string
+}
+
+// ItemID returns the session item id, or "" when the block was not built from
+// a projected item (tests, the welcome screen).
+func (userBlock *UserBlock) ItemIDString() string {
+	if userBlock == nil {
+		return ""
+	}
+	return userBlock.ItemID
 }
 
 func (userBlock *UserBlock) theme() components.Theme {

@@ -36,7 +36,10 @@ func ActiveSlash(value string, cursor int) (query string, start, end int, ok boo
 // tokens (after the first whitespace). command is the slash command name (no
 // leading '/'). query is the current unfinished arg token text. argStart/argEnd
 // are byte offsets for the current token.
-func ActiveSlashArgs(value string, cursor int) (command, query string, cmdStart, cmdEnd, argStart, argEnd int, ok bool) {
+func ActiveSlashArgs(
+	value string,
+	cursor int,
+) (command, query string, cmdStart, cmdEnd, argStart, argEnd int, ok bool) {
 	if cursor < 0 {
 		cursor = 0
 	}

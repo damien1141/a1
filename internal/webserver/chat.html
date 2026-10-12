@@ -1,0 +1,1010 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A1 web</title>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<style type="text/tailwindcss">
+  /* Palette from ~/.config/awesome/theme/colors.lua — "Awesthetic pro - Dark Frosted".
+     Frosted variants carry the original alpha channels; they render as glass
+     over the page background rather than flat fills. */
+  @theme {
+    --color-bg: #0F0F11;
+    --color-surface: #1a1a1d;
+    --color-surface-strong: #212125;
+    --color-surface-muted: #151517;
+    --color-border: #2a2a2d;
+    --color-border-strong: #3a3a3d;
+    --color-text: #ccd0d9;
+    --color-textmuted: #8a8f9c;
+    --color-textsubtle: #6a6a75;
+    --color-accent: #8AB4F8;
+    --color-accentdim: #8AB4F899;
+    --color-green: #589979;
+    --color-green-3: #19502a;
+    --color-red: #F85E4D;
+    --color-red-3: #9C474C;
+  }
+</style>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0F0F11;
+    --surface: #1a1a1d;
+    --surface-strong: #212125;
+    --surface-muted: #151517;
+    --border: #2a2a2d;
+    --border-strong: #3a3a3d;
+    --text: #ccd0d9;
+    --text-muted: #8a8f9c;
+    --text-subtle: #6a6a75;
+    --accent: #8AB4F8;
+    --accent-dim: #8AB4F899;
+    --green: #589979;
+    --green-3: #19502a;
+    --red: #F85E4D;
+    --red-3: #9C474C;
+    --frost: #0F0F11EE;
+    --frost-2: #1a1a1dd3;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, textarea, input { font: inherit; color: inherit; }
+  button { cursor: pointer; background: none; border: none; }
+  button:disabled { cursor: not-allowed; opacity: .55; }
+  code, pre {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .92em;
+  }
+
+  /* ---------- app shell ---------- */
+  .app { display: flex; height: 100vh; height: 100dvh; overflow: hidden; }
+
+  .sidebar {
+    width: 264px;
+    flex: 0 0 264px;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    transition: margin-left .18s ease, opacity .18s ease;
+  }
+  .sidebar.collapsed { margin-left: -264px; opacity: 0; pointer-events: none; }
+
+  .sidebar-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 14px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .brand { font-weight: 650; letter-spacing: .02em; font-size: 15px; }
+  .brand-dot { color: var(--accent); }
+
+  .new-chat {
+    display: flex; align-items: center; gap: 8px;
+    margin: 12px; padding: 9px 11px;
+    border: 1px solid var(--border-strong);
+    border-radius: 9px;
+    background: var(--surface-strong);
+    color: var(--text);
+    font-weight: 550;
+    transition: border-color .14s ease, background .14s ease;
+  }
+  .new-chat:hover { border-color: var(--accent); background: #26262b; }
+
+  .sessions { flex: 1 1 auto; overflow-y: auto; padding: 0 8px 12px; }
+
+  .sessions-empty { padding: 14px 12px; font-size: 13px; color: var(--text-subtle); }
+
+  .session-row {
+    display: block; width: 100%; text-align: left;
+    padding: 8px 10px 8px 30px; margin-bottom: 2px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    position: relative;
+  }
+  .session-row:hover { background: var(--surface-strong); }
+  .session-row.active { background: var(--surface-strong); border-color: var(--accent-dim); }
+  .session-pin {
+    position: absolute; left: 9px; top: 9px;
+    font-size: 11px; line-height: 1;
+    color: var(--text-subtle);
+    /* Hidden until hovered or pinned: the star is an affordance, not furniture. */
+    opacity: 0;
+    transition: opacity .12s ease, color .12s ease;
+  }
+  .session-row:hover .session-pin { opacity: .7; }
+  .session-row.session-pinned .session-pin { opacity: 1; color: var(--accent); }
+  .session-title { display: block; font-size: 13px; color: var(--text); }
+  .session-meta { display: block; font-size: 11px; color: var(--text-subtle); margin-top: 2px; }
+
+  .sidebar-foot {
+    padding: 10px 12px;
+    border-top: 1px solid var(--border);
+    color: var(--text-subtle);
+    font-size: 11px;
+  }
+
+  /* ---------- main ---------- */
+  .main { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; }
+
+  .topbar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .icon-btn {
+    display: grid; place-items: center;
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+  .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .topbar-title { font-size: 13px; color: var(--text-muted); }
+  .topbar-spacer { flex: 1 1 auto; }
+  .status-pill {
+    font-size: 11px; color: var(--text-subtle);
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: 3px 10px;
+    white-space: nowrap;
+  }
+  .status-pill.error { color: var(--red); border-color: var(--red-3); }
+
+  /* The status pill is the only element that changes text mid-turn, so it gets
+     a soft pulse while the agent works: a still pill reads as a dead page. */
+  .status-pill.busy { color: var(--accent); border-color: var(--accent-dim); }
+  .status-pill.busy::after {
+    content: ""; display: inline-block;
+    width: 5px; height: 5px; margin-left: 6px;
+    border-radius: 50%; background: var(--accent);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) {
+    .status-pill.busy::after { animation: none; opacity: 1; }
+  }
+
+  /* ---------- permission mode switcher ---------- */
+  .mode-switch { position: relative; }
+  .mode-pill {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; color: var(--text-muted);
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: 3px 11px;
+    white-space: nowrap;
+    transition: border-color .14s ease, color .14s ease;
+  }
+  .mode-pill:hover { border-color: var(--accent); color: var(--accent); }
+  .mode-pill::before {
+    content: ""; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent);
+  }
+  /* A interactive-suppressing mode is announced by colour, not just the name:
+     red for read-only/strict, amber-ish accent for autopilot. */
+  .mode-pill[data-mode="interactive"]::before { background: var(--accent); }
+  .mode-pill[data-mode="readonly"]::before { background: var(--red); }
+  .mode-pill[data-mode="autopilot"]::before { background: var(--green); }
+  .mode-pill[data-mode="headless-strict"]::before { background: var(--red-3); }
+  .mode-pill[data-mode="readonly"] { color: var(--red); border-color: var(--red-3); }
+  .mode-pill[data-mode="autopilot"] { color: var(--green); border-color: var(--green-3); }
+  .mode-menu {
+    position: absolute; top: calc(100% + 6px); right: 0; z-index: 30;
+    width: 250px;
+    padding: 5px;
+    border: 1px solid var(--border-strong); border-radius: 11px;
+    background: var(--frost);
+    backdrop-filter: blur(12px);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, .5);
+  }
+  .mode-item {
+    display: block; width: 100%; text-align: left;
+    padding: 8px 10px; border-radius: 8px;
+  }
+  .mode-item:hover { background: var(--surface-strong); }
+  .mode-item.active { background: var(--surface-strong); }
+  .mode-item-name { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 550; }
+  .mode-item-name::before {
+    content: ""; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--text-subtle);
+  }
+  .mode-item.active .mode-item-name::before { background: var(--accent); }
+  .mode-item-desc { display: block; font-size: 11px; color: var(--text-subtle); margin-top: 2px; }
+
+  .thread {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 22px 0 8px;
+    scroll-behavior: smooth;
+  }
+  .thread-inner { width: min(100% - 48px, 760px); margin: 0 auto; }
+
+  .empty-state { text-align: center; padding: 12vh 0 0; }
+  .empty-state h1 {
+    margin: 0 0 6px;
+    font-size: 30px; font-weight: 650; letter-spacing: -.01em;
+  }
+  .empty-state p { margin: 0; color: var(--text-muted); }
+  .empty-hints {
+    display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+    margin-top: 22px;
+  }
+  .hint {
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: 6px 13px; font-size: 12px; color: var(--text-muted);
+    background: var(--surface);
+  }
+  .hint:hover { border-color: var(--accent); color: var(--accent); }
+
+  .bubble {
+    margin: 0 0 16px;
+    padding: 12px 15px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    overflow-wrap: anywhere;
+  }
+  .bubble p { margin: 0 0 8px; }
+  .bubble p:last-child { margin-bottom: 0; }
+  .bubble-user {
+    background: var(--surface-strong);
+    border-color: var(--border-strong);
+    margin-left: 40px;
+    white-space: pre-wrap;
+  }
+  .bubble-assistant { margin-right: 24px; }
+  /* A streaming assistant message shows a caret, so "still running" is visible
+     even when the last chunk produced no text (a long tool round, say). */
+  .bubble-assistant.streaming > :last-child::after {
+    content: "▍"; margin-left: 1px;
+    color: var(--accent);
+    animation: caret 1s steps(2) infinite;
+  }
+  @keyframes caret { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .bubble-assistant.streaming > :last-child::after { animation: none; } }
+  .bubble-system {
+    background: transparent;
+    border-style: dashed;
+    color: var(--text-subtle);
+    font-size: 12px;
+    text-align: center;
+  }
+  .bubble pre {
+    margin: 8px 0; padding: 11px 13px;
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    overflow-x: auto;
+  }
+  .bubble code { color: #c6d8f2; }
+  .bubble :not(pre) > code {
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 1px 5px;
+  }
+  .thinking { margin: 0 0 10px; }
+  .thinking summary {
+    cursor: pointer; font-size: 11px; color: var(--text-subtle);
+    list-style: none; user-select: none;
+  }
+  .thinking summary::-webkit-details-marker { display: none; }
+  .thinking summary::before { content: "▸ "; }
+  .thinking[open] summary::before { content: "▾ "; }
+  .thinking-body {
+    margin-top: 6px; padding: 9px 11px;
+    border-left: 2px solid var(--green-3);
+    color: var(--text-muted);
+    font-size: 12.5px;
+    white-space: pre-wrap;
+  }
+  .usage { margin-top: 9px; font-size: 11px; color: var(--text-subtle); }
+
+  .tool-trace {
+    width: min(100% - 48px, 760px);
+    margin: 4px auto 18px;
+    border-top: 1px dashed var(--border);
+    padding-top: 10px;
+  }
+  .tool-row {
+    display: flex; align-items: baseline; gap: 9px;
+    font-size: 12px; padding: 3px 0;
+    color: var(--text-muted);
+  }
+  .tool-name { color: var(--accent); font-weight: 600; }
+  .tool-status { color: var(--text-subtle); }
+  .tool-detail { color: var(--text-subtle); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tool-done .tool-status { color: var(--green); }
+  .tool-error .tool-status,
+  .tool-rejected .tool-status { color: var(--red); }
+
+  /* ---------- composer ---------- */
+  .composer { padding: 10px 0 18px; }
+  .composer-inner { width: min(100% - 48px, 760px); margin: 0 auto; }
+  .composer-box {
+    display: flex; align-items: flex-end; gap: 9px;
+    padding: 10px 11px;
+    border: 1px solid var(--border-strong);
+    border-radius: 13px;
+    background: var(--surface);
+    transition: border-color .14s ease;
+  }
+  .composer-box:focus-within { border-color: var(--accent-dim); }
+  .composer textarea {
+    flex: 1 1 auto; resize: none;
+    background: transparent; border: none; outline: none;
+    color: var(--text);
+    max-height: 180px;
+    padding: 5px 2px;
+  }
+  .composer textarea::placeholder { color: var(--text-subtle); }
+  .send {
+    display: grid; place-items: center;
+    width: 32px; height: 32px;
+    border-radius: 9px;
+    background: var(--green-3);
+    color: #e6f2ea;
+  }
+  .send:hover:not(:disabled) { background: var(--green); }
+  .send[aria-busy="true"] { background: var(--surface-strong); color: var(--text-subtle); }
+  .cancel {
+    display: grid; place-items: center;
+    width: 32px; height: 32px;
+    border-radius: 9px;
+    border: 1px solid var(--red-3);
+    color: var(--red);
+  }
+  .cancel:hover { background: var(--red-3); }
+  .composer-hint { margin: 7px 4px 0; font-size: 11px; color: var(--text-subtle); }
+
+  /* pin toggle: quiet until pinned, then accent so the state reads at a glance */
+  .pin-btn { flex: 0 0 30px; color: var(--text-subtle); }
+  .pin-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .pin-btn.pinned { border-color: var(--accent-dim); color: var(--accent); }
+  .pin-btn.pinned svg { fill: currentColor; }
+
+  /* ---------- permission prompt ---------- */
+  .ask {
+    margin: 0 0 14px;
+    padding: 12px 14px;
+    border: 1px solid var(--accent-dim);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+  .ask-title { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+  .ask-reason { color: var(--text-muted); font-size: 12.5px; margin-bottom: 10px; }
+  .ask-actions { display: flex; gap: 8px; }
+  .btn {
+    padding: 6px 13px;
+    border-radius: 8px;
+    border: 1px solid var(--border-strong);
+    font-size: 12.5px;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-primary { background: var(--green-3); border-color: var(--green-3); color: #e6f2ea; }
+  .btn-primary:hover { background: var(--green); color: #e6f2ea; }
+  .btn-danger:hover { border-color: var(--red); color: var(--red); }
+</style>
+<!--
+  Styling contract (do not break):
+  * The palette is duplicated in @theme (for Tailwind) and :root (for the
+    hand-written CSS). Both must stay in sync.
+  * Fragments are swapped into the DOM after page load, and the Tailwind
+    browser build only scans classes present in the initial document. So
+    Tailwind utility classes are safe in chat.html only — never in the
+    fragments this package renders. Dynamic JS classes must be custom too.
+  * Everything the agent emits is injected with textContent, never innerHTML.
+-->
+</head>
+<body>
+<div class="app">
+  <!-- left collapsible sidebar -->
+  <aside id="sidebar" class="sidebar">
+    <div class="sidebar-head">
+      <span class="brand">a1<span class="brand-dot">.</span>web</span>
+    </div>
+    <button type="button" class="new-chat" onclick="newChat()">
+      <span aria-hidden="true">＋</span> New chat
+    </button>
+    <nav class="sessions" id="session-list">
+    </nav>
+    <div class="sidebar-foot" id="session-foot">loopback only · 127.0.0.1:9001</div>
+  </aside>
+
+  <!-- main column -->
+  <div class="main">
+    <header class="topbar">
+      <button type="button" class="icon-btn" id="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M2 4h12M2 8h12M2 12h12"/>
+        </svg>
+      </button>
+      <span class="topbar-title" id="session-title">New chat</span>
+      <span class="topbar-spacer"></span>
+      <span class="status-pill" id="status">idle</span>
+      <div class="mode-switch" id="mode-switch">
+        <button type="button" class="mode-pill" id="mode-pill" onclick="toggleModeMenu()" title="Permission mode — click to choose">
+          <span id="mode-label">ask</span>
+        </button>
+        <div class="mode-menu" id="mode-menu" hidden></div>
+      </div>
+      <button type="button" class="icon-btn" id="settings-link" title="Settings"
+              onclick="location.href='/settings'">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="8" cy="8" r="2.2"/>
+          <path d="M8 1.6v1.9M8 12.5v1.9M1.6 8h1.9M12.5 8h1.9M3.5 3.5l1.3 1.3M11.2 11.2l1.3 1.3M12.5 3.5l-1.3 1.3M4.8 11.2l-1.3 1.3"/>
+        </svg>
+      </button>
+    </header>
+
+    <main class="thread" id="thread">
+      <div class="thread-inner" id="messages"></div>
+    </main>
+    <div class="tool-trace" id="tool-trace" hidden></div>
+
+    <div id="ask-slot"></div>
+
+    <footer class="composer">
+      <div class="composer-inner">
+        <div class="composer-box">
+          <textarea id="prompt" rows="1" placeholder="Ask anything about this workspace…"
+                    onkeydown="composerKey(event)"></textarea>
+          <button type="button" class="icon-btn pin-btn" id="pin-btn" onclick="togglePin()"
+                  title="Pin this chat to the top of the sidebar" hidden>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z"/>
+            </svg>
+          </button>
+          <button type="button" class="send" id="send" onclick="submitPrompt()" title="Send">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+              <path d="M2 8h11M9 4l4 4-4 4"/>
+            </svg>
+          </button>
+          <button type="button" class="cancel" id="cancel" onclick="cancelTurn()" title="Cancel" hidden>
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M4 4l8 8M12 4l-8 8"/>
+            </svg>
+          </button>
+        </div>
+        <p class="composer-hint">Enter to send · Shift+Enter for a newline</p>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<!--
+  The live stream is a hand-rolled EventSource: the server emits named SSE
+  events (delta / tool / ask / status / done) and the browser reconnects on its
+  own after a drop. The handlers that consume them are at the bottom.
+-->
+
+<script>
+"use strict";
+
+// --- session state -------------------------------------------------------
+// sessionId is "" until the first prompt creates one; the server returns the
+// real id and every later call targets it.
+let sessionId = "";
+let busy = false;
+// pins holds the pinned session ids so the sidebar row, the composer star, and
+// the ordering all read one state instead of disagreeing after a swap.
+const pins = new Set();
+const $ = (id) => document.getElementById(id);
+
+// --- sidebar -------------------------------------------------------------
+function toggleSidebar() { $("sidebar").classList.toggle("collapsed"); }
+
+function newChat() {
+  if (busy) return;
+  sessionId = "";
+  turns.clear();
+  showStartPage();
+  setStatus("idle");
+  showPinButton(false);
+  $("prompt").focus();
+  refreshSessions();
+}
+
+// showStartPage renders the ChatGpt-style landing state: a short greeting plus
+// clickable example prompts that seed the composer.
+function showStartPage() {
+  $("tool-trace").innerHTML = "";
+  $("tool-trace").hidden = true;
+  $("session-title").textContent = "New chat";
+  const box = $("messages");
+  box.innerHTML = "";
+  const d = document.createElement("div");
+  d.className = "empty-state";
+  d.id = "start-page";
+  const h = document.createElement("h1");
+  h.textContent = "What can I do for you?";
+  const p = document.createElement("p");
+  p.textContent = "Ask anything about this workspace.";
+  const hints = document.createElement("div");
+  hints.className = "empty-hints";
+  for (const t of ["Explain this project's architecture",
+                   "Run the test suite and fix what fails",
+                   "Review the last commit"]) {
+    const b = document.createElement("button");
+    b.className = "hint";
+    b.type = "button";
+    b.textContent = t;
+    b.onclick = () => { $("prompt").value = t; autoGrow(); $("prompt").focus(); };
+    hints.appendChild(b);
+  }
+  d.append(h, p, hints);
+  box.appendChild(d);
+}
+
+function openSession(id) {
+  if (busy) return;
+  sessionId = id;
+  // Drop any in-flight render state from the previous conversation so its
+  // bubble cannot be re-populated by an event belonging to another session.
+  turns.clear();
+  const rows = document.querySelectorAll(".session-row");
+  rows.forEach((el) => el.classList.toggle("active", el.dataset.sessionId === id));
+  // Prefer the row's own title (the session's first user line) to the id in the
+  // topbar; the id is still on the element's title attribute for pasting.
+  const row = [...rows].find((el) => el.dataset.sessionId === id);
+  sessionLabel(row ? row.dataset.title : id);
+  showPinButton(true);
+  getFragment("/api/transcript?id=" + encodeURIComponent(id), "messages")
+    .then(() => { $("thread").scrollTop = $("thread").scrollHeight; });
+}
+
+// refreshSessions repaints the sidebar. It is throttled to one in-flight
+// request: the list is polled on a timer and also refreshed after every turn,
+// and a burst of overlapping swaps would make the rows flicker and lose the
+// highlight. A failure clears the flag so the next poll can retry.
+let sessionsInFlight = false;
+function refreshSessions() {
+  if (sessionsInFlight) return Promise.resolve();
+  sessionsInFlight = true;
+  return getFragment("/api/sessions", "session-list")
+    .then(() => {
+      const active = document.querySelector(".session-row.active");
+      if (active) active.scrollIntoView({ block: "nearest" });
+    })
+    .catch(() => { /* a failed poll leaves the previous list in place */ })
+    .finally(() => { sessionsInFlight = false; });
+}
+
+// Rows are re-created by every sidebar swap, so their handlers are delegated
+// on the list rather than attached per row.
+// The star wins because it is checked first and stops propagation.
+$("session-list").addEventListener("click", (e) => {
+  const star = e.target.closest(".session-pin");
+  const row = e.target.closest(".session-row");
+  if (!row) return;
+  if (star) {
+    e.stopPropagation();
+    post("/api/pin", { sessionId: row.dataset.sessionId })
+      .then((res) => {
+        if (res.pinned) pins.add(res.sessionId); else pins.delete(res.sessionId);
+        if (res.sessionId === sessionId) $("pin-btn").classList.toggle("pinned", res.pinned);
+        refreshSessions();
+      })
+      .catch((err) => setStatus("pin failed: " + err.message, true));
+    return;
+  }
+  openSession(row.dataset.sessionId);
+});
+
+// --- transport ------------------------------------------------------------
+// Every call goes through fetch. htmx was the original transport but added a
+// network dependency and its ajax() resolves to undefined with swap:"none" and
+// to an XHR otherwise, so it can never return a parsed JSON body. The sidebar
+// fragments are HTML, so the swap here is a single innerHTML assignment — which
+// is all htmx was doing.
+async function post(path, values) {
+  const body = new URLSearchParams();
+  for (const [k, v] of Object.entries(values)) {
+    if (v !== undefined && v !== null) body.append(k, String(v));
+  }
+  const resp = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  if (!resp.ok) {
+    let detail = resp.statusText;
+    try { detail = (await resp.json()).error || detail; } catch { /* non-JSON body */ }
+    throw new Error(detail + " (" + resp.status + ")");
+  }
+  // /api/prompt replies {sessionId}; the others reply {status}. Both are JSON,
+  // and a 204 would be the only case with no body.
+  const text = await resp.text();
+  return text ? JSON.parse(text) : {};
+}
+
+// getFragment loads HTML into a target element. The target is an element id
+// without the "#" (matching the rest of this file's lookups).
+async function getFragment(path, target) {
+  const resp = await fetch(path);
+  if (!resp.ok) throw new Error(path + " -> " + resp.status);
+  const html = await resp.text();
+  const el = typeof target === "string" ? $(target) : target;
+  if (el) el.innerHTML = html;
+  return html;
+}
+
+// --- permission mode -----------------------------------------------------
+// cycleMode advances the mode like the TUI's palette toggle; the menu (below)
+// is for picking one directly. Both go through the same POST.
+function cycleMode() {
+  post("/api/mode", { mode: "cycle" })
+    .then(applyModeView)
+    .catch((err) => setStatus("mode change failed: " + err.message, true));
+}
+
+function setMode(mode) {
+  post("/api/mode", { mode })
+    .then(applyModeView)
+    .catch((err) => setStatus("mode change failed: " + err.message, true));
+}
+
+// applyModeView repaints the pill from the server's answer, which is the source
+// of truth: the client never assumes a mode change landed.
+function applyModeView(view) {
+  const pill = $("mode-pill");
+  pill.dataset.mode = view.mode;
+  pill.title = view.summary;
+  $("mode-label").textContent = view.label;
+
+  const menu = $("mode-menu");
+  menu.textContent = "";
+  for (const m of view.modes) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "mode-item" + (m.active ? " active" : "");
+    b.dataset.mode = m.mode;
+    const name = document.createElement("span");
+    name.className = "mode-item-name";
+    name.textContent = m.label;
+    const desc = document.createElement("span");
+    desc.className = "mode-item-desc";
+    desc.textContent = m.summary;
+    b.append(name, desc);
+    b.onclick = () => { setMode(m.mode); closeModeMenu(); };
+    menu.appendChild(b);
+  }
+}
+
+function toggleModeMenu() {
+  $("mode-menu").hidden = !$("mode-menu").hidden;
+}
+
+function closeModeMenu() {
+  $("mode-menu").hidden = true;
+}
+
+// Clicking anywhere outside the switcher dismisses the menu, so the only way to
+// leave it open is to keep interacting with it.
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("#mode-switch")) closeModeMenu();
+});
+
+function loadMode() {
+  fetch("/api/mode").then((r) => r.json()).then(applyModeView).catch(() => {});
+}
+
+// The mode is process-wide, so another tab (or a TUI running beside this one)
+// can change it while this tab is in the background. Re-sync on focus rather
+// than polling: the pill is a label, and a stale one misrepresents what will
+// actually ship.
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) loadMode();
+});
+
+// --- pins -----------------------------------------------------------------
+// togglePin pins/unpins the open session. The button is hidden until a session
+// exists, because pinning "New chat" would pin an id that does not exist yet.
+function togglePin() {
+  if (!sessionId) return;
+  post("/api/pin", { sessionId })
+    .then((res) => {
+      $("pin-btn").classList.toggle("pinned", res.pinned);
+      $("pin-btn").title = res.pinned
+        ? "Unpin this chat from the top of the sidebar"
+        : "Pin this chat to the top of the sidebar";
+      refreshSessions();
+    })
+    .catch((err) => setStatus("pin failed: " + err.message, true));
+}
+
+function loadPins() {
+  fetch("/api/pins").then((r) => r.json())
+    .then((res) => {
+      // pins is a const Set, so it is cleared and filled in place: reassigning
+      // it would throw under "use strict" (and the catch below would hide the
+      // error, leaving every star dark).
+      pins.clear();
+      for (const id of res.pins || []) pins.add(id);
+      if (sessionId) $("pin-btn").classList.toggle("pinned", pins.has(sessionId));
+      refreshSessions();
+    })
+    .catch((err) => setStatus("could not load pinned chats", true));
+}
+
+function showPinButton(show) {
+  $("pin-btn").hidden = !show;
+  if (show && sessionId) $("pin-btn").classList.toggle("pinned", pins.has(sessionId));
+}
+
+// --- composer ------------------------------------------------------------
+function composerKey(e) {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitPrompt(); }
+}
+
+// submitPrompt sends the composer text. The id the server assigns is adopted
+// immediately (not after the stream ends), because /api/cancel needs it to find
+// the turn to stop: without it /api/cancel cannot find the turn to stop, so
+// the stop button fails and the composer stays locked until the turn naturally
+// ends.
+async function submitPrompt() {
+  const text = $("prompt").value.trim();
+  if (!text || busy) return;
+  dismissStartPage();
+  appendUser(text);
+  $("prompt").value = "";
+  autoGrow();
+  setBusy(true, "thinking…");
+  let resp;
+  try {
+    resp = await post("/api/prompt", { sessionId, prompt: text });
+  } catch (err) {
+    setStatus("error: " + err.message, true);
+    setBusy(false);
+    return;
+  }
+  if (resp && resp.sessionId) {
+    sessionId = resp.sessionId;
+    // Prefer the session's own first line over its id in the topbar.
+    fetch("/api/session?id=" + encodeURIComponent(sessionId))
+      .then((r) => r.json())
+      .then((meta) => sessionLabel(meta.title || sessionId))
+      .catch(() => sessionLabel(sessionId));
+    // The id exists now, so the star can be shown; its state comes from the
+    // pin list the server keeps.
+    showPinButton(true);
+  }
+  refreshSessions();
+}
+
+function cancelTurn() {
+  if (!sessionId) { setBusy(false); return; }
+  post("/api/cancel", { sessionId })
+    .catch((err) => setStatus("cancel failed: " + err.message, true));
+}
+
+// sessionLabel puts a human-readable name in the topbar rather than the raw
+// session id. The id stays in the tooltip for the cases where it matters
+// (pasting it somewhere, matching a log line).
+function sessionLabel(name) {
+  const el = $("session-title");
+  el.textContent = name || "New chat";
+  el.title = sessionId || "";
+}
+
+function setBusy(state, label) {
+  busy = state;
+  $("send").hidden = state;
+  $("cancel").hidden = !state;
+  $("send").setAttribute("aria-busy", String(state));
+  const pill = $("status");
+  pill.classList.toggle("busy", state);
+  setStatus(state ? label : "idle");
+}
+
+function setStatus(text, isError) {
+  const pill = $("status");
+  pill.textContent = text;
+  pill.classList.toggle("error", Boolean(isError));
+}
+
+function autoGrow() {
+  const t = $("prompt");
+  t.style.height = "auto";
+  t.style.height = Math.min(t.scrollHeight, 180) + "px";
+}
+$("prompt").addEventListener("input", autoGrow);
+
+// --- rendering -----------------------------------------------------------
+function appendUser(text) {
+  const el = document.createElement("div");
+  el.className = "bubble bubble-user";
+  el.textContent = text;
+  $("messages").appendChild(el);
+  scrollToEnd();
+}
+
+// The start page is a first-impression state, not a transcript row: once the
+// user sends anything it is gone for the rest of this conversation.
+function dismissStartPage() {
+  const start = document.getElementById("start-page");
+  if (start) start.remove();
+}
+
+// Streaming events carry the *accumulated* assistant text for the turn, not an
+// increment (engine.streamTurn re-emits the whole message on every chunk). So
+// each turn keeps its authoritative copy here and the bubble is re-rendered
+// from it — appending would multiply repeated words.
+const turns = new Map();
+
+function turnState(sid) {
+  if (!turns.has(sid)) turns.set(sid, { text: "", reasoning: "", el: null });
+  return turns.get(sid);
+}
+
+function renderTurn(sid, final) {
+  const st = turnState(sid);
+  if (!st.el) {
+    st.el = document.createElement("div");
+    st.el.className = "bubble bubble-assistant";
+    $("messages").appendChild(st.el);
+  }
+  // The caret rides on the bubble while the turn streams, and leaves when it
+  // completes — the same signal as the status pill, but anchored to the text.
+  st.el.classList.toggle("streaming", !final);
+  const box = st.el;
+  box.textContent = "";
+  if (st.reasoning) {
+    const d = document.createElement("details");
+    d.className = "thinking";
+    // While streaming keep the reasoning open so it reads as live activity;
+    // once the turn is done collapse it to the final answer.
+    d.open = !final;
+    const s = document.createElement("summary");
+    s.textContent = "Thinking";
+    const body = document.createElement("div");
+    body.className = "thinking-body";
+    body.textContent = st.reasoning;
+    d.append(s, body);
+    box.appendChild(d);
+  }
+  if (st.text) {
+    const p = document.createElement("div");
+    p.textContent = st.text;
+    box.appendChild(p);
+  }
+  scrollToEnd();
+}
+
+function scrollToEnd() { $("thread").scrollTop = $("thread").scrollHeight; }
+
+// The server emits named SSE events (delta / tool / ask / status / done) whose
+// payload is the JSON the Go serverEvent marshalled into. A raw EventSource
+// dispatches each one here; the browser reconnects on its own after a drop.
+function connectStream() {
+  const src = new EventSource("/api/events");
+  for (const name of ["delta", "tool", "ask", "status", "done"]) {
+    src.addEventListener(name, (e) => {
+      let data;
+      try { data = JSON.parse(e.data); } catch { return; }
+      switch (name) {
+        case "delta": {
+          const sid = data.sessionId || sessionId;
+          const st = turnState(sid);
+          // Accumulated (not incremental) text: replace, never append.
+          if (data.delta) {
+            if (data.delta.text !== undefined) st.text = data.delta.text;
+            if (data.delta.reasoning !== undefined) st.reasoning = data.delta.reasoning;
+            renderTurn(sid, false);
+          }
+          break;
+        }
+        case "tool": appendTool(data.sessionId || sessionId, data.tool); break;
+        case "ask":  appendAsk(data.sessionId || sessionId, data.ask); break;
+        case "status":
+          if (data.status) setStatus(data.status.text, data.failed);
+          if (data.failed) { setBusy(false); scrollToEnd(); }
+          break;
+        case "done": {
+          const sid = data.sessionId || sessionId;
+          if (turns.get(sid)) { renderTurn(sid, true); turns.delete(sid); }
+          setBusy(false);
+          refreshSessions();
+          break;
+        }
+      }
+    });
+  }
+  src.onerror = () => setStatus("reconnecting…");
+  return src;
+}
+
+function appendTool(sid, run) {
+  if (!run) return;
+  const trace = $("tool-trace");
+  trace.hidden = false;
+  const key = run.toolUseId || (run.name || "tool") + "-" + Math.random().toString(36).slice(2);
+  let row = trace.querySelector('[data-tool-id="' + cssEscape(key) + '"]');
+  if (!row) {
+    row = document.createElement("div");
+    row.className = "tool-row";
+    row.dataset.toolId = key;
+    trace.appendChild(row);
+  }
+  const status = run.status || "queued";
+  row.className = "tool-row tool-" + status;
+  const detail = run.detail || run.error || "";
+  row.textContent = (run.name || "tool") + (detail ? " · " + detail : "") +
+                    (status && status !== "done" ? "  [" + status + "]" : "");
+  scrollToEnd();
+}
+
+// appendAsk renders a permission prompt. The card is keyed by the prompt id so
+// a re-sent prompt replaces its own card instead of stacking duplicates.
+function appendAsk(sid, ask) {
+  const key = ask.id || ("ask-" + Math.random().toString(36).slice(2));
+  const prior = document.querySelector('.ask[data-ask-id="' + cssEscape(key) + '"]');
+  if (prior) prior.remove();
+
+  const el = document.createElement("div");
+  el.className = "ask";
+  el.dataset.askId = key;
+  const title = document.createElement("div");
+  title.className = "ask-title";
+  title.textContent = "Permission requested: " + (ask.tool || "tool");
+  const reason = document.createElement("div");
+  reason.className = "ask-reason";
+  reason.textContent = ask.reason || "";
+  const actions = document.createElement("div");
+  actions.className = "ask-actions";
+
+  const allow = document.createElement("button");
+  allow.className = "btn btn-primary";
+  allow.textContent = "Allow";
+  allow.onclick = () => answerAsk(key, true, "");
+
+  const deny = document.createElement("button");
+  deny.className = "btn btn-danger";
+  deny.textContent = "Deny";
+  deny.onclick = () => answerAsk(key, false, "");
+
+  actions.append(allow, deny);
+  el.append(title, reason, actions);
+  $("messages").appendChild(el);
+  scrollToEnd();
+}
+
+// answerAsk posts the decision and removes the card it answered, so the
+// transcript moves on as soon as the user commits.
+function answerAsk(id, approved, feedback) {
+  post("/api/ask", { id, approved: String(approved), feedback })
+    .then(() => {
+      const card = document.querySelector('.ask[data-ask-id="' + cssEscape(id) + '"]');
+      if (card) card.remove();
+    })
+    .catch(() => setStatus("could not answer permission prompt", true));
+}
+
+function cssEscape(s) {
+  return String(s).replace(/[^a-zA-Z0-9_-]/g, "\\$&");
+}
+
+// --- boot ----------------------------------------------------------------
+$("prompt").focus();
+showStartPage();
+loadMode();
+loadPins();
+refreshSessions();
+// The sidebar polls for sessions created elsewhere (a TUI turn, a sub-agent
+// job) so the web surface is not blind to the rest of the workspace.
+setInterval(refreshSessions, 20000);
+connectStream();
+</script>
+</body>
+</html>

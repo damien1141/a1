@@ -1,6 +1,7 @@
 package block
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/pulseaiclub/xui"
@@ -13,8 +14,12 @@ import (
 // ToolBlock renders a generic tool_use row: status glyph, name,
 // detail, and optional expandable output body.
 type ToolBlock struct {
-	Name     string
-	Detail   string
+	Name   string
+	Detail string
+	// Summary is the tool's one-line outcome ("200 OK · 42.1 KB · 1.2s"), shown
+	// after Detail once the call resolves. Distinct from Detail, which is the
+	// call's identity for the whole run.
+	Summary  string
 	Output   string
 	Error    string
 	Status   status.ToolStatus
@@ -82,6 +87,29 @@ func (toolBlock *ToolBlock) CopyText() string {
 	return b.String()
 }
 
+// resultStat summarizes how much came back from a finished tool, so the row
+// reports its outcome without expanding. Empty while running, on failure, or
+// when there is no output.
+func (toolBlock *ToolBlock) resultStat() string {
+	if toolBlock.Status != status.ToolDone {
+		return ""
+	}
+	n := 0
+	for ln := range strings.SplitSeq(toolBlock.Output, "\n") {
+		if strings.TrimSpace(ln) != "" {
+			n++
+		}
+	}
+	switch n {
+	case 0:
+		return ""
+	case 1:
+		return "(1 line)"
+	default:
+		return fmt.Sprintf("(%d lines)", n)
+	}
+}
+
 // Draw renders the tool status glyph, name, detail, and optional output body.
 func (toolBlock *ToolBlock) Draw(ctx components.DrawContext) components.Surface {
 	th := toolBlock.theme()
@@ -100,6 +128,14 @@ func (toolBlock *ToolBlock) Draw(ctx components.DrawContext) components.Surface 
 	}
 	if suf := chrome.StatusSuffix(toolBlock.Status); suf != "" {
 		spans = append(spans, components.Span{Text: suf, Style: th.Muted})
+	}
+	// The tool's own summary wins over the generic line count: "200 OK · 42.1 KB
+	// · 1.2s" says something, "(412 lines)" does not. The fallback stays for the
+	// tools that set no summary.
+	if toolBlock.Summary != "" {
+		spans = append(spans, components.Span{Text: " " + toolBlock.Summary, Style: th.Muted})
+	} else if stat := toolBlock.resultStat(); stat != "" {
+		spans = append(spans, components.Span{Text: " " + stat, Style: th.Muted})
 	}
 	if toolBlock.hasBody() {
 		spans = append(spans, components.Span{Text: chrome.ExpandArrow(toolBlock.Expanded), Style: th.Muted})
