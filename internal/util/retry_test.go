@@ -205,3 +205,96 @@ func TestDoWithRetryRetryAfterBehavior(t *testing.T) {
 		})
 	}
 }
+
+// A 429 must get more patience than a transient 5xx: the limit is temporary by
+// definition, so failing a turn after three seconds of waiting is a bug. This
+// is the regression test for "LLM API error (429)" surfacing to the user.
+func TestDoWithRetryGivesRateLimitMoreAttempts(t *testing.T) {
+	tests := []struct {
+		name         string
+		status       int
+		wantRequests int32
+	}{
+		{name: "rate limit gets five attempts", status: http.StatusTooManyRequests, wantRequests: 5},
+		{name: "gateway blip gets three attempts", status: http.StatusServiceUnavailable, wantRequests: 3},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var requests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				requests.Add(1)
+				// Retry-After: 0 keeps the test fast while still exercising the
+				// real schedule.
+				w.Header().Set("Retry-After", "0")
+				w.WriteHeader(tt.status)
+			}))
+			defer server.Close()
+
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL, http.NoBody)
+			require.NoError(t, err)
+
+			resp, err := DoWithRetry(server.Client(), req)
+			require.NoError(t, err)
+			require.NotNil(t, resp)
+			_ = resp.Body.Close()
+			require.Equal(t, tt.wantRequests, requests.Load(), "attempts for status %d", tt.status)
+		})
+	}
+}
+
+// Without Retry-After the 429 waits grow exponentially, so the total is far more
+// than the two seconds the old fallback gave it.
+func TestRateLimitBackoffIsExponentialAndHonorsHeader(t *testing.T) {
+	resp := func(retryAfter string) *http.Response {
+		if retryAfter == "" {
+			return nil
+		}
+		return &http.Response{Header: http.Header{"Retry-After": []string{retryAfter}}}
+	}
+
+	// Header wins when sane.
+	require.Equal(t, 30*time.Second, rateLimitDelay(resp("30"), 0), "Retry-After is honored")
+	// Absurd header is capped so an hour-long park is impossible.
+	require.Equal(t, maxRetryAfterDelay, rateLimitDelay(resp("3600"), 0), "Retry-After is capped")
+	// No header: exponential with jitter, always at least the base step.
+	for attempt := range 4 {
+		got := rateLimitDelay(nil, attempt)
+		floor := time.Second << attempt
+		require.GreaterOrEqual(t, got, floor, "attempt %d below its backoff step", attempt)
+		require.LessOrEqual(t, got, floor+maxRetryJitter, "attempt %d above its step plus jitter", attempt)
+	}
+}
+
+// A mixed sequence must use the right budget for each status, so a 429 followed
+// by a gateway blip does not inherit five attempts of patience forever.
+func TestDoWithRetryMixedSequenceUsesPerStatusBudget(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		n := int(requests.Add(1))
+		w.Header().Set("Retry-After", "0")
+		if n <= 4 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		// Fifth request: a gateway blip, which allows one more attempt.
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL, http.NoBody)
+	require.NoError(t, err)
+
+	resp, err := DoWithRetry(server.Client(), req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	_ = resp.Body.Close()
+	// Four 429s (attempts 0-3) then a 503 on attempt 4. The 5xx budget is three
+	// attempts, so attempt 4 is already past it and the sequence stops — the
+	// 503 does not inherit the 429's patience.
+	require.Equal(t, int32(5), requests.Load(), "four 429s stop at the 503 budget")
+}

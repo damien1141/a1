@@ -58,7 +58,7 @@ internal/tui/
 | `composer` | Keyboard routing for chat, `/` slash, `@` mention, Ctrl+K palette |
 | `footer` | Composer status slot (activity ↔ tokens), bottom footer row (ext status, jobs, update hint) |
 | `overlays` | Modal permission / continue-ask panels; replaces composer when active |
-| `diffpane` | Full-screen git diff review; comments persist under `.phi/review.json` |
+| `diffpane` | Full-screen git diff review; comments persist under `.a1/review.json` |
 | `codepane` | Full-screen source viewer: syntax highlight, caret, line selection |
 | `submit` | User submit path: agent prompt, slash commands, `!bash`, cancel |
 | `commands` | Slash/palette registry; session load/clear; extension command bridge |

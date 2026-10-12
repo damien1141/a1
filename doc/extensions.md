@@ -49,7 +49,7 @@ root [README](../README.md#extensions). Re-probe with
 | Location | Scope |
 |----------|-------|
 | `~/.a1/extensions/<name>/phi.yaml` | Global |
-| `<cwd>/.phi/extensions/<name>/phi.yaml` | Project-local |
+| `<cwd>/.a1/extensions/<name>/phi.yaml` | Project-local |
 
 Same name: project wins. Disable all with `PHI_EXTENSIONS=off`.
 
@@ -68,7 +68,7 @@ enabled: true          # optional, default true
 Lightweight module (no TUI deps):
 
 ```bash
-go get github.com/pulseaiclub/phi/ext/go@v0.21.0
+go get github.com/damien1141/a1/ext/go@v0.21.0
 ```
 
 (`scripts/bump.sh` tags both `vX.Y.Z` and `ext/go/vX.Y.Z`.)
@@ -121,8 +121,8 @@ m.RegisterTool(ext.Tool{
 package main
 
 import (
-	"github.com/pulseaiclub/phi/ext/go"
-	"github.com/pulseaiclub/phi/ext/go/phi"
+	"github.com/damien1141/a1/ext/go"
+	"github.com/damien1141/a1/ext/go/phi"
 )
 
 func main() {
@@ -169,7 +169,7 @@ func main() {
 }
 ```
 
-Requires `import "github.com/pulseaiclub/phi/ext/go/pxb"` for `SubscribeEvent` payloads.
+Requires `import "github.com/damien1141/a1/ext/go/pxb"` for `SubscribeEvent` payloads.
 
 UI surface today: **toast** (`Notify`), **footer status** (`SetStatus`), **Submit** / **SendUserMessage**,
 **Confirm** / **ConfirmOpts**.
@@ -199,7 +199,7 @@ fixtures). Deps: `serde`/`serde_json` at the JSON edges plus `tokio` (`rt`, `net
 
 ```bash
 # pre-release: tracks the latest main (crate publishes under ext/rust/vX.Y.Z tags)
-cargo add phi-ext --git https://github.com/pulseaiclub/phi --branch main
+cargo add phi-ext --git https://github.com/damien1141/a1 --branch main
 # release: published crate version
 # cargo add phi-ext
 ```
@@ -337,7 +337,7 @@ a1 plugin update --check        # report available updates without installing
 a1 plugin remove greet          # uninstall (alias: rm)
 ```
 
-Install records the GitHub source in `.phi-install.json` inside the extension
+Install records the GitHub source in `.a1-install.json` inside the extension
 directory. `update` prepares the complete replacement beside the installed tree
 before switching directories. The old tree is kept as a backup until the switch
 completes; release archives are preferred, with the same git-clone fallback as
@@ -362,7 +362,7 @@ them under management.
 
 | Path | Role |
 |------|------|
-| `ext/go/` (module `github.com/pulseaiclub/phi/ext/go`) | Shared types (`Tool`, events) |
+| `ext/go/` (module `github.com/damien1141/a1/ext/go`) | Shared types (`Tool`, events) |
 | `ext/go/pxb` | Binary wire protocol |
 | `ext/go/phi` | Go author SDK (`ExtensionAPI.Run`) |
 | `ext/rust` (crate `phi-ext`) | Rust author SDK (`pxb` + `a1` modules; deps: serde/serde_json + tokio `rt`) |

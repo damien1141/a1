@@ -36,7 +36,7 @@ Typical rhythm: pick a server from the prompt → `mcp_list(server=…)` → `mc
 
 ```text
 Start TUI / a1 run
-  → load ~/.a1/mcp.json + <cwd>/.phi/mcp.json
+  → load ~/.a1/mcp.json + <cwd>/.a1/mcp.json
   → build Pool (no subprocess yet)
   → tool list += mcp_list / mcp_inspect / mcp_call
   → system prompt += MCP catalog (server names only)
@@ -62,7 +62,7 @@ Sub-agents do **not** inherit MCP meta-tools by default. Disable with `PHI_MCP=o
 
 ## Quick start
 
-Config file: `~/.a1/mcp.json` (project `<cwd>/.phi/mcp.json` overrides same-named servers).
+Config file: `~/.a1/mcp.json` (project `<cwd>/.a1/mcp.json` overrides same-named servers).
 
 ```json
 {

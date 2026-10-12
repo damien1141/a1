@@ -11,13 +11,13 @@ Lean, high-performance Go terminal coding-agent harness. Layout: [doc/project-la
 ## Constraints
 
 - **Tool loop is ExtensionPre → Gate/Ask → Run → ExtensionPost.** Don't bypass the permission gate when changing the executor. Don't put MCP server tool schemas on the model — only `mcp_list` / `mcp_inspect` / `mcp_call`.
-- **Extensions are PXB subprocesses** (`phi.yaml` + native binary under `~/.a1/extensions` / `.phi/extensions`). Wire: `ext/go/pxb`. Author SDK: Go `ext/go/phi` (module `github.com/pulseaiclub/phi/ext/go`). Host: `internal/extension`. See [doc/extensions.md](doc/extensions.md).
-- **Keep hashline `edit`.** Don't replace it with whole-file rewrite. Stale `@file path#TAG` / `LINE#HASH` must fail closed.
+- **Extensions are PXB subprocesses** (`phi.yaml` + native binary under `~/.a1/extensions` / `.a1/extensions`). Wire: `ext/go/pxb`. Author SDK: Go `ext/go/phi` (module `github.com/damien1141/a1/ext/go`). Host: `internal/extension`. See [doc/extensions.md](doc/extensions.md).
+- **`edit` stays a `str_replace`-style tool.** Don't replace it with a whole-file rewrite; match on `old_str` / `new_str` and require a unique match.
 - **Sub-agent transcripts stay under `~/.a1/jobs/<id>/`.** Parent context gets the wait/task summary only. Child engines have no `agent_*` tools (no nesting). Default child role is explore (no write/edit; bash allowed except hard denies).
 - **UI split:** `internal/components` render; `internal/tui` wires the shell. Non-shell pieces live under `internal/tui/controller` (Engine/Bus/Msg), `internal/tui/transcript` (Mapper); version in `internal/version`. Keep widgets dumb.
 - **TUI assembly:** `cmd` constructs `controller.Bus` / `controller.Controller` / App and passes them into `editor.NewEditor(...)`, which builds the commands registry (`commands.NewBuiltinRegistry`). Do not hide `GetDefaultProject` inside `tui` constructors; do not return half-initialized Controllers (`engineErr` zombies). Prefer constructor parameters over `XxxDeps` bags.
 - **Stay lean and fast.** Direct module deps are few on purpose. Don't add a dependency without a clear need. Prefer changes that keep startup, idle RSS, and rebuild time small.
-- **Format with `make fmt`** (gofumpt / goimports / golines, 120 cols, local prefix `github.com/pulseaiclub/phi`). Don't hand-fight import groups.
+- **Format with `make fmt`** (gofumpt / goimports / golines, 120 cols, local prefix `github.com/damien1141/a1`). Don't hand-fight import groups.
 - **`testing` / `testify` stay in `*_test.go`.** `depguard` will fail the lint otherwise.
 - **Tests use testify** (`assert` / `require`) for assertions — no raw `t.Fatalf` checks.
 - After dependency changes: `go mod tidy`. `go.mod` is not generated.
@@ -60,11 +60,12 @@ Release procedure (the gates that must all be green before a tag goes out):
    is shown on the splash screen next to the sphere and used by `a1 update`.
 2. **Changelog.** Add a `## [X.Y.Z] - YYYY-MM-DD` section to `CHANGELOG.md`
    (Added / Changed / Deprecated / Removed / Fixed / Security) and add the
-   `[X.Y.Z]: https://github.com/pulseaiclub/phi/compare/vX.Y.Z-1...vX.Y.Z`
+   `[X.Y.Z]: https://github.com/damien1141/a1/compare/vX.Y.Z-1...vX.Y.Z`
    and `.../releases/tag/vX.Y.Z` link references at the bottom. Never edit
    text under `<!-- Released section -->` except in a release PR.
 3. **Readmes.** Bump the version in the `# A1 vX.Y.Z` header of both
-   `README.md` and `README.zh-CN.md`.
+   `README.md` and `README.zh-CN.md`. `internal/version/version.go` is the
+   source of truth — the header must match it.
 4. **CI gates — run these locally before pushing:**
    - `make test` (and `go test ./...` from `ext/go`). The `internal/util/diffreview`
      git tests must be hermetic: neutralize `commit.gpgsign` /

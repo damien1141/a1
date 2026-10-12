@@ -1,10 +1,10 @@
-# A1 v1.5.1
+# A1 v2.0.1
 
 A terminal coding-agent harness for people who want an agent that can actually reason over long sessions, inspect its own permissions, and browse the web without leaving the shell.
 
-Fork of [phi](https://github.com/pulseaiclub/phi) with fold-based context management, live APPA permission control, and Playwright-driven browser automation baked in. ~85k LOC of Go, no runtime bloat.
+Fork of [phi](https://github.com/pulseaiclub/phi) with fold-based context management, live APPA permission control, and Playwright-driven browser automation baked in. ~91k lines of Go (63k non-test), no runtime bloat.
 
-**Docs:** [pulseaiclub.github.io](https://pulseaiclub.github.io/)
+**Docs:** [github.com/damien1141/a1](https://github.com/damien1141/a1) (README + `doc/`)
 
 **Recommended local models:** for local LLM inference, [GRM-3.2-Sky-ONYX-GGUF](https://huggingface.co/el4/GRM-3.2-Sky-ONYX-GGUF); for embeddings, [nomic-ai/nomic-embed-text-v2-moe-GGUF](https://huggingface.co/nomic-ai/nomic-embed-text-v2-moe-GGUF).
 
@@ -94,7 +94,7 @@ Everything else is still phi under the hood: same TUI, same sub-agent model, sam
 What changed:
 
 - **Replaced hash-based edit anchors:** the old `edit` tool required copying `@file path#TAG` and `LINE#HASH` anchors from `read`/`grep` output. That forced the LLM to act as a hash calculator — something it is bad at — and burned tokens on mechanical copying. The new `edit` tool uses plain `old_str` / `new_str` matching, which plays to the LLM's actual strength (pattern matching and text copying) and matches the standard format used by aider, cursor, and cline.
-- **Rebranded identity:** CLI is `a1`, config dir is `~/.a1/`, env vars are `A1_*`.
+- **Rebranded identity:** CLI is `a1`, config dir is `~/.a1/`, log file is `a1-debug.log`. Model/API env overrides keep their `PHI_*` names (`PHI_MODEL`, `PHI_API_KEY`, `PHI_BASE_URL`, `PHI_THINK_LEVEL`, `PHI_SKILL_PATH`); `A1_DEBUG_FILE` and `A1_BROWSER_HEADLESS` are the a1-named ones.
 - **Expanded tool surface:** 30+ built-in analysis, search, graph, browser, and permission tools.
 - **Session memory bank:** JSONL-backed memory under `~/.a1/sessions/memory/`; successful and failed tool calls are journaled and injected as system messages.
 - **Terminal history navigation:** Up/Down arrows browse prior submissions; history reloads from memory bank when resuming sessions.

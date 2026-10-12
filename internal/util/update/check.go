@@ -11,7 +11,7 @@ import (
 )
 
 // Repo is the GitHub repository that publishes a1 releases.
-const Repo = "pulseaiclub/phi"
+const Repo = "damien1141/a1"
 
 const (
 	updateCheckTTL  = 12 * time.Hour

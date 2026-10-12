@@ -1,27 +1,27 @@
 #requires -Version 5.1
 <#
 .SYNOPSIS
-  Install the latest phi release on Windows.
+  Install the latest a1 release on Windows.
 .DESCRIPTION
   Mirrors scripts/install.sh for Windows: resolves the latest GitHub release
-  (or a pinned PHI_VERSION), downloads the Windows zip, verifies its SHA-256
-  checksum, extracts phi.exe into the phi bin dir, and adds that dir to the
+  (or a pinned A1_VERSION), downloads the Windows zip, verifies its SHA-256
+  checksum, extracts a1.exe into the a1 bin dir, and adds that dir to the
   user PATH when missing.
 .PARAMETER Version
   Release tag to install (default: latest), e.g. v0.4.0. A leading "v" is
-  added if missing. May also be set via the PHI_VERSION env var.
+  added if missing. May also be set via the A1_VERSION env var.
 .PARAMETER InstallDir
-  Directory to install phi.exe into (default: ~\.phi\bin, where phi already
+  Directory to install a1.exe into (default: ~\.a1\bin, where a1 already
   keeps downloaded tools like fd/ripgrep). May also be set via the
-  PHI_INSTALL_DIR env var.
+  A1_INSTALL_DIR env var.
 .PARAMETER Repo
-  GitHub repo in owner/name form (default: pulseaiclub/phi). May also be set
-  via the PHI_REPO env var.
+  GitHub repo in owner/name form (default: damien1141/a1). May also be set
+  via the A1_REPO env var.
 .EXAMPLE
-  irm https://raw.githubusercontent.com/pulseaiclub/phi/main/scripts/install.ps1 | iex
+  irm https://raw.githubusercontent.com/damien1141/a1/main/scripts/install.ps1 | iex
 
-  $env:PHI_VERSION = 'vX.Y.Z'
-  irm https://raw.githubusercontent.com/pulseaiclub/phi/main/scripts/install.ps1 | iex
+  $env:A1_VERSION = 'vX.Y.Z'
+  irm https://raw.githubusercontent.com/damien1141/a1/main/scripts/install.ps1 | iex
 .NOTES
   Windows/arm64 builds are not published; this script only supports amd64.
   Set GITHUB_TOKEN to raise GitHub API rate limits.
@@ -40,13 +40,13 @@ $ProgressPreference = 'SilentlyContinue'   # much faster Invoke-WebRequest
 
 # ---- config (params win over env vars) ----
 if (-not $Repo) {
-    $Repo = $env:PHI_REPO
-    if (-not $Repo) { $Repo = 'pulseaiclub/phi' }
+    $Repo = $env:A1_REPO
+    if (-not $Repo) { $Repo = 'damien1141/a1' }
 }
-if (-not $Version) { $Version = $env:PHI_VERSION }
+if (-not $Version) { $Version = $env:A1_VERSION }
 if (-not $InstallDir) {
-    $InstallDir = $env:PHI_INSTALL_DIR
-    if (-not $InstallDir) { $InstallDir = Join-Path $HOME '.phi\bin' }
+    $InstallDir = $env:A1_INSTALL_DIR
+    if (-not $InstallDir) { $InstallDir = Join-Path $HOME '.a1\bin' }
 }
 $Token = if ($env:GITHUB_TOKEN) { $env:GITHUB_TOKEN } else { '' }
 
@@ -75,41 +75,41 @@ if ($Version) {
     if ($Tag -notmatch '^v') { $Tag = "v$Tag" }
 }
 else {
-    Write-Host "phi install: querying latest release..."
+    Write-Host "a1 install: querying latest release..."
     try {
         $rel = Invoke-RestMethod -Uri "$api/releases/latest" -Headers $headers
     }
     catch {
-        throw "failed to query $api/releases/latest: $($_.Exception.Message) (publish a release first, or set PHI_VERSION=vX.Y.Z)"
+        throw "failed to query $api/releases/latest: $($_.Exception.Message) (publish a release first, or set A1_VERSION=vX.Y.Z)"
     }
     $Tag = [string]$rel.tag_name
 }
 
 # GoReleaser .Version strips the leading v from the tag.
 $ver    = $Tag -replace '^[vV]', ''
-$asset  = "phi_${ver}_windows_${goarch}.zip"
+$asset  = "a1_${ver}_windows_${goarch}.zip"
 $sums   = "checksums_${ver}.txt"
 $assetUrl = "$dl/$Tag/$asset"
 $sumsUrl  = "$dl/$Tag/$sums"
 
-Write-Host "phi install: $Tag (windows/$goarch)"
-Write-Host "phi install: $assetUrl"
+Write-Host "a1 install: $Tag (windows/$goarch)"
+Write-Host "a1 install: $assetUrl"
 
 # ---- temp workspace ----
-$tmp = Join-Path ([IO.Path]::GetTempPath()) ("phi-install-" + [guid]::NewGuid().ToString('N'))
+$tmp = Join-Path ([IO.Path]::GetTempPath()) ("a1-install-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $tmp -Force | Out-Null
 try {
     # ---- download ----
-    Write-Host "phi install: downloading checksums..."
+    Write-Host "a1 install: downloading checksums..."
     $sumsPath = Join-Path $tmp $sums
     Invoke-WebRequest -Uri $sumsUrl -OutFile $sumsPath -Headers $headers
 
-    Write-Host "phi install: downloading archive..."
+    Write-Host "a1 install: downloading archive..."
     $zipPath = Join-Path $tmp $asset
     Invoke-WebRequest -Uri $assetUrl -OutFile $zipPath -Headers $headers
 
     # ---- verify ----
-    Write-Host "phi install: verifying checksum..."
+    Write-Host "a1 install: verifying checksum..."
     $want = $null
     foreach ($line in (Get-Content -LiteralPath $sumsPath)) {
         $line = $line.Trim()
@@ -125,21 +125,21 @@ try {
     }
 
     # ---- extract + install ----
-    Write-Host "phi install: extracting..."
+    Write-Host "a1 install: extracting..."
     $extractDir = Join-Path $tmp 'extracted'
     New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
     Expand-Archive -LiteralPath $zipPath -DestinationPath $extractDir -Force
-    $newBin = Join-Path $extractDir 'phi.exe'
+    $newBin = Join-Path $extractDir 'a1.exe'
     if (-not (Test-Path -LiteralPath $newBin -PathType Leaf)) {
-        throw "extracted archive does not contain phi.exe at $newBin"
+        throw "extracted archive does not contain a1.exe at $newBin"
     }
 
-    Write-Host "phi install: installing to $InstallDir"
+    Write-Host "a1 install: installing to $InstallDir"
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-    $dest = Join-Path $InstallDir 'phi.exe'
+    $dest = Join-Path $InstallDir 'a1.exe'
     if (Test-Path -LiteralPath $dest) {
         # Windows locks running executables; rename-then-move mirrors
-        # internal/util/update's replaceBinary so a live phi fails loudly
+        # internal/util/update's replaceBinary so a live a1 fails loudly
         # instead of half-overwriting.
         $bak = "$dest.old"
         Remove-Item -LiteralPath $bak -Force -ErrorAction SilentlyContinue
@@ -152,7 +152,7 @@ try {
             if (-not (Test-Path -LiteralPath $dest) -and (Test-Path -LiteralPath $bak)) {
                 Rename-Item -LiteralPath $bak -NewName (Split-Path $dest -Leaf) -ErrorAction SilentlyContinue
             }
-            throw "could not replace $dest (close any running phi and retry): $($_.Exception.Message)"
+            throw "could not replace $dest (close any running a1 and retry): $($_.Exception.Message)"
         }
         Remove-Item -LiteralPath $bak -Force -ErrorAction SilentlyContinue
     }
@@ -160,7 +160,7 @@ try {
         Move-Item -LiteralPath $newBin -Destination $dest -Force
     }
 
-    Write-Host "phi install: installed $Tag -> $dest"
+    Write-Host "a1 install: installed $Tag -> $dest"
 }
 finally {
     Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
@@ -177,16 +177,16 @@ if ($userPath) {
 if (-not $onPath) {
     $newUserPath = if ($userPath) { "$InstallDir;$userPath" } else { $InstallDir }
     [Environment]::SetEnvironmentVariable('Path', $newUserPath, 'User')
-    Write-Host "phi install: added $InstallDir to user PATH (new terminals only)"
+    Write-Host "a1 install: added $InstallDir to user PATH (new terminals only)"
 }
-# Make phi reachable in THIS session too.
+# Make a1 reachable in THIS session too.
 $env:Path = "$InstallDir;$env:Path"
 
 Write-Host ""
-Write-Host "phi install: $Tag installed successfully!"
+Write-Host "a1 install: $Tag installed successfully!"
 Write-Host ""
 Write-Host "Next steps:"
-Write-Host "  1. phi config          # add a model + api_key (opens in browser)"
-Write-Host "  2. phi                 # start the TUI"
+Write-Host "  1. a1 config          # add a model + api_key (opens in browser)"
+Write-Host "  2. a1                 # start the TUI"
 Write-Host ""
-Write-Host "Or set PHI_MODEL and PHI_API_KEY, then run 'phi'."
+Write-Host "Or set PHI_MODEL and PHI_API_KEY, then run 'a1'."

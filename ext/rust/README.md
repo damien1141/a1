@@ -4,7 +4,7 @@ Rust is a **first-class language for Phi extensions** — on par with the Go SDK
 in [`ext/go`](../go). Same PXB wire protocol on stdin/stdout, same host
 features (LLM tools, slash commands, intercepts, event subscriptions, confirm
 dialogs), byte-for-byte interop, and the same install flow (`phi.yaml` + a
-binary under `~/.phi/extensions/<name>/`). The only dependencies are
+binary under `~/.a1/extensions/<name>/`). The only dependencies are
 `serde`/`serde_json` at the JSON edges (tool schemas, confirm payloads) plus
 `tokio` (`rt` feature) to drive async tool handlers; the
 PXB wire codec stays hand-rolled — no reflection, no runtime protocol deps.
@@ -94,8 +94,8 @@ Build and install (a `phi.yaml` manifest must live next to the binary):
 
 ```bash
 cargo build --release --example hello
-mkdir -p ~/.phi/extensions/hello
-cp target/release/examples/hello phi.yaml ~/.phi/extensions/hello/
+mkdir -p ~/.a1/extensions/hello
+cp target/release/examples/hello phi.yaml ~/.a1/extensions/hello/
 ```
 
 Reload in the TUI: **Ctrl+K → extensions → reload**.

@@ -3,6 +3,8 @@
 
 version: 2
 
+project_name: a1
+
 before:
   hooks:
     - go mod tidy
@@ -58,7 +60,7 @@ release:
 # Optional Homebrew tap release (requires additional config)
 # brews:
 #   - repository:
-#       owner: pulseaiclub
+#       owner: damien1141
 #       name: homebrew-tap
-#     homepage: "https://github.com/pulseaiclub/phi"
-#     description: "phi - your project description"
+#     homepage: "https://github.com/damien1141/a1"
+#     description: "a1 - terminal coding-agent harness"

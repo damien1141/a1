@@ -8,6 +8,186 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- **Tool rows can start expanded — and do by default.** A new
+  `ui.auto_expand_tool_output` config key (editable in the web config editor
+  under "Terminal UI") opens every tool row by default, so file diffs and
+  command output are visible without pressing Enter. The key defaults to **on**,
+  so a config that never mentions it expands anyway; set
+  `auto_expand_tool_output: false` to opt out. Collapsing a row still sticks for
+  the rest of the session — the user's toggle always beats the config default.
+
+- **The TUI now names what is happening.** The composer status slot used to say
+  only "Calling tools…" while a tool ran. It now names the running tool and its
+  target while a single call is in flight (`Running edit (internal/permission/gate.go)…`),
+  falls back to a count when several run concurrently, and still ignores
+  user-initiated `!cmd` runs. Read-only and other tool rows also report how much
+  came back (`✓ grep EvaluateProspective (2 lines)`), so a finished row states its
+  outcome without expanding.
+
+- **File edits and reads render as cards.** `write` / `edit` tool rows render as
+  a Claude-Code-style card — `✓ internal/path.go +12 -3` on the header, with the
+  unified diff body carrying old/new line numbers, `+`/`-` colored against the
+  theme's success / destructive roles, and a dim separator between hunks.
+  `read` / `grep` rows use the same card shape with a line-number gutter instead
+  of a diff: `✓ read haiku.txt (3 lines)`, `✓ grep "cursor" in . (1 lines)`.
+  Added and removed lines are counted from the diff itself, so the edit stat is
+  never a guess; a failed edit shows its error immediately instead of hiding
+  behind the expand arrow.
+
+- **Sub-agent branches fork from the parent trajectory.** `agent_spawn` now
+  seeds the child gate from the parent's live label and shares its effect log
+  (`L0c := Lp`), instead of building a fresh gate from scratch. A child can no
+  longer start from an unconstrained top label, which was a laundering path for
+  data the parent had already ingested. Child acceptances and rulings stay
+  scope-bound, so they never cross the fork boundary.
+
+### Fixed
+
+- **`/config` works outside the source tree.** The editor page is embedded in
+  the binary, so `a1 config` no longer fails with "config.html not found" when
+  run from any directory other than the phi checkout. The slash handler also
+  resolves the config path through the session controller and keeps the editor
+  server alive after the command returns, instead of tying it to a background
+  context that never cancels.
+
+- **APPA prospective evaluation is no longer conditional.** `Gate.Check`
+  previously ran the prospective `cτ(L)` computation only after the legacy
+  regex/path check had already returned `Ask`, so any call that passed those
+  checks with `Allow` skipped prospective evaluation entirely. Release-side
+  requirements (trust floors, recipient covers) are now evaluated
+  unconditionally, which is what blocks composite read-and-release tools.
+
+- **Effect tokens commit only on reported success.** `Gate.Admit` committed
+  `Kτ` unconditionally; failed and indeterminate outcomes now contribute
+  nothing, per the paper's effect-log semantics.
+
+- **Unannotated output no longer adopts a declared label.** An output with no
+  declared label is recorded as an unresolved source in the partial label
+  rather than folding the tool's contribution as if it had been annotated.
+
+- **`Unknown` is no longer on the trust chain.** The zero `Trust` value is now
+  off-chain (`Unspecified`), so an unset `Label` can no longer read as
+  "trusted", and the trust floor precondition no longer accepts an
+  unestablished label. `Label` also lost its `EffectTokens` field, which
+  conflated data properties with the effect log.
+
+- **Narrowing requires acceptance.** `IsNarrower` previously used an
+  effect-token count comparison as a tie-break, which produced false
+  narrowings; narrowing is now decided by the trust rank and reader set alone,
+  and acceptances are recorded per call hash instead of resetting on every
+  admission.
+
+- **Gate workspace resolves from the session cwd.** Both the TUI controller and
+  `a1 run` re-derived the gate's workspace from the process working directory,
+  so a session opened in a subdirectory (or from a parent directory) gated
+  paths against the wrong root. `NewGateAt` / `WorkspaceRootAt` resolve it from
+  the session cwd.
+
+- **Authority rulings name their gap.** `ConsultAuthority` recorded a
+  hardcoded `"consult"` pseudo-gap, and the policy's `Authority any` field was
+  type-asserted without a comma-ok. A ruling now records the concrete gaps it
+  covers and is skipped entirely when it has no target gap, since an unbounded
+  override is not a ruling the mandate model permits.
+
+- **Recovery search uses the graph's own path budget** instead of a hardcoded
+  `3` that silently overrode `RecoveryGraph.MaxDepth`, and blocked calls now
+  report which gaps blocked them.
+
+- **Pre-existing data race fixed** in
+  `TestHumanReviewResolver_AsyncCallback`: the test read callback state
+  written on the resolver's goroutine with no synchronization, relying on a
+  `time.Sleep`. It now joins through a channel.
+
+- **`write` no longer dumps raw content or a stale hash header.** Creating a
+  file said only "Created new file." and showed nothing, while overwriting one
+  printed an `@file path#TAG` line left over from the hashline-anchor system
+  that was removed in 975ca05. A new file now renders its content as `+` lines
+  with a line count, and an overwrite shows a real unified diff. The whole
+  `internal/util/hash.go` module — `ComputeFileHash`, `FormatFileHeader`,
+  `ComputeLineHash`, `ValidateHash`, `NormalizeFileHashText` — was dead once
+  write/edit stopped emitting it and is deleted.
+
+- **`grep` no longer overwrites its own transcript identity.** The tool set its
+  `Detail` to the match count ("3 matches") on completion, erasing the
+  arg-derived phrase ("grep \"cursor\" in .") that identifies the search. The
+  count is now only the row's stat.
+
+- **Removed the last traces of the hash-anchor system.** `internal/util/sanitized.go`
+  (dead hashline prefix strippers for pasted blocks — zero callers after
+  `edit` moved to `old_str` / `new_str`), the `hashline-compatible line hashing`
+  line in `internal/util/doc.go`, and the AGENTS.md rule that still said "keep
+  hashline `edit`". The system prompt was the live one: it told the model to set
+  `edit.hash` to "the 4 hex chars after `#` in `@file path#TAG`", a field that no
+  longer exists — so any model following it would call a tool with a nonexistent
+  parameter. It now names `old_str` / `new_str`, with a test guarding against
+  the regression. Two stale comments in `RelToCwd` / `DiffBlock.displayPath`
+  also dropped their hash references.
+
+- **The web server no longer fails open without config.** `Server.policy()`
+  fell back to a zero `permission.Policy{}`, whose `BashDefault` is the zero
+  value `Allow` — so a Server built without a loaded config allowed every bash
+  command. It now falls back to `DefaultPolicy()`, which asks.
+
+- **`watcher` no longer swallows same-scan writes.** The tool recorded
+  `lastCheck` *after* walking the tree, so a file written while the walk ran had
+  an mtime past the recorded instant and was silently lost until a later scan.
+  The instant is now captured before the walk, and a test pins that ordering.
+  `TestRunWatcher_WithGlob` also passed an explicit `since` so it no longer
+  inherits the package-global `lastCheck` from sibling tests.
+
+- **Settings in the web chat GUI**: `a1 --web` now serves the config editor from
+  the same port and origin. A gear icon in the chat topbar opens `/settings`,
+  which loads the same editor `a1 config` uses, and a "Back to chat" link
+  returns to the chat. The settings page now shares the chat's palette tokens,
+  button sizing, and accent-coloured save action. Related fix: `config.html` is
+  embedded in the binary, so `a1 config` works from any directory instead of
+  failing with "config.html not found" outside a source tree.
+
+- **Permission mode switcher and session pins in the web chat**: the chat
+  topbar carries a permission-mode pill (ask / read-only / autopilot / strict)
+  that closes over the gate of every running session, so a mode change takes
+  effect on the next tool call without restarting anything. Sessions can be
+  pinned from the sidebar or from the composer, and pinned chats sort to the
+  top of the sidebar. The pin list is stored per project under the session
+  directory (`pins.json`), so it never touches the shared config file.
+
+- **Web chat GUI** (`a1 --web` or `a1 web`): a browser chat for the same agent
+  engine and session store as the TUI. Serves on http://127.0.0.1:9001 with a
+  ChatGPT-style start page and a collapsible sidebar that lists, resumes, and
+  starts sessions. Prompts stream over SSE; assistant text, thinking, tool
+  calls, and compaction all render live. Permission prompts raised mid-turn
+  appear as cards in the transcript with Allow / Deny buttons. Built with htmx
+  and Tailwind in a single HTML document embedded in the binary, so there is no
+  build step or node toolchain to install.
+
+### Changed
+
+- **Web chat no longer depends on htmx.** The sidebar fragment swap, the prompt
+  and permission round-trips, and mode switching all go through `fetch` now.
+  htmx's `ajax()` resolves to `undefined` with `swap:"none"` and to an XHR
+  otherwise, so it could never return a parsed JSON body — which is why the
+  stop button used to 404 and lock the composer until the turn ran to
+  completion. htmx is no longer loaded from a CDN, and the live stream was
+  already a hand-rolled `EventSource`.
+
+### Fixed
+
+- **`/api/cancel` now stops the turn.** The browser never learned the session
+  id the server assigns on the first prompt, so every cancel request carried an
+  empty id and returned "session is not running". The id is adopted from the
+  `/api/prompt` response, which also fixes the topbar showing a raw session id
+  instead of the conversation's name.
+
+- **The web chat UI no longer wedges on a slow or unresponsive URL.** Two
+  separate faults caused it: a handler that re-locked the server mutex while
+  already holding it (deadlocking every route at once, recoverable only by a
+  restart), and a permission-prompt card that never resolved, leaving the
+  composer locked and the status pill stuck on "thinking…" for the whole turn.
+  Both are fixed and covered by regression tests.
+
+
 ### Removed
 
 - Removed hash-based edit anchors (`@file path#TAG` and `LINE#HASH`) from `edit`, `read`, `grep`, `secret`, `stack`, `test`, and `vector_search`. The new `str_replace`-style `edit` tool uses `old_str` / `new_str` instead.
@@ -28,13 +208,113 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- **Current date and time in every turn's context.** Each LLM request now leads
+  with a system message carrying the full date, weekday, clock time, ISO week,
+  and timezone zone (e.g. `Friday, 9 October 2026 (20:56:43), 2026-10-09 (ISO
+  week 2026-W41, zone CDT)`). The stamp is regenerated per turn, so long-running
+  sessions no longer drift from the wall clock, and relative phrasing
+  ("yesterday", "next sprint") resolves against a real date instead of the
+  model's training cutoff. Applies to the TUI, `a1 run`, and sub-agents.
+
 ### Deprecated
+
+- **Post-fork documentation drift is now fixed across the tree.** `AGENTS.md`,
+  `doc/*.md`, `CONTRIBUTING.md`, `SECURITY.md`, `.goreleaser.yaml`, and ~50 code
+  comments still described the upstream project: module path
+  `github.com/pulseaiclub/phi`, clone URLs, `~/.phi/` paths, and `phi update`.
+  They now say `github.com/damien1141/a1`, `.a1/`, and `a1 update`, matching the
+  binary that actually ships.
+
+- **`auto_expand_tool_output` no longer opens every row.** It now opens
+  file-editing rows only. `read` / `grep` rows render as a one-line summary and
+  `bash` rows render a tail preview of their output, regardless of the setting.
+  The opt-out key keeps its old meaning (`false` = fully collapsed).
 
 ### Removed
 
 ### Fixed
 
+- **Rate limits no longer end the turn after two seconds of waiting.** The HTTP
+  retry policy treated a `429` like a transient `5xx` gateway blip: three
+  attempts with delays of 0s / 1s / 2s, then the error surfaced to the user. A
+  rate limit is temporary by definition — the provider states when the window
+  frees — so waiting nearly always beats failing a turn the user is watching.
+  `429` now gets its own budget: five attempts, `Retry-After` honored (capped at
+  60s so an absurd header cannot park the loop), exponential backoff with jitter
+  when the header is absent, and a 90s ceiling on the whole sequence. Transient
+  `5xx` and stale connections keep the tighter three-attempt schedule. Verified
+  against a scripted provider: `Retry-After: 1` now waits 1s per attempt (4s
+  total across five attempts, against the old 3s), and an absent header backs
+  off 1.3s → 2.2s → 4.3s → 8.4s.
+
+- **`scripts/install.sh` and `scripts/install.ps1` could never install a1.** Both
+  resolved the fork's default repo (`pulseaiclub/phi`) and looked for release
+  assets named `phi_<ver>_<os>_<arch>.tar.gz` — but GoReleaser builds and names
+  them `a1_<ver>_<os>_<arch>.tar.gz`. Every download 404'd, and the checksum
+  check then aborted. Asset names, repo default, install destinations, PATH
+  hints, and log/temp file names now all match the released artifacts. Env
+  overrides are renamed to `A1_REPO` / `A1_VERSION` / `A1_INSTALL_DIR`;
+  `PHI_MODEL` / `PHI_API_KEY` keep their names (the config loader reads those).
+
+- **`a1 update` checked the wrong repository.** `internal/util/update` compared
+  the running version against `pulseaiclub/phi`'s latest release, so a fork user
+  was told to "update" to an upstream version that does not exist on their
+  install. It now queries `damien1141/a1`.
+
+- **README header and `internal/version` disagreed.** The readmes advertised
+  `# A1 v1.5.1` while the shipped binary reports `v2.0.1`. Both readmes now
+  track `version.go`, and the release procedure in `AGENTS.md` states that
+  `version.go` is the source of truth.
+
+- **README claimed model env vars are named `A1_*`.** They are not: the config
+  loader reads `PHI_MODEL`, `PHI_API_KEY`, `PHI_BASE_URL`, `PHI_THINK_LEVEL`,
+  and `PHI_SKILL_PATH`. The readme now lists the real names, alongside the two
+  that do use the `A1_` prefix (`A1_DEBUG_FILE`, `A1_BROWSER_HEADLESS`).
+
+### Added
+
+- **Skills route on their trigger keywords instead of their prose.** Every
+  shipped skill has always carried a `metadata.triggers` list in its frontmatter,
+  and the system prompt's routing section told the model to match against it —
+  but the parser skipped the nested `metadata:` map, so the catalog shipped the
+  full `description` instead and the prompt contradicted the data it was handing
+  the model. The parser now reads `metadata.triggers` (quoted list, block scalar,
+  or comma list) and the catalog renders it.
+
+  The catalog shrink is the point: **~4,800 → ~2,350 tokens of every turn**, with
+  no skill lost and routing *more* accurate, because a keyword list is faster to
+  match than a sentence. The system prompt as a whole drops ~12.5k → ~10.1k
+  tokens per turn. The `**Location:**` line is gone too — the model can derive
+  `~/.a1/skills/<name>/SKILL.md` from the name, and it cost ~1,000 tokens to
+  print 41 paths. A third-party skill with no triggers falls back to its
+  description, so it is never silently invisible.
+
+- **Read and bash rows are collapsed by default.** A `read` / `grep` row now
+  renders as a one-line summary — `✓ read internal/permission/gate.go (3 lines)`
+  — instead of a card of file content, and a `bash` row keeps a tail preview
+  instead of expanding to the full retained log:
+
+  ```
+  $ go test ./... ▶
+    === RUN   TestHandler193
+    --- PASS: TestHandler193 (0.01s)
+    … +392 more lines
+  ```
+
+  The preview is capped at the last 8 output lines with a dim
+  `… +N more lines` trailer, measured on wrapped rows so one 400-column log line
+  cannot blow the budget. File edits still open automatically — a diff is the
+  one thing that must not be missed — and a user's own expand/collapse choice on
+  any row still wins for the rest of the session.
+
 ### Security
+
+<!-- Released section -->
+<!-- Everything from here down is frozen history. Only a release PR carrying
+the "Unlock Released Changelog" label may edit it, and
+verify_released_changelog.sh diffs exactly these lines on every PR. Do not
+remove the marker above — without it the script compares an empty region and
+the gate silently passes on everything. -->
 
 ## [1.5.0] - 2026-10-06
 

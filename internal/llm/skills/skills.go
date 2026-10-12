@@ -29,6 +29,11 @@ type Skill struct {
 	Body          string
 	Path          string
 	SkillFilePath string
+	// Triggers are the routing keywords from the frontmatter's
+	// metadata.triggers list. They are the match surface the prompt routes on,
+	// and they are a fraction of the description's length — so the catalog
+	// renders them instead of the prose.
+	Triggers []string
 }
 
 // Parse parses a single SKILL.md file, extracting YAML frontmatter and body.
@@ -63,6 +68,10 @@ func Parse(skillFilePath string) (*Skill, error) {
 // (>, >-, |, |-). Nested YAML maps/lists are not supported.
 func parseFrontmatter(fm string) (*Skill, error) {
 	skill := &Skill{}
+	// inMetadata reports whether the line being examined sits inside the
+	// metadata: block, so only its nested triggers key is read while every
+	// other nested key keeps being skipped.
+	inMetadata := false
 	lines := strings.Split(fm, "\n")
 	for i := 0; i < len(lines); i++ {
 		raw := lines[i]
@@ -70,12 +79,30 @@ func parseFrontmatter(fm string) (*Skill, error) {
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		// Indented lines are continuation of a nested block (a map or list
-		// value, e.g. the metadata: map every shipped skill carries). This
-		// parser only needs the flat top-level keys, so skip them rather than
-		// rejecting the whole frontmatter — otherwise every real skill file
-		// fails to parse and LoadSkills silently returns nothing.
+		key, _, hasKey := strings.Cut(trimmed, ":")
+		// A top-level key ends the metadata block; only its nested triggers key
+		// is read.
 		if raw != "" && (raw[0] == ' ' || raw[0] == '\t') {
+			if inMetadata && strings.TrimSpace(key) == "triggers" {
+				if v, ok := strings.CutPrefix(trimmed, "triggers:"); ok {
+					value, err := unquote(strings.TrimSpace(v))
+					if err != nil {
+						return nil, err
+					}
+					if isYAMLBlockScalar(value) {
+						block, next := readBlockScalar(lines, i+1)
+						value = block
+						i = next
+					}
+					skill.Triggers = parseTriggers(value)
+					inMetadata = false
+					continue
+				}
+			}
+			continue
+		}
+		inMetadata = hasKey && strings.TrimSpace(key) == "metadata"
+		if inMetadata {
 			continue
 		}
 		key, val, ok := strings.Cut(trimmed, ":")
@@ -110,6 +137,19 @@ func parseFrontmatter(fm string) (*Skill, error) {
 		}
 	}
 	return skill, nil
+}
+
+// parseTriggers splits a comma-separated trigger list, dropping empties and
+// surrounding whitespace. A quoted list unquotes to its inner text, so
+// "go,golang,goroutine" yields three triggers.
+func parseTriggers(value string) []string {
+	var out []string
+	for _, part := range strings.Split(value, ",") {
+		if t := strings.TrimSpace(part); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 func isYAMLBlockScalar(val string) bool {
@@ -155,8 +195,18 @@ func unquote(val string) (string, error) {
 	return val[1 : len(val)-1], nil
 }
 
-// ToPromptMarkdown converts skills to a Markdown fragment for injection into
-// the system prompt. Returns an empty string if the list is empty.
+// ToPromptMarkdown converts skills into the catalog fragment injected into the
+// system prompt.
+//
+// It renders the routing surface, not the prose. The prompt's routing section
+// tells the model to match a task against each skill's `triggers`, so shipping
+// the full description instead meant the prompt and the data disagreed: the
+// model was asked to route on a field that never appeared. Triggers are also
+// roughly half the description's length, which cuts the per-turn cost of every
+// turn that loads this catalog.
+//
+// A skill with no triggers still renders, falling back to its description so a
+// hand-written third-party skill is never invisible.
 func ToPromptMarkdown(skills []*Skill) string {
 	if len(skills) == 0 {
 		return ""
@@ -167,13 +217,22 @@ func ToPromptMarkdown(skills []*Skill) string {
 		sb.WriteString("### ")
 		sb.WriteString(s.Name)
 		sb.WriteString("\n\n")
-		sb.WriteString(s.Description)
+		route, kind := s.Routing()
+		sb.WriteString(kind)
+		sb.WriteString(route)
 		sb.WriteString("\n\n")
-		sb.WriteString("**Location:** `")
-		sb.WriteString(s.SkillFilePath)
-		sb.WriteString("`\n\n")
 	}
 	return sb.String()
+}
+
+// Routing returns the text the catalog shows for a skill and the label it is
+// shown under: the trigger list when it has one, otherwise the description so
+// the row is never empty.
+func (s *Skill) Routing() (text, label string) {
+	if len(s.Triggers) > 0 {
+		return strings.Join(s.Triggers, ", "), "triggers: "
+	}
+	return strings.TrimSpace(s.Description), "description: "
 }
 
 // Find returns the skill matching name by exact name, case-insensitive name,

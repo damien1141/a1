@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Security fixes land on the latest release of [phi](https://github.com/pulseaiclub/phi).
+Security fixes land on the latest release of [a1](https://github.com/damien1141/a1).
 Please upgrade before reporting issues that are already fixed on `main`.
 
 ## Reporting a vulnerability
@@ -11,10 +11,10 @@ Please **do not** open a public issue with exploit detail.
 
 Prefer one of:
 
-1. [GitHub private security advisories](https://github.com/pulseaiclub/phi/security/advisories/new)
-2. A minimal private report to the PulseAI Club maintainers via GitHub
+1. [GitHub private security advisories](https://github.com/damien1141/a1/security/advisories/new)
+2. A minimal private report to the maintainers via GitHub
 
-Include: phi version / commit, OS, steps to reproduce, and impact.
+Include: a1 version / commit, OS, steps to reproduce, and impact.
 
 We aim to acknowledge reports quickly and coordinate disclosure after a fix
 is available.
@@ -33,4 +33,4 @@ Out of scope examples:
 - Vulnerabilities only present in third-party MCP servers or extensions you installed
 - Social engineering of API keys stored in the user’s own config
 
-Product overview of local-first design: [pulseaiclub.github.io/security](https://pulseaiclub.github.io/security/)
+Product overview of the local-first design: [README.md](README.md) (same repo).

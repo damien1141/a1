@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
 #
-# Install the latest phi release from GitHub.
+# Install the latest a1 release from GitHub.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/pulseaiclub/phi/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/damien1141/a1/main/scripts/install.sh | bash
 #
 # Options (env):
-#   PHI_VERSION      release tag to install (default: latest), e.g. v0.1.0
-#   PHI_INSTALL_DIR  install directory (default: /usr/local/bin, else ~/.local/bin)
-#   PHI_REPO         GitHub repo (default: pulseaiclub/phi)
+#   A1_VERSION       release tag to install (default: latest), e.g. v0.1.0
+#   A1_INSTALL_DIR   install directory (default: /usr/local/bin, else ~/.local/bin)
+#   A1_REPO          GitHub repo (default: damien1141/a1)
 #   GITHUB_TOKEN     optional; raises API rate limits
 #
 # After install, appends BIN_DIR to common shell rc files (.zshenv, .bashrc,
 # .profile, fish, and existing .zshrc/.zprofile/.bash_profile) so new terminals
-# find `phi` automatically. Prints a one-liner for the current session.
+# find `a1` automatically. Prints a one-liner for the current session.
 
 set -euo pipefail
 
-REPO="${PHI_REPO:-pulseaiclub/phi}"
+REPO="${A1_REPO:-damien1141/a1}"
 API="https://api.github.com/repos/${REPO}"
 DOWNLOAD_BASE="https://github.com/${REPO}/releases/download"
 
@@ -61,14 +61,14 @@ arm64 | aarch64) arch="arm64" ;;
 esac
 
 # ---- install dir ----
-if [ -n "${PHI_INSTALL_DIR:-}" ]; then
-	BIN_DIR="$PHI_INSTALL_DIR"
+if [ -n "${A1_INSTALL_DIR:-}" ]; then
+	BIN_DIR="$A1_INSTALL_DIR"
 elif [ -w /usr/local/bin ] 2>/dev/null || [ "$(id -u)" -eq 0 ]; then
 	BIN_DIR="/usr/local/bin"
 elif mkdir -p "${HOME}/.local/bin" 2>/dev/null && [ -w "${HOME}/.local/bin" ]; then
 	BIN_DIR="${HOME}/.local/bin"
 else
-	red "error: no writable install directory (set PHI_INSTALL_DIR)"
+	red "error: no writable install directory (set A1_INSTALL_DIR)"
 	exit 1
 fi
 mkdir -p "$BIN_DIR"
@@ -84,20 +84,20 @@ github_curl() {
 }
 
 # ---- resolve version ----
-if [ -n "${PHI_VERSION:-}" ]; then
-	TAG="$PHI_VERSION"
+if [ -n "${A1_VERSION:-}" ]; then
+	TAG="$A1_VERSION"
 	case "$TAG" in
 	v*) ;;
 	*) TAG="v${TAG}" ;;
 	esac
 else
-	info "phi install: querying latest release..."
+	info "a1 install: querying latest release..."
 	json="$(github_curl \
 		-H "Accept: application/vnd.github+json" \
 		-H "X-GitHub-Api-Version: 2022-11-28" \
 		"${API}/releases/latest")" || {
 		red "error: failed to query ${API}/releases/latest"
-		red "hint: publish a release first, or set PHI_VERSION=vX.Y.Z"
+		red "hint: publish a release first, or set A1_VERSION=vX.Y.Z"
 		exit 1
 	}
 	TAG="$(printf '%s' "$json" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
@@ -109,27 +109,27 @@ fi
 
 # GoReleaser .Version strips the leading v from the tag.
 VERSION="${TAG#v}"
-ASSET="phi_${VERSION}_${os}_${arch}.tar.gz"
+ASSET="a1_${VERSION}_${os}_${arch}.tar.gz"
 SUMS="checksums_${VERSION}.txt"
 ASSET_URL="${DOWNLOAD_BASE}/${TAG}/${ASSET}"
 SUMS_URL="${DOWNLOAD_BASE}/${TAG}/${SUMS}"
 
-info "phi install: ${TAG} (${os}/${arch})"
-info "phi install: ${ASSET_URL}"
+info "a1 install: ${TAG} (${os}/${arch})"
+info "a1 install: ${ASSET_URL}"
 
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/phi-install.XXXXXX")"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/a1-install.XXXXXX")"
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT
 
 # ---- download ----
-info "phi install: downloading checksums..."
+info "a1 install: downloading checksums..."
 github_curl -o "${TMP}/${SUMS}" "$SUMS_URL"
 
-info "phi install: downloading archive..."
+info "a1 install: downloading archive..."
 github_curl -o "${TMP}/${ASSET}" "$ASSET_URL"
 
 # ---- verify ----
-info "phi install: verifying checksum..."
+info "a1 install: verifying checksum..."
 want="$(awk -v f="$ASSET" '$2 == f { print $1; exit }' "${TMP}/${SUMS}")"
 if [ -z "$want" ]; then
 	red "error: checksum for ${ASSET} not found in ${SUMS}"
@@ -153,35 +153,35 @@ if [ "$(printf '%s' "$got" | tr '[:upper:]' '[:lower:]')" != "$(printf '%s' "$wa
 fi
 
 # ---- extract + install ----
-info "phi install: extracting..."
+info "a1 install: extracting..."
 tar -xzf "${TMP}/${ASSET}" -C "$TMP"
-if [ ! -f "${TMP}/phi" ]; then
-	red "error: archive did not contain a phi binary"
+if [ ! -f "${TMP}/a1" ]; then
+	red "error: archive did not contain a a1 binary"
 	exit 1
 fi
-chmod 755 "${TMP}/phi"
+chmod 755 "${TMP}/a1"
 
-DEST="${BIN_DIR}/phi"
-info "phi install: installing to ${DEST}"
+DEST="${BIN_DIR}/a1"
+info "a1 install: installing to ${DEST}"
 # Prefer atomic replace when possible.
-if mv -f "${TMP}/phi" "$DEST" 2>/dev/null; then
+if mv -f "${TMP}/a1" "$DEST" 2>/dev/null; then
 	:
 else
 	# /usr/local/bin may need sudo
 	if command -v sudo >/dev/null 2>&1; then
-		sudo mv -f "${TMP}/phi" "$DEST"
+		sudo mv -f "${TMP}/a1" "$DEST"
 		sudo chmod 755 "$DEST"
 	else
-		red "error: cannot write to ${DEST} (try PHI_INSTALL_DIR=\$HOME/.local/bin)"
+		red "error: cannot write to ${DEST} (try A1_INSTALL_DIR=\$HOME/.local/bin)"
 		exit 1
 	fi
 fi
 
-info "phi install: installed ${TAG} -> ${DEST}"
+info "a1 install: installed ${TAG} -> ${DEST}"
 
 # ---- PATH configuration (multi-rc, idempotent) ----
 # A child script cannot mutate the parent shell's PATH. We persist to rc files
-# so future terminals find phi; print a one-liner for THIS terminal.
+# so future terminals find a1; print a one-liner for THIS terminal.
 case ":${PATH}:" in
 *":${BIN_DIR}:"*) on_path=1 ;;
 *) on_path=0 ;;
@@ -205,7 +205,7 @@ if [ "$BIN_DIR" != "/usr/local/bin" ] || [ "$on_path" -eq 0 ]; then
 			mkdir -p "$(dirname "$rc")"
 		fi
 		if ! grep -qF "$BIN_DIR" "$rc" 2>/dev/null; then
-			printf '\n# Added by phi installer\n%s\n' "$PATH_LINE" >>"$rc"
+			printf '\n# Added by a1 installer\n%s\n' "$PATH_LINE" >>"$rc"
 			added_to="$added_to $rc"
 		fi
 	}
@@ -219,7 +219,7 @@ if [ "$BIN_DIR" != "/usr/local/bin" ] || [ "$on_path" -eq 0 ]; then
 		fi
 		if ! grep -qF "$BIN_DIR" "$rc" 2>/dev/null; then
 			{
-				printf '\n# Added by phi installer\n'
+				printf '\n# Added by a1 installer\n'
 				printf 'if not contains "%s" $PATH\n' "$BIN_DIR"
 				printf '    set -gx PATH "%s" $PATH\n' "$BIN_DIR"
 				printf 'end\n'
@@ -249,39 +249,39 @@ if [ "$BIN_DIR" != "/usr/local/bin" ] || [ "$on_path" -eq 0 ]; then
 	done
 
 	if [ -n "$added_to" ]; then
-		info "phi install: added ${BIN_DIR} to PATH in:${added_to}"
+		info "a1 install: added ${BIN_DIR} to PATH in:${added_to}"
 	fi
 fi
 
 info ""
-info "phi install: ${TAG} installed successfully!"
+info "a1 install: ${TAG} installed successfully!"
 info ""
 
-resolved="$(command -v phi 2>/dev/null || true)"
+resolved="$(command -v a1 2>/dev/null || true)"
 if [ -n "$resolved" ] && [ "$resolved" -ef "$DEST" ]; then
-	info "Run 'phi config' to get started."
+	info "Run 'a1 config' to get started."
 elif [ -n "$resolved" ] && [ ! "$resolved" -ef "$DEST" ]; then
-	red "phi install: warning: 'phi' still resolves to a different binary:"
+	red "a1 install: warning: 'a1' still resolves to a different binary:"
 	red "  ${resolved}"
 	red "  (new binary is at ${DEST})"
 	info ""
 	info "  To use the new binary in THIS terminal right now, run:"
 	info ""
-	printf '    \033[1;32mexport PATH="%s:$PATH" && phi config\033[0m\n' "$BIN_DIR" >&2
+	printf '    \033[1;32mexport PATH="%s:$PATH" && a1 config\033[0m\n' "$BIN_DIR" >&2
 	info ""
 	info "  Or remove the old binary:  rm -f \"${resolved}\""
 	info "  Future terminal sessions will prefer ${BIN_DIR}."
 else
-	info "  To start using phi in THIS terminal right now, run:"
+	info "  To start using a1 in THIS terminal right now, run:"
 	info ""
-	printf '    \033[1;32mexport PATH="%s:$PATH" && phi config\033[0m\n' "$BIN_DIR" >&2
+	printf '    \033[1;32mexport PATH="%s:$PATH" && a1 config\033[0m\n' "$BIN_DIR" >&2
 	info ""
-	info "  Future terminal sessions will have phi on PATH automatically."
+	info "  Future terminal sessions will have a1 on PATH automatically."
 fi
 
 info ""
 info "Next steps:"
-info "  1. phi config          # add a model + api_key (opens in browser)"
-info "  2. phi                 # start the TUI"
+info "  1. a1 config          # add a model + api_key (opens in browser)"
+info "  2. a1                 # start the TUI"
 info ""
-info "Or set PHI_MODEL and PHI_API_KEY, then run 'phi'."
+info "Or set PHI_MODEL and PHI_API_KEY, then run 'a1'."

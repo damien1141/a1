@@ -2,11 +2,13 @@
 /dist/
 *.log
 phi-debug.log
+a1-debug.log
 .cursor/
 billion-context.md
 todo.md
 .temp/
 2607.24625v2.md
+2607.24625v2.txt
 
 # Go build output (make build)
 /phi
@@ -18,3 +20,15 @@ lint-report.md
 # Rust extension SDK build output
 ext/rust/target/
 ext/rust/Cargo.lock
+
+# a1 build output (make build)
+/a1
+
+# Claude Code reference checkout (research only, not shipped)
+/references/
+
+# scratch notes kept out of the tree
+/haiku.txt
+
+# project-local a1 state
+.a1/

@@ -185,32 +185,117 @@ func TestToPromptMarkdown_Empty(t *testing.T) {
 	assert.Empty(t, ToPromptMarkdown([]*Skill{}))
 }
 
-func TestToPromptMarkdown_Single(t *testing.T) {
+// The catalog renders the routing surface, not the prose: the prompt tells the
+// model to match against triggers, so shipping the description instead left the
+// prompt and the data disagreeing. Triggers are also far longer-lived content
+// than the Location line the old renderer printed on every row.
+func TestToPromptMarkdown_RendersTriggersNotProse(t *testing.T) {
 	skills := []*Skill{
 		{
-			Name:          "Test Skill",
-			Description:   "A test skill description",
-			SkillFilePath: "/home/user/.a1/skills/test-skill/SKILL.md",
+			Name:          "golang-pro",
+			Description:   "Use when writing Go 1.22+ that must pass go vet ...",
+			SkillFilePath: "/home/user/.a1/skills/golang-pro/SKILL.md",
+			Triggers:      []string{"go", "golang", "goroutine", "golangci-lint"},
 		},
 	}
 
 	result := ToPromptMarkdown(skills)
-	assert.Contains(t, result, "### Test Skill")
-	assert.Contains(t, result, "A test skill description")
-	assert.Contains(t, result, "/home/user/.a1/skills/test-skill/SKILL.md")
+	assert.Contains(t, result, "### golang-pro")
+	assert.Contains(t, result, "triggers: go, golang, goroutine, golangci-lint")
+	assert.NotContains(t, result, "must pass go vet", "the prose description is not shipped")
+	assert.NotContains(t, result, "SKILL.md", "the location line is derivable from the name")
+}
+
+// A hand-written skill with no triggers still gets a row: falling back to its
+// description keeps a third-party skill visible instead of silently invisible.
+func TestToPromptMarkdown_FallsBackToDescription(t *testing.T) {
+	skills := []*Skill{{Name: "homegrown", Description: "Does our house style"}}
+
+	result := ToPromptMarkdown(skills)
+	assert.Contains(t, result, "### homegrown")
+	assert.Contains(t, result, "description: Does our house style")
+	assert.NotContains(t, result, "triggers:")
 }
 
 func TestToPromptMarkdown_Multiple(t *testing.T) {
 	skills := []*Skill{
-		{Name: "Skill One", Description: "First", SkillFilePath: "/a/SKILL.md"},
-		{Name: "Skill Two", Description: "Second", SkillFilePath: "/b/SKILL.md"},
+		{Name: "Skill One", Description: "First", Triggers: []string{"alpha"}},
+		{Name: "Skill Two", Description: "Second", Triggers: []string{"beta"}},
 	}
 
 	result := ToPromptMarkdown(skills)
 	assert.Contains(t, result, "### Skill One")
 	assert.Contains(t, result, "### Skill Two")
-	assert.Contains(t, result, "First")
-	assert.Contains(t, result, "Second")
+	assert.Contains(t, result, "triggers: alpha")
+	assert.Contains(t, result, "triggers: beta")
+}
+
+// metadata.triggers is the field the router runs on, so the parser must read it
+// out of the nested metadata: map it used to skip entirely.
+func TestParse_ReadsMetadataTriggers(t *testing.T) {
+	testFile := filepath.Join(t.TempDir(), "test.skill")
+	content := `---
+name: Test Skill
+description: A test skill
+license: MIT
+metadata:
+  author: someone
+  version: "1.0.0"
+  domain: language
+  triggers: "go,golang,goroutine"
+  role: specialist
+---
+Body here.
+`
+	require.NoError(t, os.WriteFile(testFile, []byte(content), 0o644))
+
+	skill, err := Parse(testFile)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"go", "golang", "goroutine"}, skill.Triggers)
+	assert.Equal(t, "Test Skill", skill.Name, "the flat keys after metadata still parse")
+	assert.Equal(t, "Body here.", skill.Body, "the body still parses")
+}
+
+// A block-scalar trigger list must not swallow the rest of the frontmatter.
+func TestParse_TriggersAsBlockScalar(t *testing.T) {
+	testFile := filepath.Join(t.TempDir(), "test.skill")
+	content := `---
+name: Test Skill
+description: A test skill
+metadata:
+  triggers: >
+    go,
+    golang
+license: MIT
+---
+Body here.
+`
+	require.NoError(t, os.WriteFile(testFile, []byte(content), 0o644))
+
+	skill, err := Parse(testFile)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"go", "golang"}, skill.Triggers)
+	assert.Equal(t, "MIT", skill.License, "keys after the block still parse")
+}
+
+// Every shipped skill must carry a usable trigger list, or the router silently
+// loses that entry.
+func TestEmbeddedSkillsAllCarryTriggers(t *testing.T) {
+	dir := t.TempDir()
+	_, err := InstallDefault(dir)
+	require.NoError(t, err)
+
+	list, err := LoadSkills(dir)
+	require.NoError(t, err)
+	require.NotEmpty(t, list)
+
+	var missing []string
+	for _, s := range list {
+		if len(s.Triggers) == 0 {
+			missing = append(missing, s.Name)
+		}
+	}
+	assert.Empty(t, missing, "every shipped skill must expose triggers for routing")
 }
 
 // TestParse_LoadsEmbeddedDefaults verifies the shipped skill library parses

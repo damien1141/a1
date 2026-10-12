@@ -1,10 +1,10 @@
-# A1 v1.5.1
+# A1 v2.0.1
 
 一个终端编码代理框架，专为希望在长会话中保持推理能力、能自检权限、且无需离开终端即可浏览网页的人设计。
 
-基于 [phi](https://github.com/pulseaiclub/phi) 扩展而来，核心差异在于：fold-based 上下文管理、实时 APPA 权限控制、以及 Playwright 驱动的浏览器自动化。约 85k 行 Go，没有运行时膨胀。
+基于 [phi](https://github.com/pulseaiclub/phi) 扩展而来，核心差异在于：fold-based 上下文管理、实时 APPA 权限控制、以及 Playwright 驱动的浏览器自动化。约 91k 行 Go（其中 63k 为非测试代码），没有运行时膨胀。
 
-**文档：** [pulseaiclub.github.io](https://pulseaiclub.github.io/)
+**文档：** [github.com/damien1141/a1](https://github.com/damien1141/a1)（README 与 `doc/`）
 
 **推荐本地模型：** 本地 LLM 推理推荐 [GRM-3.2-Sky-ONYX-GGUF](https://huggingface.co/el4/GRM-3.2-Sky-ONYX-GGUF)；嵌入模型推荐 [nomic-ai/nomic-embed-text-v2-moe-GGUF](https://huggingface.co/nomic-ai/nomic-embed-text-v2-moe-GGUF)。
 
@@ -94,7 +94,7 @@ Shift-Tab 在 `interactive`、`readonly`、`autopilot` 和 `headless-strict` 之
 新增内容：
 
 - **移除了基于哈希的编辑锚点：** 旧的 `edit` 工具要求从 `read`/`grep` 输出中复制 `@file path#TAG` 和 `LINE#HASH` 锚点。这迫使 LLM 充当哈希计算器——而这正是它的弱项——并把 token 浪费在机械复制上。新的 `edit` 工具使用纯 `old_str` / `new_str` 匹配，这利用了 LLM 真正的优势（模式匹配和文本复制），并匹配了 aider、cursor 和 cline 所使用的标准格式。
-- **身份重命名：** CLI 是 `a1`，配置目录是 `~/.a1/`，环境变量是 `A1_*`。
+- **身份重命名：** CLI 是 `a1`，配置目录是 `~/.a1/`，日志文件是 `a1-debug.log`。模型 / API 环境变量沿用 `PHI_*` 名称（`PHI_MODEL`、`PHI_API_KEY`、`PHI_BASE_URL`、`PHI_THINK_LEVEL`、`PHI_SKILL_PATH`）；`A1_DEBUG_FILE` 与 `A1_BROWSER_HEADLESS` 是采用 a1 命名的两个。
 - **工具集扩展：** 30+ 内置分析、搜索、图、浏览器和权限工具。
 - **会话记忆库：** 基于 JSONL 的会话记忆位于 `~/.a1/sessions/memory/`；成功和失败的工具调用自动记录并以系统消息形式注入上下文。
 - **终端历史导航：** 上/下箭头浏览历史输入；恢复旧会话时会从 memory bank 重新加载历史。

@@ -7,7 +7,7 @@ Treat skills as constraints and shortcuts—apply the smallest relevant part.
 
 ### Routing
 
-Match the task against each skill's `triggers` field (comma-separated keywords in the skill's YAML frontmatter). A skill matches when any of its triggers appear in the task, the file type, or the working context.
+Match the task against each skill's `triggers` list below. A skill matches when any of its triggers appear in the task, the file type, or the working context — `golang-pro` fires on a `.go` file, `htmx-pro` on `hx-get`, `debugging-wizard` on a stack trace.
 
 - **Keel skills** (`rigorous-coding`, `agent-orchestration`, `spec-driven-development`, `debugging-wizard`, `testing-master`, `code-reviewer`) apply to almost every non-trivial task. Consider them first, then narrow.
 - **Domain skills** (`system-architecture`, `api-design`, `cloud-native`, `sre-reliability`, `data-engineering`, `llm-engineering`) apply when the task is in that domain.
@@ -29,5 +29,7 @@ Load the most specific skill that covers the task. If a language skill and a dom
 Do not stack every applicable skill. Load the minimum set that covers the task. If unsure, load the keel skill (`rigorous-coding`) and the most specific domain or language skill.
 
 ## Available skills
+
+Each entry lists its routing triggers. Load the skill by reading its `SKILL.md` at `~/.a1/skills/<name>/SKILL.md` (or the project's skill directory when one is configured) — the path is the name, so it never needs printing here.
 
 {{.Catalog}}
