@@ -43,7 +43,12 @@ func TestPermissionMode_CycleAndSet(t *testing.T) {
 	ctrl.CyclePermissionMode()
 	assert.Equal(t, permission.ModeHeadlessStrict, ctrl.PermissionMode())
 
-	// Cycle again -> interactive.
+	// Cycle again -> yolo. Yolo is deliberately last so a shift-tab sweep
+	// reaches it on purpose rather than passing through it.
+	ctrl.CyclePermissionMode()
+	assert.Equal(t, permission.ModeYolo, ctrl.PermissionMode())
+
+	// And wraps back to interactive.
 	ctrl.CyclePermissionMode()
 	assert.Equal(t, permission.ModeInteractive, ctrl.PermissionMode())
 

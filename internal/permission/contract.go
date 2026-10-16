@@ -39,9 +39,9 @@ const (
 // Precondition describes a requirement over prospective labels or history.
 type Precondition struct {
 	Kind    PreconditionKind
-	Trust   Trust      // for trust_floor: minimum required trust level
-	Readers []string   // for recipient_cover: required audience
-	Token   string     // for prior/no_prior: effect token name
+	Trust   Trust    // for trust_floor: minimum required trust level
+	Readers []string // for recipient_cover: required audience
+	Token   string   // for prior/no_prior: effect token name
 }
 
 // Check evaluates whether this precondition holds against the prospective label
@@ -49,8 +49,13 @@ type Precondition struct {
 func (p Precondition) Check(prospective Label, log *EffectLog) (bool, string) {
 	switch p.Kind {
 	case PreconditionTrustFloor:
-		if TrustOrder(prospective.Trust) < TrustOrder(p.Trust) {
+		// A trust floor demands data *at least as trusted* as the floor. A
+		// more restrictive rank fails it.
+		if TrustOrder(prospective.Trust) > TrustOrder(p.Trust) {
 			return false, fmt.Sprintf("trust floor %s not met: got %s", p.Trust, prospective.Trust)
+		}
+		if !IsKnownTrust(prospective.Trust) {
+			return false, fmt.Sprintf("trust floor %s not met: trust is unestablished", p.Trust)
 		}
 		return true, ""
 
@@ -89,19 +94,19 @@ func DefaultContract(tool string) Contract {
 	switch tool {
 	case "read", "grep", "find", "ls":
 		return Contract{
-			Tool:        tool,
-			Contribution: Label{Trust: User, ReaderSet: []string{"user"}},
+			Tool:         tool,
+			Contribution: Label{Trust: User, ReaderSet: TopReaderSet},
 		}
 	case "write", "edit":
 		return Contract{
-			Tool:        tool,
-			Contribution: Label{Trust: User, ReaderSet: []string{"user"}},
+			Tool:         tool,
+			Contribution: Label{Trust: User, ReaderSet: TopReaderSet},
 			EffectTokens: []string{"write"},
 		}
 	case "bash":
 		return Contract{
-			Tool:        tool,
-			Contribution: Label{Trust: Untrusted, ReaderSet: []string{}},
+			Tool:         tool,
+			Contribution: Label{Trust: Untrusted, ReaderSet: TopReaderSet},
 		}
 	default:
 		return Contract{Tool: tool}
@@ -152,14 +157,14 @@ func (c Contract) String() string {
 	var parts []string
 	parts = append(parts, fmt.Sprintf("dτ=%s", c.Contribution))
 	if len(c.EffectTokens) > 0 {
-		parts = append(parts, fmt.Sprintf("Kτ=%s", strings.Join(c.EffectTokens, ",")))
+		parts = append(parts, "Kτ="+strings.Join(c.EffectTokens, ","))
 	}
 	if len(c.Requires) > 0 {
 		var reqs []string
 		for _, r := range c.Requires {
 			reqs = append(reqs, string(r.Kind))
 		}
-		parts = append(parts, fmt.Sprintf("requires=%s", strings.Join(reqs, ",")))
+		parts = append(parts, "requires="+strings.Join(reqs, ","))
 	}
 	return fmt.Sprintf("Contract{%s}", strings.Join(parts, " "))
 }

@@ -220,12 +220,7 @@ func buildThemePalette(apply func(string)) palette.PaletteCommand {
 }
 
 func buildPermissionsPalette(set func(permission.Mode)) palette.PaletteCommand {
-	modes := []permission.Mode{
-		permission.ModeInteractive,
-		permission.ModeReadonly,
-		permission.ModeAutopilot,
-		permission.ModeHeadlessStrict,
-	}
+	modes := permission.AllModes
 	submenu := make([]palette.PaletteCommand, 0, len(modes))
 	for _, mode := range modes {
 		submenu = append(submenu, palette.PaletteCommand{

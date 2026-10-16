@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// installMetaFile is the sidecar written into a phi-managed extension dir.
+// installMetaFile is the sidecar written into an a1-managed extension dir.
 // Its absence marks a manual install: update/remove refuse to touch it.
 const installMetaFile = ".a1-install.json"
 
@@ -20,7 +20,7 @@ const (
 	SourceGit     = "git"
 )
 
-// InstallMeta records where a phi-installed extension came from, so plugin
+// InstallMeta records where an a1-installed extension came from, so plugin
 // update/list/remove can re-resolve the same GitHub source.
 type InstallMeta struct {
 	Spec        Spec      `json:"spec"`
@@ -59,7 +59,7 @@ type Installed struct {
 	Path     string
 	Manifest Manifest
 	Meta     InstallMeta
-	Managed  bool // true when phi plugin install wrote install metadata
+	Managed  bool // true when a1 plugin install wrote install metadata
 }
 
 // ListInstalled returns extension directories under dir with their install

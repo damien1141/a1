@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/damien1141/a1/internal/debuglog"
 	"github.com/damien1141/a1/internal/llm"
 	"github.com/damien1141/a1/internal/project"
 	"github.com/damien1141/a1/internal/tools/tooldef"
@@ -101,7 +102,11 @@ func BrowserTool() tooldef.Tool {
 				},
 				Required: []string{"action"},
 			},
-			Readable: true,
+			// Not Readable: every action drives one shared page (open, navigate,
+			// click, type). Marking it read-only let the executor run a batch
+			// concurrently, and two calls interleaved against the same page
+			// produce nonsense — a click landing on a not-yet-navigated page. The
+			// mutex makes that safe, not correct.
 		},
 		DetailFromArgs: func(input json.RawMessage) string {
 			var in browserInput
@@ -226,6 +231,51 @@ func dispatchBrowserAction(action string, in browserInput) (tooldef.Result, erro
 // browserMu, so the lock is free to acquire below. It holds browserMu for
 // the whole launch so two concurrent runBrowser calls (browser is Readable,
 // so it can run in a concurrent batch) cannot both spawn a browser.
+// launchTimeoutMs caps how long a browser launch may take. Playwright defaults
+// to 180s; a profile that cannot start would otherwise hang the whole turn.
+const launchTimeoutMs = 30000
+
+// profileSizeWarning flags a profile dir big enough to stall launch. Firefox
+// holds a 15 MB places.sqlite fine but chokes on a storage/ dir accumulated
+// over months of browsing, which shows up as exactly this timeout.
+func profileSizeWarning(dir string) string {
+	var total int64
+	_ = filepath.WalkDir(dir, func(_ string, d os.DirEntry, err error) error {
+		if err != nil || d == nil || d.IsDir() {
+			return nil
+		}
+		if info, err := d.Info(); err == nil {
+			total += info.Size()
+		}
+		return nil
+	})
+	const warnBytes = 512 << 20
+	if total < warnBytes {
+		return ""
+	}
+	return fmt.Sprintf("profile %s is %.0f MB — a large profile can make launch time out; "+
+		"rename it to use a fresh one", dir, float64(total)/(1<<20))
+}
+
+// hasDisplay reports whether a graphical session is reachable. A bare
+// DISPLAY/WAYLAND_DISPLAY check is enough: playwright's launch is what fails
+// without one, and it fails slowly.
+func hasDisplay() bool {
+	if os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != "" {
+		return true
+	}
+	return false
+}
+
+// browserHeadless decides the launch mode, honouring A1_BROWSER_HEADLESS as an
+// explicit override.
+func browserHeadless() bool {
+	if v := strings.TrimSpace(os.Getenv("A1_BROWSER_HEADLESS")); v != "" {
+		return v != "0" && !strings.EqualFold(v, "false")
+	}
+	return !hasDisplay()
+}
+
 func ensureBrowser(ctx context.Context) error {
 	// Slash commands run on the UI goroutine and may pass a nil context.
 	// context.WithCancel panics on a nil parent, so fall back to a
@@ -250,18 +300,35 @@ func ensureBrowser(ctx context.Context) error {
 
 	pwLocal, err := playwright.Run()
 	if err != nil {
+		// playwright's own message ("please install the driver (v1.62.1)
+		// first") names no command the user can run. Say what to do.
+		if strings.Contains(err.Error(), "install the driver") {
+			return fmt.Errorf("playwright driver is not installed — run `go run github.com/mxschmitt/playwright-go/cmd/playwright install --with-deps` "+
+				"(or `playwright install`), then retry: %w", err)
+		}
 		return fmt.Errorf("playwright run: %w", err)
 	}
 	pw = pwLocal
 
+	// Headful needs a display, so the launch mode is browserHeadless()'s job:
+	// no DISPLAY/WAYLAND_DISPLAY means headless, which also works headful
+	// everywhere. A1_BROWSER_HEADLESS overrides it explicitly.
 	launchOpts := playwright.BrowserTypeLaunchPersistentContextOptions{
-		Headless: playwright.Bool(false),
+		Headless: playwright.Bool(browserHeadless()),
+		// Playwright's default is 180s, which turns a broken or oversized profile
+		// into three minutes of silence. Bound it, and say why on failure.
+		Timeout: playwright.Float(launchTimeoutMs),
 	}
 	if browserProxyURL != "" {
 		launchOpts.Proxy = &playwright.Proxy{Server: browserProxyURL}
 	}
 
 	userDataDir := filepath.Join(os.Getenv("HOME"), ".a1", "browser-profiles", "default")
+	if warn := profileSizeWarning(userDataDir); warn != "" {
+		// Not fatal — a big profile usually still launches — but the operator
+		// should know before the wait.
+		debuglog.Logf("browser: %s", warn)
+	}
 	if err := os.MkdirAll(userDataDir, 0o755); err != nil {
 		pw.Stop()
 		pw = nil
@@ -345,14 +412,16 @@ func createProfile(name string) error {
 		// Non-fatal
 	}
 	launchOpts := playwright.BrowserTypeLaunchPersistentContextOptions{
-		Headless: playwright.Bool(false),
+		Headless: playwright.Bool(browserHeadless()),
+		Timeout:  playwright.Float(launchTimeoutMs),
 	}
 	if browserProxyURL != "" {
 		launchOpts.Proxy = &playwright.Proxy{Server: browserProxyURL}
 	}
 	ctx, err := pw.Firefox.LaunchPersistentContext(userDataDir, launchOpts)
 	if err != nil {
-		return fmt.Errorf("create profile %q: %w", name, err)
+		return fmt.Errorf("create profile %q (if this times out, the profile dir is likely oversized or corrupt — rename %s and retry): %w",
+			name, userDataDir, err)
 	}
 	profiles[name] = ctx
 	// LaunchPersistentContext already opens an about:blank page; calling
@@ -526,6 +595,7 @@ func browserSearch(in browserInput) (tooldef.Result, error) {
 	return tooldef.Result{
 		Content: fmt.Sprintf("Searched DuckDuckGo for %q\nURL: %s\nTitle: %s", query, searchURL, title),
 		Detail:  fmt.Sprintf("search %q", query),
+		Summary: Summary("Searched", hostOf(searchURL), 0, 0),
 		Output:  fmt.Sprintf("Searched DuckDuckGo for %q", query),
 	}, nil
 }
@@ -564,6 +634,7 @@ func browserOpen(in browserInput) (tooldef.Result, error) {
 	return tooldef.Result{
 		Content: fmt.Sprintf("Opened %s\nProfile: %s\nTitle: %s", url, profile, title),
 		Detail:  url,
+		Summary: Summary("Opened", hostOf(url), 0, 0),
 		Output:  fmt.Sprintf("Opened %s", url),
 	}, nil
 }
@@ -585,6 +656,7 @@ func browserNavigate(in browserInput) (tooldef.Result, error) {
 	return tooldef.Result{
 		Content: fmt.Sprintf("Navigated to %s\nTitle: %s", url, title),
 		Detail:  url,
+		Summary: Summary("Navigated", hostOf(url), 0, 0),
 		Output:  fmt.Sprintf("Navigated to %s", url),
 	}, nil
 }
@@ -613,6 +685,7 @@ func browserClick(in browserInput) (tooldef.Result, error) {
 	return tooldef.Result{
 		Content: fmt.Sprintf("Clicked %s", sel),
 		Detail:  sel,
+		Summary: Summary("Clicked", sel, 0, 0),
 		Output:  fmt.Sprintf("Clicked %s", sel),
 	}, nil
 }
@@ -640,6 +713,7 @@ func browserType(in browserInput) (tooldef.Result, error) {
 	return tooldef.Result{
 		Content: fmt.Sprintf("Typed into %s", sel),
 		Detail:  sel,
+		Summary: Summary("Typed into", sel, 0, 0),
 		Output:  fmt.Sprintf("Typed into %s", sel),
 	}, nil
 }
@@ -657,9 +731,13 @@ func browserScreenshot() (tooldef.Result, error) {
 	if err := os.WriteFile(path, buf, 0o644); err != nil {
 		return tooldef.Result{}, fmt.Errorf("write screenshot: %w", err)
 	}
+	// The action is the identity and the filename is the summary. The full path
+	// stays in Content and in the expanded body, where it can be copied — the row
+	// header is the glanceable part and a long path made it unreadable.
 	return tooldef.Result{
 		Content: fmt.Sprintf("Screenshot saved to %s (%d bytes)", path, len(buf)),
-		Detail:  path,
+		Detail:  "screenshot",
+		Summary: ScreenshotSummary(path),
 		Output:  fmt.Sprintf("Screenshot: %s", path),
 	}, nil
 }
@@ -707,7 +785,15 @@ func browserContent() (tooldef.Result, error) {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("URL: %s\nTitle: %s\nProfile: %s\n\n", url, title, currentProfile))
 	sb.WriteString(text)
-	return tooldef.Result{Content: sb.String(), Detail: title, Output: sb.String()}, nil
+	// Detail was the page title here, which silently replaced the call's identity
+	// ("browser content" became whatever the page happened to be called). The
+	// url is the identity; the title and size belong in Summary.
+	return tooldef.Result{
+		Content: sb.String(),
+		Detail:  "content",
+		Summary: Summary("Read", hostOf(url), len(text), 0),
+		Output:  sb.String(),
+	}, nil
 }
 
 // collapseWhitespace replaces runs of whitespace (including newlines) with a
@@ -743,7 +829,12 @@ func browserClose() (tooldef.Result, error) {
 		pw.Stop()
 		pw = nil
 	}
-	return tooldef.Result{Content: "Browser closed", Detail: "closed", Output: "Browser closed"}, nil
+	return tooldef.Result{
+		Content: "Browser closed",
+		Detail:  "closed",
+		Summary: Summary("Closed", "", 0, 0),
+		Output:  "Browser closed",
+	}, nil
 }
 
 func browserProfile(in browserInput) (tooldef.Result, error) {
@@ -773,7 +864,12 @@ func browserProfile(in browserInput) (tooldef.Result, error) {
 
 func browserProfileList() (tooldef.Result, error) {
 	if len(profiles) == 0 {
-		return tooldef.Result{Content: "No profiles", Detail: "0 profiles", Output: "No profiles"}, nil
+		return tooldef.Result{
+			Content: "No profiles",
+			Detail:  "0 profiles",
+			Summary: ProfilesSummary(0),
+			Output:  "No profiles",
+		}, nil
 	}
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Profiles (%d):\n", len(profiles)))
@@ -787,6 +883,7 @@ func browserProfileList() (tooldef.Result, error) {
 	return tooldef.Result{
 		Content: sb.String(),
 		Detail:  fmt.Sprintf("%d profiles", len(profiles)),
+		Summary: ProfilesSummary(len(profiles)),
 		Output:  sb.String(),
 	}, nil
 }

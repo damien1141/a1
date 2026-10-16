@@ -9,7 +9,7 @@ import (
 )
 
 // Tool-facing argument shapes. These mirror future agent_* tools but are
-// not registered with phi's tool registry yet.
+// not registered with a1's tool registry yet.
 
 // SpawnArgs is the JSON argument shape for agent_spawn.
 type SpawnArgs struct {

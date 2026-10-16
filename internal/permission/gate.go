@@ -2,13 +2,16 @@ package permission
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 	"time"
 )
 
-// Gate evaluates permission requests. It has no side effects; Ask is handled by the caller.
+// Gate evaluates permission requests. Check is the prospective Gate 1
+// (pre-dispatch); Admit is the retrospective Gate 2 (post-execution
+// admission). Neither may dispatch or execute anything itself.
 type Gate interface {
 	Check(ctx context.Context, req Request) (Decision, string)
 	Admit(ctx context.Context, req Request) (Decision, string)
@@ -22,33 +25,66 @@ type AdmissionGate interface {
 }
 
 // TrajectoryState tracks the APPA trajectory label L=(R,t), effect log E(ℓ),
-// and call-scoped authority rulings.
+// acceptance records, and call-scoped authority rulings.
 type TrajectoryState struct {
 	// Label is the current trajectory label L, modeled as a partial label
 	// to support gradual security annotation with unresolved sources.
 	Label PartialLabel
 
-	// Effects is the append-only effect log E(ℓ).
+	// Effects is the append-only effect log E(ℓ), shared tree-wide: a child
+	// branch commits into the same log the parent reads.
 	Effects *EffectLog
 
-	// AcceptedNarrowing records whether the current narrowing has been accepted.
-	// A call that would narrow L requires explicit acceptance before dispatch.
-	AcceptedNarrowing bool
+	// AcceptedNarrowing accumulates the calls whose narrowing the user has
+	// accepted. The paper records acceptance indivisibly with dispatch, so a
+	// bare bool that resets on the next Admit loses the log entry that makes
+	// an inadequate dispatch auditable.
+	AcceptedNarrowing map[string]bool
 
 	// Rulings is the append-only call-scoped authority ruling log.
 	Rulings *RulingLog
 }
 
-// NewTrajectoryState creates an initial trajectory with the top label.
+// NewTrajectoryState creates an initial trajectory at the agent's working
+// level: the User trust rank over the full reader universe. Seeding higher
+// would make every read/write a "descent" needing acceptance, and seeding at
+// the empty reader set (the lattice's most restrictive label) would narrow
+// every trajectory immediately — neither is what the Prop. 2 descent bound
+// measures.
 func NewTrajectoryState() *TrajectoryState {
 	return &TrajectoryState{
 		Label: PartialLabel{
-			Established: Label{Trust: Trusted, ReaderSet: []string{}},
+			Established: Label{Trust: User, ReaderSet: TopReaderSet},
 			Unresolved:  []string{},
 		},
-		Effects: NewEffectLog(),
-		Rulings: NewRulingLog(),
+		Effects:           NewEffectLog(),
+		AcceptedNarrowing: make(map[string]bool),
+		Rulings:           NewRulingLog(),
 	}
+}
+
+// TopReaderSet is the universe of reader identities a fresh trajectory starts
+// with. Every fold can only intersect it downward; a concrete deployment
+// replaces it with its own audience universe.
+var TopReaderSet = []string{"user", "agent", "tool"}
+
+// HasAcceptedNarrowing reports whether the narrowing for callHash was accepted.
+func (t *TrajectoryState) HasAcceptedNarrowing(callHash string) bool {
+	if t == nil || t.AcceptedNarrowing == nil {
+		return false
+	}
+	return t.AcceptedNarrowing[callHash]
+}
+
+// RecordNarrowingAcceptance logs that the narrowing for callHash was accepted.
+func (t *TrajectoryState) RecordNarrowingAcceptance(callHash string) {
+	if t == nil {
+		return
+	}
+	if t.AcceptedNarrowing == nil {
+		t.AcceptedNarrowing = make(map[string]bool)
+	}
+	t.AcceptedNarrowing[callHash] = true
 }
 
 // String returns a human-readable summary of the trajectory state.
@@ -59,7 +95,7 @@ func (t *TrajectoryState) String() string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("L=%s", t.Label.Established))
 	sb.WriteString(fmt.Sprintf(" effects=%d", t.Effects.Len()))
-	sb.WriteString(fmt.Sprintf(" accepted_narrowing=%v", t.AcceptedNarrowing))
+	sb.WriteString(fmt.Sprintf(" accepted_narrowing=%d", len(t.AcceptedNarrowing)))
 	sb.WriteString(fmt.Sprintf(" rulings=%d", t.Rulings.Len()))
 	return sb.String()
 }
@@ -70,13 +106,13 @@ type StaticGate struct {
 	Policy    Policy
 	Workspace string
 
-	bashAllow     []*regexp.Regexp
-	bashDeny      []*regexp.Regexp
-	contracts     *ContractRegistry
-	trajectory    *TrajectoryState
-	acceptNarrow  func(ctx context.Context, req Request, reason string) (bool, error)
-	recovery      *RecoveryGraph
-	resolver      Resolver
+	bashAllow    []*regexp.Regexp
+	bashDeny     []*regexp.Regexp
+	contracts    *ContractRegistry
+	trajectory   *TrajectoryState
+	acceptNarrow func(ctx context.Context, req Request, reason string) (bool, error)
+	recovery     *RecoveryGraph
+	resolver     Resolver
 }
 
 func compilePatterns(patterns []string) ([]*regexp.Regexp, error) {
@@ -125,6 +161,14 @@ func NewGate(policy Policy, workspace string) (*StaticGate, error) {
 	return g, nil
 }
 
+// NewGateAt builds a gate whose workspace root is resolved from startDir
+// instead of the process working directory. Every caller that knows the
+// session cwd must use this, so a session opened in a subdirectory gates
+// paths against that subdirectory rather than the repository root.
+func NewGateAt(policy Policy, startDir string) (*StaticGate, error) {
+	return NewGate(policy, WorkspaceRootAt(startDir))
+}
+
 // BashAllow returns the current allowlist patterns (raw strings).
 func (g *StaticGate) BashAllow() []string {
 	if g == nil {
@@ -141,7 +185,7 @@ func (g *StaticGate) BashAllow() []string {
 // Patterns are compiled immediately; invalid patterns are rejected.
 func (g *StaticGate) SetBashAllow(patterns []string) error {
 	if g == nil {
-		return fmt.Errorf("gate is nil")
+		return errors.New("gate is nil")
 	}
 	re, err := compilePatterns(patterns)
 	if err != nil {
@@ -229,13 +273,16 @@ func (g *StaticGate) Resolver() Resolver {
 	return g.resolver
 }
 
-// consultAuthority applies Step 4 call-scoped authority when the policy requires it.
-// On a terminal Allow/Deny decision, the ruling is logged to the trajectory.
+// ConsultAuthority applies Step 4 call-scoped authority when the policy requires it.
+// On a terminal Allow/Deny decision, the ruling is logged to the trajectory with
+// the concrete gaps it covers, per Theorem 6 ("dedicated covering rulings over
+// its exact rendered form").
 func (g *StaticGate) ConsultAuthority(
 	ctx context.Context,
 	dec Decision,
 	reason string,
 	req Request,
+	gaps []string,
 ) (Decision, string) {
 	if dec != Ask {
 		return dec, reason
@@ -247,6 +294,11 @@ func (g *StaticGate) ConsultAuthority(
 	if authority == nil {
 		return dec, reason
 	}
+	if len(gaps) == 0 {
+		// Nothing to cover: an authority ruling without a target gap would be
+		// an unbounded override, which the paper's mandate model forbids.
+		return dec, reason
+	}
 	callHash := CallHash(req)
 	dec, reason = authority.Authorize(ctx, callHash, req)
 	if dec == Allow || dec == Deny {
@@ -254,7 +306,7 @@ func (g *StaticGate) ConsultAuthority(
 			g.trajectory.Rulings.Append(Ruling{
 				CallHash:      callHash,
 				AuthorityName: fmt.Sprintf("%T", authority),
-				GapsCovered:   []string{"consult"},
+				GapsCovered:   append([]string(nil), gaps...),
 				Decision:      dec,
 				Reason:        reason,
 				Timestamp:     time.Now(),
@@ -265,58 +317,119 @@ func (g *StaticGate) ConsultAuthority(
 	return Ask, reason
 }
 
-// Check evaluates req prospectively (Gate 1): computes cτ(L), evaluates release
-// requirements and history predicates, and determines whether the call may dispatch.
-func (g *StaticGate) Check(ctx context.Context, req Request) (Decision, string) {
-	if g.Policy.DangerouslyAllowAll || g.Policy.AllowAllSession {
-		return Allow, ""
-	}
-	_ = ctx
-	dec, reason := g.evaluate(req)
-	dec, reason = g.foldMode(dec, reason, req)
-	if dec != Ask {
-		return dec, reason
-	}
+// Prospective is the Gate 1 result for one call: the label the trajectory
+// would have after folding the tool's declared contribution, plus the gaps
+// that keep it from dispatching.
+type Prospective struct {
+	// Label is cτ(L) = L ∧ dτ.
+	Label PartialLabel
+	// Gaps lists the unsatisfied requirements (trust floor, recipient cover,
+	// history predicates) evaluated against Prospective.Label.
+	Gaps []string
+	// Narrowing is true when cτ(L) < L, which requires explicit acceptance
+	// or a child branch.
+	Narrowing bool
+	// Contract is the tool contract that produced this evaluation.
+	Contract Contract
+}
 
-	// Prospective APPA check: evaluate release requirements and history predicates.
+// EvaluateProspective computes cτ(L) = L ∧ dτ and the gaps of the contract,
+// without mutating any state. APPA §4 evaluates release-side requirements and
+// history predicates prospectively, and Proposition 4 shows reactive checking
+// against L alone is insufficient to block composite read-and-release tools.
+func (g *StaticGate) EvaluateProspective(req Request) Prospective {
 	contract := g.contracts.Lookup(req.Tool)
 	prospective := g.trajectory.Label.Meet(PartialLabel{
 		Established: contract.Contribution,
 		Unresolved:  []string{},
 	})
 
-	// Check preconditions from contract.
 	var gaps []string
 	for _, pre := range contract.Requires {
 		if ok, why := pre.Check(prospective.Established, g.trajectory.Effects); !ok {
-			gaps = append(gaps, fmt.Sprintf("precondition:%s", why))
+			gaps = append(gaps, "precondition:"+why)
 		}
 	}
 
-	// Check for unaccepted narrowing.
-	if RequiresNarrowing(g.trajectory.Label.Established, contract.Contribution) {
-		if !g.trajectory.AcceptedNarrowing {
-			if g.acceptNarrow != nil {
-				approved, err := g.acceptNarrow(ctx, req, fmt.Sprintf("narrowing %s → %s requires acceptance",
-					g.trajectory.Label.Established, contract.Contribution))
-				if err != nil {
-					return Ask, fmt.Sprintf("acceptance error: %v", err)
-				}
-				if approved {
-					g.trajectory.AcceptedNarrowing = true
-					return Ask, reason
-				}
+	return Prospective{
+		Label:     prospective,
+		Gaps:      gaps,
+		Narrowing: RequiresNarrowing(g.trajectory.Label.Established, contract.Contribution),
+		Contract:  contract,
+	}
+}
+
+// Check evaluates req prospectively (Gate 1). It computes cτ(L), evaluates
+// release requirements and history predicates against it, then hard gates.
+// Gate 1 never mutates L or E.
+func (g *StaticGate) Check(ctx context.Context, req Request) (Decision, string) {
+	if g.Policy.DangerouslyAllowAll || g.Policy.AllowAllSession {
+		return Allow, ""
+	}
+
+	// Hard gates first: they are the only source of Deny and are independent
+	// of the trajectory label (APPA §4, "hard gates against the exact
+	// rendered call").
+	dec, reason := g.evaluate(req)
+	if dec == Deny {
+		return dec, reason
+	}
+
+	// Prospective evaluation is unconditional: a call that passes the
+	// conventional checks must still be blocked when folding its declared
+	// contribution would violate a release-side requirement.
+	prospective := g.EvaluateProspective(req)
+
+	gaps := append([]string(nil), prospective.Gaps...)
+	if prospective.Narrowing && !g.trajectory.HasAcceptedNarrowing(CallHash(req)) {
+		if g.acceptNarrow != nil {
+			approved, err := g.acceptNarrow(ctx, req, fmt.Sprintf("narrowing %s → %s requires acceptance",
+				g.trajectory.Label.Established, prospective.Contract.Contribution))
+			if err != nil {
+				return Ask, fmt.Sprintf("acceptance error: %v", err)
 			}
+			if approved {
+				// Record the acceptance keyed to the exact call so the
+				// dispatch log can match it (Theorem 6(iii)). The label
+				// itself is only mutated at admission.
+				g.trajectory.RecordNarrowingAcceptance(CallHash(req))
+			}
+		}
+		if !g.trajectory.HasAcceptedNarrowing(CallHash(req)) {
 			gaps = append(gaps, "narrowing")
 		}
 	}
 
-	if len(gaps) > 0 {
-		reason = fmt.Sprintf("%s; recovery: %s", reason, g.describeRecovery(ctx, req, gaps))
-		return Ask, reason
+	dec, reason = g.foldMode(dec, reason, req)
+	if dec == Deny {
+		return dec, reason
+	}
+	if dec != Ask {
+		// Allowed by the conventional checks. A policy-authorized narrowing
+		// does not need a prompt — the allowlist *is* the operator's standing
+		// authorization — but a prospective requirement gap still blocks.
+		if len(prospective.Gaps) > 0 {
+			return Ask, fmt.Sprintf(
+				"%s; recovery: %s",
+				describeGaps(prospective.Gaps),
+				g.describeRecovery(ctx, req, prospective.Gaps),
+			)
+		}
+		return Allow, reason
 	}
 
-	return dec, reason
+	if len(gaps) > 0 {
+		return Ask, fmt.Sprintf("%s; recovery: %s", describeGaps(gaps), g.describeRecovery(ctx, req, gaps))
+	}
+	return Ask, reason
+}
+
+// describeGaps renders the blocking gaps for the operator-facing reason.
+func describeGaps(gaps []string) string {
+	if len(gaps) == 0 {
+		return ""
+	}
+	return "blocks: " + strings.Join(gaps, ", ")
 }
 
 func (g *StaticGate) describeRecovery(ctx context.Context, req Request, gaps []string) string {
@@ -329,7 +442,7 @@ func (g *StaticGate) describeRecovery(ctx context.Context, req Request, gaps []s
 		Gaps:    gaps,
 	}
 	contract := g.contracts.Lookup(req.Tool)
-	paths := g.recovery.Search(ctx, state, contract, 3)
+	paths := g.recovery.Search(ctx, state, contract, g.recovery.MaxPaths())
 	if len(paths) == 0 {
 		return "no recovery paths available"
 	}
@@ -341,53 +454,83 @@ func (g *StaticGate) describeRecovery(ctx context.Context, req Request, gaps []s
 	return sb.String()
 }
 
-// Admit evaluates whether a completed execution should be admitted based on
-// realized output labels and effect-log requirements. On admission the trajectory
-// label is folded and effect tokens are committed.
+// Admit evaluates a completed execution (Gate 2): it verifies the realized
+// output against its declared label, then folds the contribution and commits
+// the declared effect tokens. Gate 2 is the only place L and E mutate.
+//
+// req.Succeeded carries the reported outcome. APPA §3: "failed or
+// indeterminate outcomes contribute none", so effect tokens are committed only
+// on success. An unannotated output (no reader set, no trust) is recorded as an
+// unresolved source rather than silently adopting the declared contribution.
 func (g *StaticGate) Admit(_ context.Context, req Request) (Decision, string) {
 	if g.Policy.DangerouslyAllowAll || g.Policy.AllowAllSession {
 		return Allow, ""
 	}
 
-	out := req.OutputLabel
 	contract := g.contracts.Lookup(req.Tool)
 
-	// Unannotated / unknown output without effects: admit lazily.
-	if out.Trust == Unknown && len(out.EffectTokens) == 0 && len(contract.EffectTokens) == 0 {
-		// Fold the contribution (admit the tool's declared label).
-		g.trajectory.Label = g.trajectory.Label.Meet(PartialLabel{
-			Established: contract.Contribution,
-			Unresolved:  []string{},
-		})
-		for _, token := range contract.EffectTokens {
-			g.trajectory.Effects.Commit(req.Tool, token)
-		}
-		g.trajectory.AcceptedNarrowing = false
-		return Allow, ""
-	}
-
-	// If policy requires no untrusted output, enforce it.
-	if g.Policy.NoUntrustedOutput && out.Trust == Untrusted {
+	// Realized-return verification (Fig. 1 Gate 2): the value about to enter
+	// context must satisfy the policy's output constraints before it folds.
+	if g.Policy.NoUntrustedOutput && req.OutputLabel.Trust == Untrusted {
 		return Deny, "untrusted output denied by policy"
 	}
+	// An output whose trust is off the chain is not automatically unadmittable:
+	// it is an unannotated result, which flows as an unresolved source until a
+	// consuming check resolves it. Only a policy that explicitly forbids
+	// unverified labels blocks it here.
+	if g.Policy.RequireLabeledOutput && !IsKnownTrust(req.OutputLabel.Trust) {
+		return Ask, "realized output is unlabeled; admission requires verification or a cast"
+	}
 
-	// Enforce required effects.
 	if len(g.Policy.RequiredEffects) > 0 {
 		if err := g.trajectory.Effects.CheckRequiredEffects(g.Policy.RequiredEffects); err != nil {
 			return Ask, fmt.Sprintf("admission requires effect-log verification: %v", err)
 		}
 	}
 
-	// Admission passes: fold contribution into trajectory label and commit effects.
+	// Fold the contribution into the trajectory label and commit Kτ — only
+	// when the tool reported success.
+	unannotated := !IsKnownTrust(contract.Contribution.Trust) && len(contract.Contribution.ReaderSet) == 0
+	if unannotated {
+		// The tool declares no output label: the realized output enters the
+		// partial label as an unresolved source instead of assuming a default.
+		g.trajectory.Label = g.trajectory.Label.AddUnresolved(outputSourceOf(req.Tool))
+	} else {
+		g.trajectory.Label = g.trajectory.Label.Meet(PartialLabel{
+			Established: contract.Contribution,
+			Unresolved:  []string{},
+		})
+	}
+	if req.Succeeded {
+		for _, token := range contract.EffectTokens {
+			g.trajectory.Effects.Commit(req.Tool, token)
+		}
+	}
+	return Allow, ""
+}
+
+// ApproveAdmit folds the tool's contribution into the trajectory label and
+// commits effect tokens after an admission Ask is approved by the user.
+func (g *StaticGate) ApproveAdmit(req Request) {
+	if g == nil {
+		return
+	}
+	contract := g.contracts.Lookup(req.Tool)
 	g.trajectory.Label = g.trajectory.Label.Meet(PartialLabel{
 		Established: contract.Contribution,
 		Unresolved:  []string{},
 	})
-	for _, token := range contract.EffectTokens {
-		g.trajectory.Effects.Commit(req.Tool, token)
+	if req.Succeeded {
+		for _, token := range contract.EffectTokens {
+			g.trajectory.Effects.Commit(req.Tool, token)
+		}
 	}
-	g.trajectory.AcceptedNarrowing = false
-	return Allow, ""
+}
+
+// outputSourceOf names the unresolved source contributed by an unannotated
+// tool's realized output.
+func outputSourceOf(tool string) string {
+	return "out:" + strings.TrimSpace(tool)
 }
 
 // evaluate runs the conventional mode-independent permission checks.
@@ -495,6 +638,17 @@ func (g *StaticGate) foldMode(dec Decision, reason string, req Request) (Decisio
 		}
 		return dec, reason
 
+	case ModeYolo:
+		// Only Ask folds. An explicit Deny — sudo, rm -rf, curl|sh — stays
+		// denied, so "stop asking me" never becomes "disable the safety net".
+		// This is the whole reason yolo is a mode rather than another
+		// allow-all flag: the flags short-circuit before the gate runs, which
+		// would take the deny list down with them.
+		if dec == Ask {
+			return Allow, ""
+		}
+		return dec, reason
+
 	case ModeAutopilot, ModeHeadlessStrict:
 		if dec == Ask {
 			return Deny, askFoldReason(reason, mode)
@@ -534,25 +688,6 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
-}
-
-
-
-// ApproveAdmit folds the tool's contribution into the trajectory label and
-// commits effect tokens after an admission Ask is approved by the user.
-func (g *StaticGate) ApproveAdmit(req Request) {
-	if g == nil {
-		return
-	}
-	contract := g.contracts.Lookup(req.Tool)
-	g.trajectory.Label = g.trajectory.Label.Meet(PartialLabel{
-		Established: contract.Contribution,
-		Unresolved:  []string{},
-	})
-	for _, token := range contract.EffectTokens {
-		g.trajectory.Effects.Commit(req.Tool, token)
-	}
-	g.trajectory.AcceptedNarrowing = false
 }
 
 // AllowAll is a Gate that always allows (tests / nil-policy fallback).

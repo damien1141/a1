@@ -26,6 +26,7 @@ ext/rust/Cargo.lock
 
 # Claude Code reference checkout (research only, not shipped)
 /references/
+/ideas/
 
 # scratch notes kept out of the tree
 /haiku.txt

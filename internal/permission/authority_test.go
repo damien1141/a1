@@ -14,7 +14,7 @@ func TestCallHashDeterministic(t *testing.T) {
 		Tool:   "write",
 		Paths:  []string{"/tmp/b", "/tmp/a"},
 		InputLabels: []Label{
-			{Trust: User, ReaderSet: []string{"user"}, EffectTokens: []string{"t1"}},
+			{Trust: User, ReaderSet: []string{"user"}},
 		},
 	}
 	h1 := CallHash(req)
@@ -62,12 +62,22 @@ func TestConsultAuthorityLogsRuling(t *testing.T) {
 	dec, reason := g.Check(t.Context(), req)
 	assert.Equal(t, Ask, dec)
 
-	dec, _ = g.ConsultAuthority(t.Context(), dec, reason, req)
+	// A ruling must name the gap it covers; an unbounded override is not a
+	// ruling the mandate model permits.
+	dec, _ = g.ConsultAuthority(t.Context(), dec, reason, req, nil)
+	assert.Equal(t, Ask, dec, "a ruling with no target gap changes nothing")
+	assert.Zero(t, g.Trajectory().Rulings.Len(), "unscoped ruling is not logged")
+
+	dec, _ = g.ConsultAuthority(t.Context(), Ask, reason, req, []string{"narrowing"})
 	assert.Equal(t, Allow, dec)
 
 	traj := g.Trajectory()
 	assert.Equal(t, 1, traj.Rulings.Len())
 	assert.Equal(t, Allow, traj.Rulings.All()[0].Decision)
+	assert.Equal(t, []string{"narrowing"}, traj.Rulings.All()[0].GapsCovered,
+		"the ruling records the concrete gap it covers")
+	assert.True(t, traj.Rulings.CoveredFor(CallHash(req), "narrowing"),
+		"the log can match the ruling back to the call")
 }
 
 func TestCheckSurfacesRecoveryPaths(t *testing.T) {

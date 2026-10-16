@@ -36,6 +36,43 @@ type EngineRunner struct {
 	MaxRounds    int                                 // 0 → Engine default
 	Extensions   *extension.Runner
 	ExtensionsFn func() *extension.Runner
+	// ParentGateFn returns the parent trajectory's gate, so the child branch
+	// can fork from the parent's label (L0c := Lp) and share its effect log.
+	// Nil → the child starts from the role's default policy.
+	ParentGateFn func() permission.Gate
+}
+
+// childGate builds the child branch's gate. When the parent gate is a
+// StaticGate, the child forks from the parent's current label and shares its
+// effect log; otherwise the role's default policy is used. Either way the
+// child's own trajectory state is a copy: the parent's label is never mutated
+// by the child, and pending parent acceptances do not cross the boundary
+// (APPA §6, Theorem 8).
+func (r EngineRunner) childGate(spec ChildSpec, cwd string) (permission.Gate, error) {
+	parent := permission.StaticGateOf(r.parentGate())
+	if parent == nil {
+		gate, err := permission.NewGateAt(permission.ChildPolicy(spec.Mode), cwd)
+		if err != nil {
+			return nil, err
+		}
+		if spec.Confinement != nil {
+			return permission.NewConfinementGate(gate, *spec.Confinement), nil
+		}
+		return gate, nil
+	}
+
+	child := permission.ForkChildGate(parent, spec.Mode)
+	if spec.Confinement != nil {
+		return permission.NewConfinementGate(child, *spec.Confinement), nil
+	}
+	return child, nil
+}
+
+func (r EngineRunner) parentGate() permission.Gate {
+	if r.ParentGateFn == nil {
+		return nil
+	}
+	return r.ParentGateFn()
 }
 
 // Run implements [job.Runner].
@@ -51,16 +88,15 @@ func (r EngineRunner) Run(ctx context.Context, env job.RunEnv) (string, error) {
 
 	spec := SpecForRole(env.Job.Role)
 
-	gate := r.Gate
-	if gate == nil {
-		g, err := permission.NewGate(permission.ChildPolicy(spec.Mode), cwd)
+	var gate permission.Gate
+	if r.Gate != nil {
+		gate = r.Gate
+	} else {
+		built, err := r.childGate(spec, cwd)
 		if err != nil {
 			return "", err
 		}
-		gate = g
-		if spec.Confinement != nil {
-			gate = permission.NewConfinementGate(g, *spec.Confinement)
-		}
+		gate = built
 	}
 
 	toolList := r.Tools

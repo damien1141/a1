@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/damien1141/a1/internal/llm"
@@ -169,8 +170,7 @@ func runConfigValidate(ctx context.Context, input json.RawMessage) (tooldef.Resu
 
 	// Validate permissions.
 	mode := string(cfg.Permissions.Mode)
-	if mode != "" && mode != string(permission.ModeInteractive) && mode != string(permission.ModeReadonly) &&
-		mode != string(permission.ModeAutopilot) && mode != string(permission.ModeHeadlessStrict) {
+	if mode != "" && !slices.Contains(permission.AllModes, permission.Mode(mode)) {
 		issues = append(
 			issues,
 			validationIssue{Severity: "error", Message: fmt.Sprintf("invalid permissions.mode: %q", mode)},

@@ -11,8 +11,15 @@ import (
 type Result struct {
 	// Content is sent back to the model as the tool message body.
 	Content string
-	// Detail is a short one-line summary for the TUI tool row.
+	// Detail identifies the call for the whole run — the url, path, or query.
+	// Set it from DetailFromArgs when it comes from arguments; a tool must not
+	// overwrite it at completion, because the transcript row needs one stable
+	// identity from start to finish.
 	Detail string
+	// Summary is the one-line outcome, shown beside the identity once the call
+	// resolves ("200 OK · 42.1 KB · 1.2s"). Empty hides it. This is where a
+	// completion stat belongs; Detail stays the identity.
+	Summary string
 	// Output is the display body for the TUI (may equal Content).
 	Output string
 	// Expanded asks the TUI to start the tool row open.

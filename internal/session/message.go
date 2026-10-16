@@ -140,9 +140,31 @@ type ToolRun struct {
 	Output    string
 	Error     string
 	Detail    string // optional one-line detail (path, cmd summary)
-	ExitCode  int    // set when a local bash run finishes (Status Done/Error)
-	Local     bool   // user "!cmd" bash; ignored by agent streaming/busy checks
-	Expanded  bool   // TUI starts the tool row open (user toggle still wins)
+	// Summary is the one-line outcome shown beside Detail once the run resolves
+	// ("200 OK · 42.1 KB · 1.2s"). Empty for most tools.
+	Summary  string
+	ExitCode int  // set when a local bash run finishes (Status Done/Error)
+	Local    bool // user "!cmd" bash; ignored by agent streaming/busy checks
+	Expanded bool // TUI starts the tool row open (user toggle still wins)
+	// Group is set when this run stands for a collapsed run of read-only calls
+	// (see CollapseGroups). Nil for every ordinary single-tool row.
+	Group *ToolGroup
+}
+
+// ToolGroup describes a collapsed run of read-only tool calls. The counts are
+// what the summary row shows; Members are the individual tool_use ids, which the
+// UI expands into their own cards.
+type ToolGroup struct {
+	Members  []string
+	Reads    int
+	Searches int
+	Lists    int
+	// Fetched counts fetch / browser calls, which carry per-call detail worth
+	// keeping separate from plain reads.
+	Fetched int
+	// Hint is the most recent member's detail, so the row still says what it
+	// happened to be looking at last.
+	Hint string
 }
 
 // Message is one session message. Assistant rows carry Content blocks and State.

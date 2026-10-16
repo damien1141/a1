@@ -10,12 +10,12 @@ import (
 	"github.com/damien1141/a1/internal/llm/skills"
 )
 
-// GlobalLayout describes the global phi home directory (~/.a1).
+// GlobalLayout describes the global a1 home directory (~/.a1).
 type GlobalLayout struct {
 	root string
 }
 
-// Root returns the global phi home directory (~/.a1).
+// Root returns the global a1 home directory (~/.a1).
 func (g GlobalLayout) Root() string { return g.root }
 
 // ConfigFile returns the path to the global config file.
@@ -91,7 +91,7 @@ func (p *Project) MCPConfigFile() string {
 	return filepath.Join(p.root, ".a1", "mcp.json")
 }
 
-// Project is the resolved phi workspace: the current working directory plus
+// Project is the resolved a1 workspace: the current working directory plus
 // the global layout and its loaded configuration.
 type Project struct {
 	root   string
@@ -102,7 +102,7 @@ type Project struct {
 // Root returns the working directory the project was resolved from.
 func (p *Project) Root() string { return p.root }
 
-// Global returns the global phi layout (~/.a1).
+// Global returns the global a1 layout (~/.a1).
 func (p *Project) Global() GlobalLayout { return p.global }
 
 // Config returns the loaded configuration, or nil before LoadConfig.
@@ -119,7 +119,7 @@ func (p *Project) LoadConfig() error {
 	return nil
 }
 
-// ensureGlobalDirs creates the global phi home directories. It is what makes
+// ensureGlobalDirs creates the global a1 home directories. It is what makes
 // ~/.a1/{bin,skills,extensions,session,jobs,sessions/memory} exist from the
 // very first startup.
 func ensureGlobalDirs(global GlobalLayout) error {
@@ -147,7 +147,7 @@ func ensureGlobalDirs(global GlobalLayout) error {
 	return nil
 }
 
-// Discover resolves the phi workspace starting from startDir ("" = cwd) and
+// Discover resolves the a1 workspace starting from startDir ("" = cwd) and
 // ensures the global directory layout exists.
 func Discover(startDir string) (*Project, error) {
 	if startDir == "" {

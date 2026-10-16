@@ -2,6 +2,7 @@ package permission
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -37,16 +38,21 @@ func TestRuleBasedResolver_MatchTool(t *testing.T) {
 }
 
 func TestHumanReviewResolver_AsyncCallback(t *testing.T) {
-	var called bool
+	// The callback runs on the resolver's goroutine, so it must be joined
+	// through a channel rather than a sleep on unsynchronized locals.
+	done := make(chan struct{})
 	var gotHash string
+	var once sync.Once
 	resolver := &HumanReviewResolver{
 		Callback: func(ctx context.Context, callHash string, req Request, dec Decision, reason string) {
-			called = true
-			gotHash = callHash
-			_ = ctx
-			_ = req
-			_ = dec
-			_ = reason
+			once.Do(func() {
+				gotHash = callHash
+				_ = ctx
+				_ = req
+				_ = dec
+				_ = reason
+				close(done)
+			})
 		},
 	}
 
@@ -54,9 +60,11 @@ func TestHumanReviewResolver_AsyncCallback(t *testing.T) {
 	assert.Equal(t, Ask, dec)
 	assert.Contains(t, reason, "pending human review")
 
-	// Give the goroutine a moment.
-	time.Sleep(10 * time.Millisecond)
-	assert.True(t, called, "callback should be invoked asynchronously")
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("callback was not invoked")
+	}
 	assert.Equal(t, "h1", gotHash)
 }
 

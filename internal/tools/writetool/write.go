@@ -83,17 +83,48 @@ func runWrite(ctx context.Context, input json.RawMessage) (tooldef.Result, error
 	if fileExisted {
 		oldStr := util.NormalizeLF(string(oldContent))
 		newStr := util.NormalizeLF(in.Content)
-		if oldStr == newStr {
+		switch {
+		case oldStr == newStr:
 			body = fmt.Sprintf("wrote %d bytes to %s (no changes)", len(in.Content), display)
-		} else {
-			newTag := util.ComputeFileHash(newStr)
-			diff := util.GenerateFileDiff(path, oldStr, newStr, 3)
-			body = util.FormatFileHeader(display, newTag) + "\n\n" + diff
+		case strings.TrimSpace(oldStr) == "":
+			// Nothing to diff against: the whole file is the addition.
+			body = fmt.Sprintf("Wrote %d lines to %s.\n\n%s",
+				countLines(newStr), display, prefixedLines(newStr, "+"))
+		default:
+			body = fmt.Sprintf("Updated %s.\n\n%s", display,
+				util.GenerateFileDiff(path, oldStr, newStr, 3))
 		}
 	} else {
-		newTag := util.ComputeFileHash(util.NormalizeLF(in.Content))
-		body = util.FormatFileHeader(display, newTag) + "\n\nCreated new file."
+		body = fmt.Sprintf("Created %s (%d lines).\n\n%s",
+			display, countLines(util.NormalizeLF(in.Content)), prefixedLines(util.NormalizeLF(in.Content), "+"))
 	}
 
 	return tooldef.Result{Content: body, Detail: display, Output: body}, nil
+}
+
+// countLines counts the newline-terminated lines in text.
+func countLines(text string) int {
+	if text == "" {
+		return 0
+	}
+	n := strings.Count(text, "\n")
+	if !strings.HasSuffix(text, "\n") {
+		n++
+	}
+	return n
+}
+
+// prefixedLines returns every line of text with prefix prepended, so content
+// that has no old version to diff against still reads as an addition.
+func prefixedLines(text, prefix string) string {
+	var sb strings.Builder
+	for ln := range strings.SplitSeq(text, "\n") {
+		if ln == "" {
+			continue
+		}
+		sb.WriteString(prefix)
+		sb.WriteString(ln)
+		sb.WriteByte('\n')
+	}
+	return strings.TrimRight(sb.String(), "\n")
 }

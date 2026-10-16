@@ -44,9 +44,12 @@ func TestRecoveryGraph_AcceptNarrowingClearsGap(t *testing.T) {
 
 func TestRecoveryGraph_AuthorityRuleClearsGap(t *testing.T) {
 	g := NewRecoveryGraph()
-	g.RegisterAuthority("test-auth", AuthorityFunc(func(ctx context.Context, callHash string, req Request) (Decision, string) {
-		return Allow, "approved"
-	}))
+	g.RegisterAuthority(
+		"test-auth",
+		AuthorityFunc(func(ctx context.Context, callHash string, req Request) (Decision, string) {
+			return Allow, "approved"
+		}),
+	)
 
 	state := RecoveryState{
 		Label:   NewPartialLabel(Label{Trust: Trusted, ReaderSet: []string{}}, []string{}),
@@ -72,9 +75,9 @@ func TestRecoveryGraph_AdmitFoldsContribution(t *testing.T) {
 		Gaps:    []string{},
 	}
 	contract := Contract{
-		Tool:          "bash",
+		Tool:         "bash",
 		Contribution: Label{Trust: User, ReaderSet: []string{}},
-		EffectTokens:  []string{"bash_run"},
+		EffectTokens: []string{"bash_run"},
 	}
 	paths := g.Search(context.Background(), state, contract, 5)
 	require.Empty(t, paths, "no gaps means no recovery needed")
@@ -91,7 +94,7 @@ func TestRecoveryGraph_TransformAppliesCast(t *testing.T) {
 	})
 
 	state := RecoveryState{
-		Label:   NewPartialLabel(Label{Trust: Unknown}, []string{"web"}),
+		Label:   NewPartialLabel(Label{Trust: Untrusted}, []string{"web"}),
 		Support: []string{},
 		Gaps:    []string{},
 	}
@@ -134,9 +137,12 @@ func TestRecoveryGraph_BoundedDepth(t *testing.T) {
 func TestRecoveryGraph_VisitedSetPreventsCycles(t *testing.T) {
 	g := NewRecoveryGraph()
 	// Register an authority that always allows, creating a potential cycle.
-	g.RegisterAuthority("always-allow", AuthorityFunc(func(ctx context.Context, callHash string, req Request) (Decision, string) {
-		return Allow, "always"
-	}))
+	g.RegisterAuthority(
+		"always-allow",
+		AuthorityFunc(func(ctx context.Context, callHash string, req Request) (Decision, string) {
+			return Allow, "always"
+		}),
+	)
 
 	state := RecoveryState{
 		Label:   NewPartialLabel(Label{Trust: Trusted, ReaderSet: []string{}}, []string{}),
@@ -195,7 +201,7 @@ func TestRecoveryGraphIntegration_PaperExample(t *testing.T) {
 	// Contract for file_github_issue requires audience = {public}.
 	// Current label has {public, external}, so this doesn't narrow.
 	contract := Contract{
-		Tool:        "file_github_issue",
+		Tool:         "file_github_issue",
 		Contribution: Label{Trust: Trusted, ReaderSet: []string{"public"}},
 		Requires: []Precondition{
 			{Kind: PreconditionRecipientCover, Readers: []string{"public"}},

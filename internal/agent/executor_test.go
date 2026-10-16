@@ -54,7 +54,7 @@ func TestExecutorDenyDoesNotRunHandler(t *testing.T) {
 			},
 		},
 	}
-	ex := NewExecutor(reg, fixedGate{dec: permission.Deny, reason: "denied by test"}, nil, nil)
+	ex := NewExecutor(reg, fixedGate{dec: permission.Deny, reason: "denied by test"}, nil, nil, nil)
 	var statuses []session.ToolStatus
 	msgs, _, _ := ex.Run(t.Context(), []llm.ToolCall{{
 		ID:       "c1",
@@ -83,7 +83,7 @@ func TestExecutorAskFalseRejects(t *testing.T) {
 	ask := func(context.Context, permission.Request, string) (permission.AskResult, error) {
 		return permission.AskResult{Approved: false}, nil
 	}
-	ex := NewExecutor(reg, fixedGate{dec: permission.Ask, reason: "needs approval"}, ask, nil)
+	ex := NewExecutor(reg, fixedGate{dec: permission.Ask, reason: "needs approval"}, ask, nil, nil)
 	msgs, _, _ := ex.Run(t.Context(), []llm.ToolCall{{
 		ID:       "c1",
 		Function: llm.Function{Name: "bash", Arguments: `{"command":"curl x"}`},
@@ -102,7 +102,7 @@ func TestExecutorEmitsToolName(t *testing.T) {
 			},
 		},
 	}
-	ex := NewExecutor(reg, permission.AllowAll{}, nil, nil)
+	ex := NewExecutor(reg, permission.AllowAll{}, nil, nil, nil)
 	var names []string
 	_, _, _ = ex.Run(t.Context(), []llm.ToolCall{{
 		ID:       "c1",
@@ -130,7 +130,7 @@ func TestExecutorAskNilRejectsHeadless(t *testing.T) {
 			},
 		},
 	}
-	ex := NewExecutor(reg, fixedGate{dec: permission.Ask, reason: "needs approval"}, nil, nil)
+	ex := NewExecutor(reg, fixedGate{dec: permission.Ask, reason: "needs approval"}, nil, nil, nil)
 	var statuses []session.ToolStatus
 	msgs, _, _ := ex.Run(t.Context(), []llm.ToolCall{{
 		ID:       "c1",
@@ -159,7 +159,7 @@ func TestExecutorAskTrueRuns(t *testing.T) {
 	ask := func(context.Context, permission.Request, string) (permission.AskResult, error) {
 		return permission.AskResult{Approved: true}, nil
 	}
-	ex := NewExecutor(reg, fixedGate{dec: permission.Ask, reason: "needs approval"}, ask, nil)
+	ex := NewExecutor(reg, fixedGate{dec: permission.Ask, reason: "needs approval"}, ask, nil, nil)
 	msgs, _, _ := ex.Run(t.Context(), []llm.ToolCall{{
 		ID:       "c1",
 		Function: llm.Function{Name: "bash", Arguments: `{"command":"curl x"}`},
@@ -181,7 +181,7 @@ func TestExecutorAskFeedbackMessage(t *testing.T) {
 	ask := func(context.Context, permission.Request, string) (permission.AskResult, error) {
 		return permission.AskResult{Approved: false, Feedback: "use go test instead"}, nil
 	}
-	ex := NewExecutor(reg, fixedGate{dec: permission.Ask, reason: "ask me"}, ask, nil)
+	ex := NewExecutor(reg, fixedGate{dec: permission.Ask, reason: "ask me"}, ask, nil, nil)
 	msgs, _, _ := ex.Run(t.Context(), []llm.ToolCall{{
 		ID:       "c1",
 		Function: llm.Function{Name: "bash", Arguments: `{"command":"curl x"}`},
@@ -199,7 +199,7 @@ func TestExecutorNilAskOnAskDenies(t *testing.T) {
 			},
 		},
 	}
-	ex := NewExecutor(reg, fixedGate{dec: permission.Ask, reason: "ask me"}, nil, nil)
+	ex := NewExecutor(reg, fixedGate{dec: permission.Ask, reason: "ask me"}, nil, nil, nil)
 	msgs, _, _ := ex.Run(t.Context(), []llm.ToolCall{{
 		ID:       "c1",
 		Function: llm.Function{Name: "bash", Arguments: `{"command":"curl x"}`},
@@ -240,7 +240,7 @@ func main() {
   _ = m.Run()
 }
 `)
-	ex := NewExecutor(reg, fixedGate{dec: permission.Ask, reason: "needs approval"}, ask, r)
+	ex := NewExecutor(reg, fixedGate{dec: permission.Ask, reason: "needs approval"}, ask, r, nil)
 	var statuses []session.ToolStatus
 	msgs, _, _ := ex.Run(t.Context(), []llm.ToolCall{{
 		ID:       "c1",
@@ -289,7 +289,7 @@ func main() {
   _ = m.Run()
 }
 `)
-	ex := NewExecutor(reg, gate, nil, r)
+	ex := NewExecutor(reg, gate, nil, r, nil)
 	var detail string
 	msgs, _, _ := ex.Run(t.Context(), []llm.ToolCall{{
 		ID:       "c1",
@@ -329,7 +329,7 @@ func main() {
   _ = m.Run()
 }
 `)
-	ex := NewExecutor(reg, permission.AllowAll{}, nil, r)
+	ex := NewExecutor(reg, permission.AllowAll{}, nil, r, nil)
 	var uiOut string
 	msgs, _, _ := ex.Run(t.Context(), []llm.ToolCall{{
 		ID:       "c1",
@@ -378,7 +378,7 @@ func TestExecutorToolErrorKeepsOutputEmptyForUI(t *testing.T) {
 		},
 	}
 
-	ex := NewExecutor(reg, permission.AllowAll{}, nil, nil)
+	ex := NewExecutor(reg, permission.AllowAll{}, nil, nil, nil)
 	var last session.ToolRun
 	msgs, _, _ := ex.Run(t.Context(), []llm.ToolCall{{
 		ID:       "c1",
@@ -422,7 +422,7 @@ func TestExecutorRunsReadableBatchConcurrently(t *testing.T) {
 			},
 		},
 	}
-	ex := NewExecutor(reg, permission.AllowAll{}, nil, nil)
+	ex := NewExecutor(reg, permission.AllowAll{}, nil, nil, nil)
 	done := make(chan struct{})
 	var msgs []llm.Message
 	go func() {
@@ -470,7 +470,7 @@ func TestExecutorMixedBatchStaysSequential(t *testing.T) {
 			},
 		},
 	}
-	ex := NewExecutor(reg, permission.AllowAll{}, nil, nil)
+	ex := NewExecutor(reg, permission.AllowAll{}, nil, nil, nil)
 	done := make(chan struct{})
 	var msgs []llm.Message
 	go func() {
@@ -505,4 +505,62 @@ func TestExecutorMixedBatchStaysSequential(t *testing.T) {
 	require.Len(t, msgs, 2)
 	assert.Equal(t, "A", msgs[0].Content)
 	assert.Equal(t, "B", msgs[1].Content)
+}
+
+// Detail is the row's identity for the whole run; Summary is the outcome. A tool
+// returning its own Detail must not replace the arg-derived one — that is how
+// "browser navigate https://x" ended up rendering as whatever the page title was.
+func TestExecutorKeepsArgDerivedDetailOverResultDetail(t *testing.T) {
+	reg := tools.Registry{
+		"browser": {
+			Definition: llm.ToolDefinition{Name: "browser"},
+			// DetailFromArgs supplies the identity the same way browsertool does.
+			DetailFromArgs: func(json.RawMessage) string { return "browser content" },
+			Run: func(context.Context, json.RawMessage) (tools.Result, error) {
+				return tools.Result{
+					Content: "page body",
+					// This is what the browser tool used to set: the page title.
+					Detail:  "Example Domain",
+					Summary: "Read · example.com · 7 results",
+				}, nil
+			},
+		},
+	}
+	ex := NewExecutor(reg, permission.AllowAll{}, nil, nil, nil)
+
+	var last session.ToolRun
+	_, _, _ = ex.Run(t.Context(), []llm.ToolCall{{
+		ID:       "c1",
+		Function: llm.Function{Name: "browser", Arguments: `{"action":"content"}`},
+	}}, func(td session.ToolData) bool {
+		last = td.Run
+		return true
+	})
+
+	assert.Equal(t, "browser content", last.Detail, "the identity from args survives")
+	assert.Equal(t, "Read · example.com · 7 results", last.Summary, "the outcome is separate")
+}
+
+// A tool with no DetailFromArgs still gets its own Detail — the guard is against
+// clobbering, not against tools that genuinely derive one.
+func TestExecutorUsesResultDetailWhenArgsGiveNone(t *testing.T) {
+	reg := tools.Registry{
+		"mytool": {
+			Definition: llm.ToolDefinition{Name: "mytool"},
+			Run: func(context.Context, json.RawMessage) (tools.Result, error) {
+				return tools.Result{Content: "out", Detail: "from the tool"}, nil
+			},
+		},
+	}
+	ex := NewExecutor(reg, permission.AllowAll{}, nil, nil, nil)
+
+	var last session.ToolRun
+	_, _, _ = ex.Run(t.Context(), []llm.ToolCall{{
+		ID:       "c1",
+		Function: llm.Function{Name: "mytool", Arguments: `{}`},
+	}}, func(td session.ToolData) bool {
+		last = td.Run
+		return true
+	})
+	assert.Equal(t, "from the tool", last.Detail)
 }

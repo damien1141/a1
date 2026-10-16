@@ -136,7 +136,15 @@ func runPermissionTrajectory(eng engineaccess.Engine) (tooldef.Result, error) {
 	sb.WriteString(fmt.Sprintf("accepted_narrowing: %v\n", traj.AcceptedNarrowing))
 	sb.WriteString(fmt.Sprintf("rulings: %d\n", traj.Rulings.Len()))
 	for _, r := range traj.Rulings.All() {
-		sb.WriteString(fmt.Sprintf("  - %s %s gaps=%v at %s\n", r.Decision, r.CallHash[:8], r.GapsCovered, r.Timestamp.Format(time.RFC3339)))
+		sb.WriteString(
+			fmt.Sprintf(
+				"  - %s %s gaps=%v at %s\n",
+				r.Decision,
+				r.CallHash[:8],
+				r.GapsCovered,
+				r.Timestamp.Format(time.RFC3339),
+			),
+		)
 	}
 	content := sb.String()
 	return tooldef.Result{Content: content, Detail: "trajectory state", Output: content}, nil

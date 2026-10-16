@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // TestBrowserOpenNilContext mirrors the slash-command path, which passes a
@@ -18,4 +20,13 @@ func TestBrowserOpenNilContext(t *testing.T) {
 		t.Fatalf("open with nil ctx failed: %v\ncontent=%s", err, res.Content)
 	}
 	_, _ = runBrowser(nil, json.RawMessage(`{"action":"close"}`))
+}
+
+// The browser tool drives one shared page, so a batch must run sequentially.
+// Readable=true let the executor run two actions concurrently against the same
+// page — safe under the mutex, but wrong: a click could land before its navigate.
+func TestBrowserToolIsNotReadable(t *testing.T) {
+	tool := BrowserTool()
+	assert.False(t, tool.Definition.Readable,
+		"a stateful, sequential tool must not be marked read-only")
 }

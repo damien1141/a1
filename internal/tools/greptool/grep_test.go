@@ -99,7 +99,10 @@ func TestRunGrep_LimitReachedStopsCleanly(t *testing.T) {
 	out, err := runGrepBounded(t, grepInput{Pattern: "needle", Path: dir, Limit: 2})
 
 	require.NoError(t, err)
-	assert.Equal(t, "2 matches", out.Detail)
+	// Detail carries the arg-derived phrase, not the match count: the count is
+	// the transcript row's stat, and overwriting Detail would erase the phrase
+	// that identifies the search.
+	assert.NotEqual(t, "2 matches", out.Detail)
 	assert.Contains(t, out.Content, "2 matches limit reached")
 }
 

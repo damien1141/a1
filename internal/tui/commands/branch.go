@@ -93,7 +93,7 @@ func (b *BranchCommands) Show() {
 }
 
 // Run handles /branch and /branch <name>. A name that is not a branch yet is
-// created from HEAD, which is how a new workstream starts without leaving phi.
+// created from HEAD, which is how a new workstream starts without leaving a1.
 func (b *BranchCommands) Run(args []string) {
 	if b == nil {
 		return

@@ -30,15 +30,37 @@ func TestPartialLabelMerge(t *testing.T) {
 }
 
 func TestPartialLabelResolve(t *testing.T) {
-	p := NewPartialLabel(Label{Trust: Unknown}, []string{"web", "file"})
+	p := NewPartialLabel(Label{Trust: User, ReaderSet: []string{"user"}}, []string{"web", "file"})
 	resolved := p.Resolve("web", Label{Trust: Untrusted, ReaderSet: []string{}})
 	assert.Equal(t, 1, resolved.UnresolvedCount(), "resolved source should be removed from unresolved set")
-	assert.Equal(t, Unknown, resolved.Established.Trust, "Unknown ∧ Untrusted = Unknown under meet")
+	assert.Equal(t, Untrusted, resolved.Established.Trust, "User ∧ Untrusted = Untrusted under meet")
 
 	// Resolving a non-existent source is a no-op.
 	noop := resolved.Resolve("missing", Label{Trust: User})
 	assert.Equal(t, 1, noop.UnresolvedCount(), "missing source should not change unresolved count")
-	assert.Equal(t, Unknown, noop.Established.Trust, "established should be unchanged")
+	assert.Equal(t, Untrusted, noop.Established.Trust, "established should be unchanged")
+}
+
+func TestTrustChainExcludesUnknown(t *testing.T) {
+	// Unknown is not on the trust chain: it is a separate dimension of the
+	// partial label, so trusting it would invent an ordering the paper
+	// explicitly rejects ("there is no ordering trusted < unknown < suspicious").
+	assert.Equal(t, -1, TrustOrder(Trust(99)), "unknown trust rank is off-chain")
+	assert.False(t, IsKnownTrust(Trust(99)), "off-chain trust is not a known chain value")
+	for _, known := range []Trust{Trusted, User, Untrusted} {
+		assert.True(t, IsKnownTrust(known), "%s is on the chain", known)
+	}
+	// The chain itself is totally ordered by restrictiveness.
+	assert.Less(t, TrustOrder(Trusted), TrustOrder(User))
+	assert.Less(t, TrustOrder(User), TrustOrder(Untrusted))
+}
+
+func TestUnannotatedContributionFoldsNoTrust(t *testing.T) {
+	// An unannotated tool declares no established trust, so folding it into a
+	// label must not fabricate a rank.
+	unannotated := Label{}
+	assert.False(t, IsKnownTrust(unannotated.Trust), "zero Trust is off-chain")
+	assert.Empty(t, unannotated.ReaderSet, "unannotated label carries no readers")
 }
 
 func TestWideningRequiresAcceptance(t *testing.T) {
@@ -63,7 +85,10 @@ func TestStaticGateTrajectoryNarrowsAndAccepts(t *testing.T) {
 		return true, nil
 	})
 
-	dec, reason := g.Check(context.Background(), Request{Action: ActionBash, Tool: "bash", Command: "curl https://example.com"})
+	dec, reason := g.Check(
+		context.Background(),
+		Request{Action: ActionBash, Tool: "bash", Command: "curl https://example.com"},
+	)
 	assert.Equal(t, Ask, dec, "narrowing call should require approval")
 	assert.Contains(t, reason, "bash requires approval", "mode-folded reason should be preserved after acceptance")
 	assert.True(t, approved, "acceptance callback should be invoked")
@@ -90,14 +115,20 @@ func TestContractPreconditionsBlockDispatch(t *testing.T) {
 	})
 
 	// Missing prior should fail.
-	dec, reason := g.Check(context.Background(), Request{Action: ActionBash, Tool: "bash", Command: "curl https://example.com"})
+	dec, reason := g.Check(
+		context.Background(),
+		Request{Action: ActionBash, Tool: "bash", Command: "curl https://example.com"},
+	)
 	assert.Equal(t, Ask, dec, "missing prior should gate dispatch")
 	assert.Contains(t, reason, "recovery:")
 
 	// Commit the prior effect.
 	g.trajectory.Effects.Commit("setup", "setup_done")
 
-	dec, reason = g.Check(context.Background(), Request{Action: ActionBash, Tool: "bash", Command: "curl https://example.com"})
+	dec, reason = g.Check(
+		context.Background(),
+		Request{Action: ActionBash, Tool: "bash", Command: "curl https://example.com"},
+	)
 	assert.Equal(t, Ask, dec, "prior satisfied; narrowing should require acceptance because bash contributes Untrusted")
 	assert.Contains(t, reason, "recovery:")
 }
@@ -110,7 +141,8 @@ func TestAdmitFoldsContributionAndCommitsEffects(t *testing.T) {
 
 	req := Request{
 		Tool:        "bash",
-		OutputLabel: Label{Trust: Untrusted, ReaderSet: []string{}, EffectTokens: []string{}},
+		OutputLabel: Label{Trust: Untrusted, ReaderSet: []string{}},
+		Succeeded:   true,
 	}
 
 	dec, reason := g.Admit(context.Background(), req)
@@ -125,6 +157,70 @@ func TestAdmitFoldsContributionAndCommitsEffects(t *testing.T) {
 	traj := g.Trajectory()
 	assert.Equal(t, Untrusted, traj.Label.Established.Trust, "admission should fold tool contribution into label")
 	assert.Equal(t, 1, traj.Effects.Count("bash_run"), "admission should commit effect tokens")
+}
+
+func TestAdmitDoesNotCommitEffectsWithoutSuccess(t *testing.T) {
+	p := DefaultPolicy()
+	g, err := NewGate(p, t.TempDir())
+	require.NoError(t, err)
+
+	req := Request{
+		Tool:        "write",
+		OutputLabel: Label{Trust: User, ReaderSet: []string{"user"}},
+		Succeeded:   false, // failed or indeterminate outcome
+	}
+
+	dec, _ := g.Admit(context.Background(), req)
+	require.Equal(t, Allow, dec, "a failed write still reports its realized output")
+	assert.Zero(t, g.Trajectory().Effects.Count("write"),
+		"APPA §3: failed or indeterminate outcomes contribute no effect tokens")
+}
+
+func TestAdmitUnannotatedOutputRecordsUnresolvedSource(t *testing.T) {
+	p := DefaultPolicy()
+	g, err := NewGate(p, t.TempDir())
+	require.NoError(t, err)
+
+	// A tool with no declared output label: the realized output must enter the
+	// partial label as an unresolved source, not as the declared contribution.
+	before := g.Trajectory().Label
+	req := Request{
+		Tool:        "mystery_tool",
+		OutputLabel: Label{Trust: Untrusted, ReaderSet: []string{}},
+		Succeeded:   true,
+	}
+	dec, _ := g.Admit(context.Background(), req)
+	require.Equal(t, Allow, dec)
+
+	after := g.Trajectory().Label
+	assert.Equal(t, before.Established, after.Established,
+		"an unannotated tool must not lower the established label")
+	assert.Equal(t, before.UnresolvedCount()+1, after.UnresolvedCount(),
+		"the realized output becomes an unresolved source")
+	assert.True(t, after.HasUnresolved(), "unresolved source is recorded")
+}
+
+func TestCheckBlocksOnProspectiveGapEvenWhenHardGateAllows(t *testing.T) {
+	p := DefaultPolicy()
+	p.BashDefault = Allow // the conventional check would Allow this call
+	g, err := NewGate(p, t.TempDir())
+	require.NoError(t, err)
+
+	// A contract whose release-side requirement is unsatisfied prospectively:
+	// cτ(L) fails the trust floor even though L itself passes it.
+	g.contracts.Register("bash", Contract{
+		Tool:         "bash",
+		Contribution: Label{Trust: Untrusted, ReaderSet: []string{}},
+		Requires:     []Precondition{{Kind: PreconditionTrustFloor, Trust: Trusted}},
+	})
+
+	dec, reason := g.Check(
+		context.Background(),
+		Request{Action: ActionBash, Tool: "bash", Command: "curl https://example.com"},
+	)
+	assert.Equal(t, Ask, dec, "prospective evaluation must block regardless of the hard-gate decision")
+	assert.Contains(t, reason, "trust floor", "the gap is reported")
+	assert.Contains(t, reason, "recovery:", "a recovery path is offered")
 }
 
 func TestModeSwitchPreservesTrajectory(t *testing.T) {
@@ -154,4 +250,3 @@ func TestModeSwitchPreservesTrajectory(t *testing.T) {
 		assert.Equal(t, 1, len(sg.Trajectory().Label.Unresolved), "unresolved sources should survive mode switch")
 	}
 }
-

@@ -32,9 +32,6 @@ func CallHash(req Request) string {
 		for _, r := range lab.ReaderSet {
 			fmt.Fprintf(h, "reader:%s\n", r)
 		}
-		for _, e := range lab.EffectTokens {
-			fmt.Fprintf(h, "effect:%s\n", e)
-		}
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }

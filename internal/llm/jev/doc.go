@@ -6,6 +6,6 @@
 // noul/choice/score question primitives. The async client, model listing,
 // custom response models, and the SDK's own retry policy stay behind: retries
 // reuse util.DoWithRetry, so transient 429/5xx responses and stale connections
-// are retried the way the rest of phi's providers retry them, and per-call
+// are retried the way the rest of a1's providers retry them, and per-call
 // deadlines come from the context.
 package jev

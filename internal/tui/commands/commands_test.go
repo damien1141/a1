@@ -33,7 +33,9 @@ func TestPermissionsCommand_Toggle(t *testing.T) {
 	cmd := buildPermissionsPalette(func(m permission.Mode) { got = m })
 	assert.Equal(t, "settings", cmd.Noun)
 	assert.Equal(t, "permissions", cmd.Verb)
-	require.Len(t, cmd.Submenu, 4)
+	// One entry per mode, drawn from permission.AllModes so the palette cannot
+	// drift from what the gate actually accepts.
+	require.Len(t, cmd.Submenu, len(permission.AllModes))
 
 	cmd.Submenu[0].Run()
 	assert.Equal(t, permission.ModeInteractive, got)
@@ -46,6 +48,11 @@ func TestPermissionsCommand_Toggle(t *testing.T) {
 
 	cmd.Submenu[3].Run()
 	assert.Equal(t, permission.ModeHeadlessStrict, got)
+
+	// Yolo is last: a shift-tab sweep reaches it deliberately rather than
+	// passing through it on the way to something else.
+	cmd.Submenu[4].Run()
+	assert.Equal(t, permission.ModeYolo, got)
 }
 
 func TestAgentsCommand_Toggle(t *testing.T) {

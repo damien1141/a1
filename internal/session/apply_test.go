@@ -187,3 +187,44 @@ func TestApplyUserAppendImages(t *testing.T) {
 	require.Len(t, s.Messages[0].Images, 1)
 	require.Equal(t, "image/png", s.Messages[0].Images[0].MimeType)
 }
+
+func TestRunningToolCallNamesTheActiveTool(t *testing.T) {
+	s := Snapshot{Tools: map[string]ToolRun{
+		"a": {ToolUseID: "a", Name: "grep", Status: ToolDone, Detail: "Paths"},
+	}}
+	name, detail := RunningToolCall(s)
+	require.Empty(t, name, "a finished tool is not running")
+	require.Empty(t, detail)
+
+	s.Tools["b"] = ToolRun{ToolUseID: "b", Name: "edit", Status: ToolInProgress, Detail: "gate.go"}
+	name, detail = RunningToolCall(s)
+	require.Equal(t, "edit", name)
+	require.Equal(t, "gate.go", detail, "the detail names the path so the slot is actionable")
+}
+
+func TestRunningToolCallIgnoresLocalBash(t *testing.T) {
+	s := Snapshot{Tools: map[string]ToolRun{
+		"l": {ToolUseID: "l", Name: "bash", Status: ToolInProgress, Local: true},
+	}}
+	name, _ := RunningToolCall(s)
+	require.Empty(t, name, "user '!cmd' runs are not agent tool calls")
+}
+
+func TestRunningToolCallPreferInProgressOverQueued(t *testing.T) {
+	s := Snapshot{Tools: map[string]ToolRun{
+		"q": {ToolUseID: "q", Name: "read", Status: ToolQueued, Detail: "a.go"},
+		"r": {ToolUseID: "r", Name: "bash", Status: ToolInProgress, Detail: "make test"},
+	}}
+	name, detail := RunningToolCall(s)
+	require.Equal(t, "bash", name, "an actively running call beats a queued one")
+	require.Equal(t, "make test", detail)
+}
+
+func TestRunningToolCallQueuedOnlyFallsBack(t *testing.T) {
+	s := Snapshot{Tools: map[string]ToolRun{
+		"q": {ToolUseID: "q", Name: "read", Status: ToolQueued, Detail: "a.go"},
+	}}
+	name, detail := RunningToolCall(s)
+	require.Equal(t, "read", name, "a queued call is named when nothing else runs")
+	require.Equal(t, "a.go", detail)
+}

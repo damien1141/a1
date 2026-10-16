@@ -19,7 +19,7 @@ import (
 const shellWaitDelay = 3 * time.Second
 
 // shellEnv returns the environment for shell commands: the parent env with
-// phi's bin dir (~/.a1/bin, where fd/ripgrep are downloaded) prepended to
+// a1's bin dir (~/.a1/bin, where fd/ripgrep are downloaded) prepended to
 // PATH.
 func shellEnv() []string {
 	env := os.Environ()
@@ -65,7 +65,7 @@ func samePath(a, b string) bool {
 }
 
 // buildShellCommand builds the shell command for command, applying the
-// resolved shell config, phi's bin dir on PATH, and process-group/tree
+// resolved shell config, a1's bin dir on PATH, and process-group/tree
 // cancellation: on context cancellation the whole tree is killed
 // (taskkill /T on Windows, process-group SIGKILL elsewhere).
 func buildShellCommand(ctx context.Context, command string) (*exec.Cmd, error) {

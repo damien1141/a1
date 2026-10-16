@@ -96,10 +96,17 @@ func runEdit(ctx context.Context, input json.RawMessage) (tooldef.Result, error)
 
 	count := strings.Count(fileStr, oldStr)
 	if count == 0 {
-		return tooldef.Result{}, fmt.Errorf("old_str not found in %s. Ensure it matches the file exactly, including whitespace and indentation", path)
+		return tooldef.Result{}, fmt.Errorf(
+			"old_str not found in %s. Ensure it matches the file exactly, including whitespace and indentation",
+			path,
+		)
 	}
 	if count > 1 {
-		return tooldef.Result{}, fmt.Errorf("old_str appears %d times in %s. Include more surrounding context to make it unique", count, path)
+		return tooldef.Result{}, fmt.Errorf(
+			"old_str appears %d times in %s. Include more surrounding context to make it unique",
+			count,
+			path,
+		)
 	}
 
 	newContent := strings.Replace(fileStr, oldStr, newStr, 1)
@@ -109,10 +116,8 @@ func runEdit(ctx context.Context, input json.RawMessage) (tooldef.Result, error)
 	}
 
 	display := tooldef.RelToCwd(ctx, path)
-	newTag := util.ComputeFileHash(newContent)
-	diff := util.GenerateFileDiff(path, fileStr, newContent, 3)
-
-	body := util.FormatFileHeader(display, newTag) + "\n\n" + diff
+	body := fmt.Sprintf("Updated %s.\n\n%s", display,
+		util.GenerateFileDiff(path, fileStr, newContent, 3))
 
 	return tooldef.Result{
 		Content: body,

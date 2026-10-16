@@ -357,8 +357,13 @@ func runGrep(ctx context.Context, input json.RawMessage) (tooldef.Result, error)
 		output += "\n\n[" + strings.Join(notices, ". ") + "]"
 	}
 
-	detail := fmt.Sprintf("%d matches", matchCount)
-	return tooldef.Result{Content: output, Detail: detail, Output: output}, nil
+	// Detail stays the arg-derived phrase ("grep \"cursor\" in ."): the live run
+	// must not overwrite the transcript row's identity with a match count. The
+	// count is already the row's stat once ReadBlock renders it.
+	if len(out) == 0 {
+		return tooldef.Result{Content: "0 matches", Detail: "", Output: "0 matches"}, nil
+	}
+	return tooldef.Result{Content: output, Detail: "", Output: output}, nil
 }
 
 func formatGrepBlock(

@@ -3,6 +3,7 @@ package permission
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 )
@@ -112,6 +113,8 @@ func (p RecoveryPath) Len() int {
 type RecoveryGraph struct {
 	// MaxDepth bounds the BFS search depth.
 	MaxDepth int
+	// maxPaths bounds how many distinct paths a single Search reports.
+	maxPaths int
 	// contracts is the tool contract registry.
 	contracts *ContractRegistry
 	// authorities is the set of registered authorities.
@@ -120,13 +123,33 @@ type RecoveryGraph struct {
 	casts map[string]CastResolver
 }
 
+// defaultRecoveryMaxPaths is how many distinct recovery paths the gate asks
+// for. One is enough to tell the model what to do next; more is noise.
+const defaultRecoveryMaxPaths = 3
+
 // NewRecoveryGraph creates an empty recovery graph.
 func NewRecoveryGraph() *RecoveryGraph {
 	return &RecoveryGraph{
 		MaxDepth:    10,
+		maxPaths:    defaultRecoveryMaxPaths,
 		contracts:   DefaultContracts(),
 		authorities: make(map[string]Authority),
 		casts:       make(map[string]CastResolver),
+	}
+}
+
+// MaxPaths returns the number of paths Search reports per blocked call.
+func (g *RecoveryGraph) MaxPaths() int {
+	if g == nil || g.maxPaths <= 0 {
+		return defaultRecoveryMaxPaths
+	}
+	return g.maxPaths
+}
+
+// SetMaxPaths bounds how many distinct recovery paths a Search reports.
+func (g *RecoveryGraph) SetMaxPaths(n int) {
+	if g != nil && n > 0 {
+		g.maxPaths = n
 	}
 }
 
@@ -229,10 +252,8 @@ func (g *RecoveryGraph) Search(
 			}
 
 			newVisited := make(map[string]bool, len(f.visited)+1)
+			maps.Copy(newVisited, f.visited)
 			newVisited[stateKey] = true
-			for k, v := range f.visited {
-				newVisited[k] = v
-			}
 
 			// Check if all gaps are cleared.
 			if len(newState.Gaps) == 0 {
@@ -292,8 +313,8 @@ func (g *RecoveryGraph) successors(ctx context.Context, state RecoveryState, con
 				newGaps = append(newGaps[:i], newGaps[i+1:]...)
 				out = append(out, successor{
 					Transition: Transition{
-						Kind: TransitionRule,
-						Gap:  gap,
+						Kind:        TransitionRule,
+						Gap:         gap,
 						Description: fmt.Sprintf("authority %s approves %s", name, gap),
 					},
 					NewState: RecoveryState{
@@ -308,7 +329,7 @@ func (g *RecoveryGraph) successors(ctx context.Context, state RecoveryState, con
 	}
 
 	// TransitionAdmit: admit the tool and fold contribution.
-	if contract.EffectTokens != nil || contract.Contribution.Trust != Unknown {
+	if contract.EffectTokens != nil || IsKnownTrust(contract.Contribution.Trust) {
 		newLabel := state.Label.Meet(PartialLabel{
 			Established: contract.Contribution,
 			Unresolved:  []string{},
@@ -321,8 +342,8 @@ func (g *RecoveryGraph) successors(ctx context.Context, state RecoveryState, con
 		newGaps := g.computeGaps(newLabel, newSupport, contract)
 		out = append(out, successor{
 			Transition: Transition{
-				Kind: TransitionAdmit,
-				Tool: contract.Tool,
+				Kind:        TransitionAdmit,
+				Tool:        contract.Tool,
 				Description: fmt.Sprintf("admit %s → label=%s", contract.Tool, newLabel.Established),
 			},
 			NewState: RecoveryState{
@@ -349,7 +370,7 @@ func (g *RecoveryGraph) successors(ctx context.Context, state RecoveryState, con
 		newGaps := g.computeGaps(newLabel, state.Support, contract)
 		out = append(out, successor{
 			Transition: Transition{
-				Kind: TransitionTransform,
+				Kind:        TransitionTransform,
 				Description: fmt.Sprintf("cast %s → %s", src, label),
 			},
 			NewState: RecoveryState{
@@ -371,7 +392,7 @@ func (g *RecoveryGraph) successors(ctx context.Context, state RecoveryState, con
 		}
 		out = append(out, successor{
 			Transition: Transition{
-				Kind: TransitionBranch,
+				Kind:        TransitionBranch,
 				Description: "fork child branch: Lc := Lp, execute narrowing locally",
 			},
 			NewState: RecoveryState{

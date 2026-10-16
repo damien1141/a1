@@ -23,6 +23,7 @@ import (
 	"github.com/damien1141/a1/internal/project"
 	"github.com/damien1141/a1/internal/project/model"
 	"github.com/damien1141/a1/internal/session"
+	"github.com/damien1141/a1/internal/tools/tooldef"
 )
 
 const defaultAskTimeoutSec = 120
@@ -107,7 +108,7 @@ func NewController(bus *Bus, proj *project.Project, cwd string) (*EngineControll
 	c.extRunner.Store(extRunner)
 	c.bindExtensionHost(extRunner)
 
-	jobs, err := agent.NewJobManager(proj.JobsDir(), c.modelCfg, c.modelForRole, c.Extensions)
+	jobs, err := agent.NewJobManager(proj.JobsDir(), c.modelCfg, c.modelForRole, c.Extensions, c.parentGate)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +168,7 @@ func (c *EngineController) initGate(policy permission.Policy) {
 	// Do not clear allowAll when config omits dangerously_allow_all — TUI defaults
 	// to bypass, and the palette toggle must survive SetModel / re-init.
 	var inner permission.Gate
-	inner, err := permission.NewGate(policy, permission.WorkspaceRoot())
+	inner, err := permission.NewGateAt(policy, c.cwd)
 	if err != nil {
 		inner, err = permission.NewGate(permission.DefaultPolicy(), permission.WorkspaceRoot())
 	}
@@ -184,6 +185,15 @@ func (c *EngineController) PermissionMode() permission.Mode {
 	return permission.ModeOf(c.gate)
 }
 
+// ToolSchemaBytes returns the registered tool definitions' combined serialized
+// size and count, for the /context breakdown.
+func (c *EngineController) ToolSchemaBytes() (int, int) {
+	if c == nil || c.engine == nil {
+		return 0, 0
+	}
+	return c.engine.ToolSchemaBytes()
+}
+
 // PermissionGate returns the inner StaticGate for APPA inspection.
 func (c *EngineController) PermissionGate() *permission.StaticGate {
 	if c.gate == nil {
@@ -198,12 +208,7 @@ func (c *EngineController) PermissionGate() *permission.StaticGate {
 }
 
 func (c *EngineController) CyclePermissionMode() {
-	modes := []permission.Mode{
-		permission.ModeInteractive,
-		permission.ModeReadonly,
-		permission.ModeAutopilot,
-		permission.ModeHeadlessStrict,
-	}
+	modes := permission.AllModes
 	current := c.PermissionMode()
 	idx := 0
 	for i, m := range modes {
@@ -253,9 +258,9 @@ func (c *EngineController) SetPermissionMode(mode permission.Mode) {
 	}
 	var inner permission.Gate
 	var err error
-	inner, err = permission.NewGate(policy, permission.WorkspaceRoot())
+	inner, err = permission.NewGateAt(policy, c.cwd)
 	if err != nil {
-		inner, err = permission.NewGate(permission.DefaultPolicy(), permission.WorkspaceRoot())
+		inner, err = permission.NewGate(permission.DefaultPolicy(), permission.WorkspaceRootAt(c.cwd))
 	}
 	if err != nil {
 		inner = permission.AllowAll{}
@@ -320,6 +325,26 @@ func (c *EngineController) engineJobs() *job.Manager {
 		return nil
 	}
 	return c.jobs
+}
+
+// parentGate returns the parent trajectory's gate for a child branch to fork
+// from (L0c := Lp). It resolves through engine.Gate so the child inherits the
+// live gate, including a mode switch that happened after startup.
+func (c *EngineController) parentGate() permission.Gate {
+	if c == nil || c.engine == nil {
+		return c.gate
+	}
+	return c.engine.Gate()
+}
+
+// ConfigPath returns the path of the config file this session loaded, so
+// /config edits the file that is actually read rather than a default that
+// happens to exist.
+func (c *EngineController) ConfigPath() string {
+	if c == nil || c.proj == nil {
+		return ""
+	}
+	return c.proj.Global().ConfigFile()
 }
 
 func (c *EngineController) Extensions() *extension.Runner {
@@ -473,6 +498,49 @@ func (c *EngineController) askPermission(
 		}
 	}
 	return permission.AskResult{Approved: r.Approved, Feedback: r.Feedback}, nil
+}
+
+// AskQuestion shows a structured question overlay and blocks until the user
+// answers. This is the AskUserQuestion transport: the same modal-blocking shape
+// as a permission prompt, but nothing is being approved — an answer is being
+// collected and handed back to the model as the tool result.
+//
+// A cancelled or timed-out question returns Cancelled rather than an empty
+// choice, so the caller can tell "user skipped" from "user said nothing".
+func (c *EngineController) AskQuestion(
+	ctx context.Context,
+	q Question,
+) (QuestionReply, error) {
+	if len(q.Options) == 0 {
+		return QuestionReply{}, errors.New("ask: question needs at least one option")
+	}
+	reply := make(chan QuestionReply, 1)
+	c.publish(OverlayMsg{Kind: OverlayQuestionAsk, Question: &q, QuestReply: reply})
+	r, err := waitReply(ctx, reply, c.askTimeout(), func() {
+		c.publish(OverlayMsg{Kind: OverlayQuestionDismiss})
+	})
+	if err != nil {
+		return QuestionReply{}, err
+	}
+	return r, nil
+}
+
+// askUserQuestion bridges the AskUserQuestion tool to the overlay, adapting the
+// tool-def shape to the controller's own message type. The types stay distinct
+// so the tool layer never imports the TUI.
+func (c *EngineController) askUserQuestion(
+	ctx context.Context,
+	q tooldef.Question,
+) (tooldef.QuestionReply, error) {
+	question := Question{Header: q.Header, Question: q.Question, MultiSelect: q.MultiSelect}
+	for _, o := range q.Options {
+		question.Options = append(question.Options, QuestionOption{Label: o.Label, Description: o.Description})
+	}
+	res, err := c.AskQuestion(ctx, question)
+	if err != nil {
+		return tooldef.QuestionReply{}, err
+	}
+	return tooldef.QuestionReply{Choice: res.Choice, Choices: res.Choices, Cancelled: res.Cancelled}, nil
 }
 
 func (c *EngineController) askContinue(ctx context.Context, maxRounds int) (bool, error) {
@@ -706,6 +774,7 @@ func (c *EngineController) openEngine(
 	return agent.NewEngine(cfg, sess,
 		agent.WithGate(c.gate),
 		agent.WithAsk(c.askPermission),
+		agent.WithQuestion(c.askUserQuestion),
 		agent.WithContinueAsk(c.askContinue),
 		agent.WithJobs(c.engineJobs()),
 		agent.WithExtensions(extRunner),

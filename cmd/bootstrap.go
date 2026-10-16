@@ -20,14 +20,17 @@ const bootstrapDownloadTimeout = 5 * time.Minute
 // HeadlessGate builds the permission gate for non-interactive entrypoints.
 // An empty policy mode defaults to headless-strict so Ask decisions fold to
 // Deny (Ask≡Deny); dangerously_allow_all is honored exactly like the TUI.
-func HeadlessGate(policy permission.Policy) (permission.Gate, error) {
+// cwd is the workspace the session runs in: the gate resolves its workspace
+// root from it, not from the process working directory, so running `a1 run`
+// from a parent directory still gates paths against the session's workspace.
+func HeadlessGate(policy permission.Policy, cwd string) (permission.Gate, error) {
 	if policy.Mode == "" {
 		policy.Mode = permission.ModeHeadlessStrict
 	}
 	if policy.DangerouslyAllowAll {
 		return permission.AllowAll{}, nil
 	}
-	return permission.NewGate(policy, permission.WorkspaceRoot())
+	return permission.NewGateAt(policy, cwd)
 }
 
 // runBootstrap is the shared startup state for headless entrypoints:
@@ -56,11 +59,11 @@ func loadRunBootstrap(ctx context.Context, sessionDirOverride string, yolo bool)
 	if yolo {
 		policy.DangerouslyAllowAll = true
 	}
-	gate, err := HeadlessGate(policy)
+	cwd, _ := os.Getwd()
+	gate, err := HeadlessGate(policy, cwd)
 	if err != nil {
 		return nil, fmt.Errorf("permissions: %w", err)
 	}
-	cwd, _ := os.Getwd()
 	sessionDir := sessionDirOverride
 	if sessionDir == "" {
 		sessionDir = proj.SessionDir()

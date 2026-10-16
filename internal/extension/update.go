@@ -66,7 +66,7 @@ func Update(ctx context.Context, opts UpdateOptions) error {
 		return err
 	}
 	if len(targets) == 0 {
-		return errors.New("no phi-installed plugins to update")
+		return errors.New("no a1-installed plugins to update")
 	}
 
 	var errs []error
@@ -79,7 +79,7 @@ func Update(ctx context.Context, opts UpdateOptions) error {
 }
 
 // matchTarget narrows installed dirs to the update target. Empty id means all
-// managed plugins. Unmanaged dirs are refused: phi never writes into or
+// managed plugins. Unmanaged dirs are refused: a1 never writes into or
 // removes directories it does not own.
 func matchTarget(installed []Installed, id string) ([]Installed, error) {
 	if id == "" {
@@ -139,7 +139,7 @@ func reportOne(ctx context.Context, opts UpdateOptions, in Installed, spec Spec)
 	rel, err := fetchReleaseFor(ctx, opts, spec)
 	if err != nil {
 		if in.Meta.Source == SourceGit {
-			printf(opts.out(), "%s: git source (ref %q) — run 'phi plugin update' to refresh\n", in.ID, spec.Ref)
+			printf(opts.out(), "%s: git source (ref %q) — run 'a1 plugin update' to refresh\n", in.ID, spec.Ref)
 			return nil
 		}
 		return fmt.Errorf("query %s: %w", spec.Owner+"/"+spec.Repo, err)
@@ -160,7 +160,7 @@ func installOne(ctx context.Context, opts UpdateOptions, in Installed, spec Spec
 	if _, err := os.Stat(dest); err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf(
-				"directory %s is gone; reinstall with 'phi plugin install %s/%s'",
+				"directory %s is gone; reinstall with 'a1 plugin install %s/%s'",
 				dest,
 				spec.Owner,
 				spec.Repo,
@@ -194,8 +194,8 @@ func fetchReleaseFor(ctx context.Context, opts UpdateOptions, spec Spec) (github
 	return fetch(ctx, spec.Owner+"/"+spec.Repo, spec.Ref)
 }
 
-// Remove deletes a phi-managed extension directory. Unmanaged or missing
-// directories are refused so phi never removes user-built plugins.
+// Remove deletes an a1-managed extension directory. Unmanaged or missing
+// directories are refused so a1 never removes user-built plugins.
 func Remove(dir, id string) error {
 	if id == "" {
 		return errors.New("plugin ID is required")

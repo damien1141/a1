@@ -11,7 +11,9 @@ import (
 func TestBrowserTool_Definition(t *testing.T) {
 	tool := BrowserTool()
 	assert.Equal(t, "browser", tool.Definition.Name)
-	assert.True(t, tool.Definition.Readable)
+	// Not Readable: a batch of browser calls must run sequentially against the
+	// one shared page. Readable=true made the executor run them concurrently.
+	assert.False(t, tool.Definition.Readable)
 	assert.NotNil(t, tool.Run)
 }
 

@@ -108,7 +108,7 @@ func readClipboardImageViaXclip() (Image, error) {
 }
 
 func readClipboardImageViaPowerShell() (Image, error) {
-	tmpFile, err := os.CreateTemp("", "phi-wsl-clip-*.png")
+	tmpFile, err := os.CreateTemp("", "a1-wsl-clip-*.png")
 	if err != nil {
 		return Image{}, ErrUnavailable
 	}

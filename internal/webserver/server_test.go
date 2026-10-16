@@ -266,10 +266,14 @@ func TestModeEndpointReportsInteractiveByDefault(t *testing.T) {
 	assert.Equal(t, "ask", view.Label)
 	// The switcher renders server-supplied labels, so the set must match the
 	// TUI's controller.CyclePermissionMode order or the two surfaces drift.
-	require.Len(t, view.Modes, 4)
+	require.Len(t, view.Modes, 5)
+	var got []string
+	for _, m := range view.Modes {
+		got = append(got, m.Mode)
+	}
 	assert.Equal(t,
-		[]string{"interactive", "readonly", "autopilot", "headless-strict"},
-		[]string{view.Modes[0].Mode, view.Modes[1].Mode, view.Modes[2].Mode, view.Modes[3].Mode})
+		[]string{"interactive", "readonly", "autopilot", "headless-strict", "yolo"},
+		got)
 }
 
 func TestSetModeRejectsUnknownMode(t *testing.T) {
@@ -277,7 +281,7 @@ func TestSetModeRejectsUnknownMode(t *testing.T) {
 	mux := s.routes()
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/mode",
-		strings.NewReader(`{"mode":"yolo"}`))
+		strings.NewReader(`{"mode":"tinycap"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)

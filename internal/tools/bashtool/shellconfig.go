@@ -38,7 +38,7 @@ var (
 )
 
 // resolveShellConfig returns the cached shell config. On failure nothing is
-// cached, so installing Git Bash while phi runs takes effect on the next call.
+// cached, so installing Git Bash while a1 runs takes effect on the next call.
 func resolveShellConfig() (shellConfig, error) {
 	shellCfgMu.Lock()
 	defer shellCfgMu.Unlock()
@@ -107,7 +107,7 @@ func gitBashPaths() []string {
 
 // gitBashFromGitOnPath derives Git Bash from a Git on PATH. It is the only way
 // a custom install root (D:\Git) shows up: cmd\git.exe and mingw64\bin\git.exe
-// both sit two levels below the root, whose bin\bash.exe is the launcher phi
+// both sit two levels below the root, whose bin\bash.exe is the launcher a1
 // wants. Shims (scoop, .cmd wrappers) derive a root without bash.exe and are
 // dropped by the existence check.
 func gitBashFromGitOnPath() string {

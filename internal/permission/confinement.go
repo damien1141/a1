@@ -2,6 +2,7 @@ package permission
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -32,25 +33,34 @@ func toFloat64(v any) (float64, bool) {
 // trajectory. The child inherits the parent's label at fork time (L0c := Lp)
 // and accumulates label descent locally. External effects committed by the child
 // remain in the shared log E, but the parent label is only modified by an
-// explicit merge.
+// explicit merge (APPA §6, Theorem 8).
 type ChildTrajectory struct {
 	// ID is the unique child branch identifier.
 	ID string
 	// Label is the child's current trajectory label, initialized from parent.
 	Label PartialLabel
-	// Effects is the child's local effect log.
+	// Effects is the child's view of the shared effect log E.
 	Effects *EffectLog
 	// ParentLabel is the parent's label at fork time (for merge reference).
 	ParentLabel PartialLabel
+	// Schema is the shape-bounded return channel fixed at fork time.
+	Schema AttestSchema
 }
 
-// NewChildTrajectory creates a child trajectory with inherited label.
-func NewChildTrajectory(parentLabel PartialLabel, id string) *ChildTrajectory {
+// NewChildTrajectory creates a child trajectory with inherited label. The
+// parent's effect log is shared, not copied: a child abandoning a branch still
+// leaves its committed effects recorded, so no_prior checks cannot be evaded.
+func NewChildTrajectory(parentLabel PartialLabel, id string, schema AttestSchema, shared *EffectLog) *ChildTrajectory {
+	effects := shared
+	if effects == nil {
+		effects = NewEffectLog()
+	}
 	return &ChildTrajectory{
 		ID:          id,
 		Label:       parentLabel,
-		Effects:     NewEffectLog(),
+		Effects:     effects,
 		ParentLabel: parentLabel,
+		Schema:      schema,
 	}
 }
 
@@ -66,32 +76,38 @@ func (c *ChildTrajectory) Admit(contract Contract) {
 }
 
 // Abandon discards the child trajectory without modifying the parent.
-func (c *ChildTrajectory) Abandon() {
+func (*ChildTrajectory) Abandon() {
 	// No-op: parent label is unchanged.
 }
 
 // Return performs a standard labeled return: the child returns value v
 // via submit_result(v). If v narrows the parent, it triggers an ordinary
 // narrowing check requiring explicit parent acceptance.
-func (c *ChildTrajectory) Return(v Label) PartialLabel {
-	// Merge the returned label into the parent's label.
-	return c.ParentLabel.Meet(PartialLabel{
+//
+// The returned label is the candidate merge label, not the new parent label:
+// Merge decides whether a narrowing check is required.
+func (*ChildTrajectory) Return(v Label) PartialLabel {
+	return PartialLabel{
 		Established: v,
 		Unresolved:  []string{},
-	})
+	}
 }
 
 // SanitizedReturn performs a sanitized or schema-attested return: a registered
 // semantic sanitizer or structural schema check produces a representation whose
 // declared TCB mandate determines its merge label.
-func (c *ChildTrajectory) SanitizedReturn(v Label) PartialLabel {
-	// The sanitized value's merge label comes from the declared TCB mandate.
-	// For now, we use the value's label directly; in Phase 3 this will be
-	// determined by the attest-schema validator's declared mandate.
-	return c.ParentLabel.Meet(PartialLabel{
-		Established: v,
+//
+// The value is validated against the attest-schema fixed at fork time. A value
+// that fails the schema cannot leave the branch, because the shape-bounded
+// channel is the only exit.
+func (c *ChildTrajectory) SanitizedReturn(value any, mandate Label) (PartialLabel, error) {
+	if err := c.Schema.Validate(value); err != nil {
+		return PartialLabel{}, fmt.Errorf("attest-schema rejected child return: %w", err)
+	}
+	return PartialLabel{
+		Established: mandate,
 		Unresolved:  []string{},
-	})
+	}, nil
 }
 
 // AttestSchemaValidator validates that a value conforms to a shape-bounded
@@ -166,17 +182,8 @@ func (s AttestSchema) validate(value any, path string) error {
 		if !ok {
 			return fmt.Errorf("expected string at %s, got %T", path, value)
 		}
-		if len(s.Enum) > 0 {
-			found := false
-			for _, e := range s.Enum {
-				if str == e {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return fmt.Errorf("string %q not in allowed enum %v at %s", str, s.Enum, path)
-			}
+		if len(s.Enum) > 0 && !slices.Contains(s.Enum, str) {
+			return fmt.Errorf("string %q not in allowed enum %v at %s", str, s.Enum, path)
 		}
 		return nil
 
@@ -241,9 +248,9 @@ type ForkTransition struct {
 // String returns a human-readable fork transition description.
 func (t ForkTransition) String() string {
 	var parts []string
-	parts = append(parts, fmt.Sprintf("fork %s", t.ChildID))
+	parts = append(parts, "fork "+t.ChildID)
 	if t.Sanitizer != "" {
-		parts = append(parts, fmt.Sprintf("sanitizer=%s", t.Sanitizer))
+		parts = append(parts, "sanitizer="+t.Sanitizer)
 	}
 	return strings.Join(parts, " ")
 }
@@ -266,13 +273,19 @@ type MergeResult struct {
 	Outcome Outcome
 	// NewLabel is the parent's new label after merge.
 	NewLabel PartialLabel
+	// RequiresAcceptance is true when the return narrows the parent label,
+	// which needs explicit acceptance before the parent dispatches against
+	// the merged label (APPA §6 exit rule 2).
+	RequiresAcceptance bool
 	// Effects are the effects committed by the child.
 	Effects []string
 	// Error is non-nil if the merge failed.
 	Error error
 }
 
-// Merge incorporates a child's outcome into the parent trajectory.
+// Merge incorporates a child's outcome into the parent trajectory, per APPA §6.
+// Abandonment leaves the parent label untouched; a standard return narrows the
+// parent (L′p = Lp ∧ label(v)); a sanitized return folds the attested mandate.
 func Merge(parent PartialLabel, child *ChildTrajectory, outcome Outcome, value Label) MergeResult {
 	switch outcome {
 	case OutcomeAbandon:
@@ -282,33 +295,21 @@ func Merge(parent PartialLabel, child *ChildTrajectory, outcome Outcome, value L
 			Effects:  child.Effects.Support(),
 		}
 
-	case OutcomeStandardReturn:
-		newLabel := parent.Meet(PartialLabel{
-			Established: value,
-			Unresolved:  []string{},
-		})
+	case OutcomeStandardReturn, OutcomeSanitizedReturn:
+		returned := PartialLabel{Established: value, Unresolved: []string{}}
+		newLabel := parent.Meet(returned)
 		return MergeResult{
-			Outcome:  OutcomeStandardReturn,
-			NewLabel: newLabel,
-			Effects:  child.Effects.Support(),
-		}
-
-	case OutcomeSanitizedReturn:
-		newLabel := parent.Meet(PartialLabel{
-			Established: value,
-			Unresolved:  []string{},
-		})
-		return MergeResult{
-			Outcome:  OutcomeSanitizedReturn,
-			NewLabel: newLabel,
-			Effects:  child.Effects.Support(),
+			Outcome:            outcome,
+			NewLabel:           newLabel,
+			RequiresAcceptance: IsNarrower(parent.Established, newLabel.Established),
+			Effects:            child.Effects.Support(),
 		}
 
 	default:
 		return MergeResult{
-			Outcome: outcome,
+			Outcome:  outcome,
 			NewLabel: parent,
-			Error:  fmt.Errorf("unknown child outcome: %s", outcome),
+			Error:    fmt.Errorf("unknown child outcome: %s", outcome),
 		}
 	}
 }

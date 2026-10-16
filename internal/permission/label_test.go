@@ -10,20 +10,20 @@ import (
 func TestDefaultTrustForToolArgs(t *testing.T) {
 	assert.Equal(t, Label{Trust: User, ReaderSet: []string{"user"}}, DefaultTrustForToolArgs("read"))
 	assert.Equal(t, Label{Trust: User, ReaderSet: []string{"user"}}, DefaultTrustForToolArgs("grep"))
-	assert.Equal(t, Label{Trust: Unknown, ReaderSet: []string{}}, DefaultTrustForToolArgs("bash"))
-	assert.Equal(t, Label{Trust: Unknown, ReaderSet: []string{}}, DefaultTrustForToolArgs("unknown"))
+	assert.Equal(t, Label{Trust: Untrusted, ReaderSet: []string{}}, DefaultTrustForToolArgs("bash"))
+	assert.Equal(t, Label{Trust: Untrusted, ReaderSet: []string{}}, DefaultTrustForToolArgs("unknown"))
 }
 
 func TestDefaultTrustForToolOutput(t *testing.T) {
 	assert.Equal(t, Label{Trust: Untrusted, ReaderSet: []string{}}, DefaultTrustForToolOutput("bash"))
 	assert.Equal(t, Label{Trust: User, ReaderSet: []string{"user"}}, DefaultTrustForToolOutput("read"))
-	assert.Equal(t, Label{Trust: Unknown, ReaderSet: []string{}}, DefaultTrustForToolOutput("unknown"))
+	assert.Equal(t, Label{Trust: Untrusted, ReaderSet: []string{}}, DefaultTrustForToolOutput("unknown"))
 }
 
 func TestExtractAttachesInputLabels(t *testing.T) {
 	req, err := Extract("bash", []byte(`{"command":"ls"}`))
 	require.NoError(t, err)
-	assert.Equal(t, []Label{{Trust: Unknown, ReaderSet: []string{}}}, req.InputLabels)
+	assert.Equal(t, []Label{{Trust: Untrusted, ReaderSet: []string{}}}, req.InputLabels)
 
 	req, err = Extract("read", []byte(`{"path":"/tmp/x"}`))
 	require.NoError(t, err)

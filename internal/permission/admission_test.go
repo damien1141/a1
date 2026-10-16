@@ -42,7 +42,7 @@ func TestAdmitRequiredEffectsAskWhenNoLog(t *testing.T) {
 
 	dec, _ := g.Admit(t.Context(), Request{
 		Action:      ActionWrite,
-		OutputLabel: Label{EffectTokens: []string{"ticket_created"}},
+		OutputLabel: Label{Trust: User, ReaderSet: []string{"user"}},
 	})
 	assert.Equal(t, Ask, dec)
 }

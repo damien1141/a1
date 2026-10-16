@@ -12,12 +12,7 @@ import (
 // webPermissionModes are the modes the switcher offers, in cycle order. They
 // mirror controller.CyclePermissionMode so the two surfaces cannot drift: a user
 // who switches to read-only in the browser gets what the terminal would give.
-var webPermissionModes = []permission.Mode{
-	permission.ModeInteractive,
-	permission.ModeReadonly,
-	permission.ModeAutopilot,
-	permission.ModeHeadlessStrict,
-}
+var webPermissionModes = permission.AllModes
 
 // modeLabel is the switcher's short name for each mode.
 var modeLabel = map[permission.Mode]string{
@@ -25,15 +20,19 @@ var modeLabel = map[permission.Mode]string{
 	permission.ModeReadonly:       "read-only",
 	permission.ModeAutopilot:      "autopilot",
 	permission.ModeHeadlessStrict: "strict",
+	permission.ModeYolo:           "yolo",
 }
 
 // modeSummary explains what a mode does, so the name never has to be decoded
-// from the policy tables.
+// from the policy tables. The yolo line is the warning, and it is blunt on
+// purpose: a user scanning a dropdown needs to know what they are picking
+// before they pick it, not after.
 var modeSummary = map[permission.Mode]string{
 	permission.ModeInteractive:    "prompts before anything risky",
 	permission.ModeReadonly:       "reads and searches only, no writes or bash",
 	permission.ModeAutopilot:      "allowlisted tools run without asking",
 	permission.ModeHeadlessStrict: "anything needing approval is denied",
+	permission.ModeYolo:           "no prompts at all — dangerous, denied tools stay denied",
 }
 
 // modeState is the live permission mode for the process. It is process-wide

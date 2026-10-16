@@ -17,6 +17,7 @@ import (
 	"github.com/damien1141/a1/internal/session/memory"
 	"github.com/damien1141/a1/internal/telemetry"
 	"github.com/damien1141/a1/internal/tools"
+	"github.com/damien1141/a1/internal/tools/tooldef"
 	"github.com/damien1141/a1/internal/util"
 )
 
@@ -33,11 +34,17 @@ type Executor struct {
 	registry   tools.Registry
 	gate       permission.Gate
 	ask        permission.AskFunc
+	question   tooldef.QuestionFunc
 	ext        *extension.Runner // nil = disabled; methods are nil-safe no-ops
 	sessionID  string
 	cwd        string
 	memoryBank sessionMemoryBank
 	telemetry  *telemetry.Recorder
+
+	// approveAdmit folds an approved Gate 2 admission into the trajectory.
+	// It is set by the engine when the user approves an admission Ask, so
+	// the label/effect mutations only ever happen on an explicit decision.
+	approveAdmit func(permission.Request)
 
 	// askMu serializes approval prompts: a concurrent read-only batch can
 	// otherwise pop multiple dialogs / interleave stdin reads at once.
@@ -48,12 +55,14 @@ type sessionMemoryBank interface {
 	Append(entryType memory.EntryType, content string) error
 }
 
-// NewExecutor builds an executor. extRunner may be nil.
+// NewExecutor builds an executor. extRunner may be nil, and a nil question
+// asker leaves ask_user unable to run (it reports that rather than blocking).
 func NewExecutor(
 	registry tools.Registry,
 	gate permission.Gate,
 	ask permission.AskFunc,
 	extRunner *extension.Runner,
+	question tooldef.QuestionFunc,
 ) *Executor {
 	if gate == nil {
 		gate = permission.AllowAll{}
@@ -64,6 +73,7 @@ func NewExecutor(
 		registry:  registry,
 		gate:      gate,
 		ask:       ask,
+		question:  question,
 		ext:       extRunner,
 		telemetry: rec,
 	}
@@ -207,12 +217,23 @@ func (e *Executor) runOne(
 	emit func(session.ToolData) bool,
 ) (llm.Message, bool, string) {
 	ctx = tools.WithCwd(ctx, e.cwd)
+	// Attached here rather than per-engine so the asker rides the same context
+	// the tool already receives. A nil asker is not stored by WithQuestionFunc,
+	// and the tool then fails closed with an explicit message.
+	if e.question != nil {
+		ctx = tooldef.WithQuestionFunc(ctx, e.question)
+	}
 	tool, ok := e.registry[call.Function.Name]
 	args := json.RawMessage(call.Function.Arguments)
 	detail := call.Function.Arguments
+	// detailIsArgs is true while detail is still the raw argument JSON, i.e. the
+	// tool supplied no DetailFromArgs. It gates the completion-time Detail
+	// override; see use in the result branch below.
+	detailIsArgs := true
 	if ok && tool.DetailFromArgs != nil {
 		if d := tool.DetailFromArgs(args); d != "" {
 			detail = d
+			detailIsArgs = false
 		}
 	}
 
@@ -246,9 +267,11 @@ func (e *Executor) runOne(
 		if tool.DetailFromArgs != nil {
 			if d := tool.DetailFromArgs(args); d != "" {
 				detail = d
+				detailIsArgs = false
 			}
 		} else {
 			detail = string(args)
+			detailIsArgs = true
 		}
 	}
 
@@ -297,7 +320,15 @@ func (e *Executor) runOne(
 		if output == "" {
 			output = result.Content
 		}
-		if result.Detail != "" {
+		// Detail stays the arg-derived identity for the whole run. A tool that
+		// wants to say what happened sets Summary; overwriting Detail here made
+		// "browser navigate https://x" become "Pricing" and "fetch https://x"
+		// become "200 OK", so the row stopped saying what it was asked to do.
+		//
+		// detailIsArgs records whether the identity came from DetailFromArgs or
+		// is still the raw arguments JSON. Only the latter yields to
+		// result.Detail, because a raw-JSON row is not an identity at all.
+		if detailIsArgs && result.Detail != "" {
 			detail = result.Detail
 		}
 	}
@@ -358,6 +389,10 @@ func (e *Executor) runOne(
 
 	run := e.toolRun(call, session.ToolDone, detail, "", output)
 	run.Expanded = result.Expanded
+	// The tool's completion summary rides alongside its identity. Detail stays
+	// whatever DetailFromArgs produced, so the row keeps saying what it was
+	// asked to do while Summary says what came back.
+	run.Summary = result.Summary
 	if e.telemetry != nil {
 		e.telemetry.Record(
 			telemetry.Event{Kind: telemetry.EventToolOK, Tool: call.Function.Name, CallID: call.ID, When: time.Now()},
@@ -367,8 +402,9 @@ func (e *Executor) runOne(
 	return e.toolMessage(call.ID, modelContent), postStop, postReason
 }
 
-// admitExecution performs the APPA Phase 1 post-execution admission check.
-// It folds the realized output label into the trajectory state via gate.Admit.
+// admitExecution performs the APPA Gate 2 post-execution admission check.
+// It folds the realized output into the trajectory state via gate.Admit,
+// passing the reported outcome so effect tokens commit only on success.
 func (e *Executor) admitExecution(
 	ctx context.Context,
 	call llm.ToolCall,
@@ -379,6 +415,12 @@ func (e *Executor) admitExecution(
 		Action:      toolAction(call.Function.Name),
 		Tool:        call.Function.Name,
 		OutputLabel: permission.DefaultTrustForToolOutput(call.Function.Name),
+		Succeeded:   true,
+	}
+	if !e.outputLabeled(call.Function.Name) {
+		// The tool declares no output label, so the realized output is an
+		// unannotated source rather than an established one.
+		req.OutputLabel = permission.Label{}
 	}
 
 	dec, reason := e.gate.Admit(ctx, req)
@@ -395,11 +437,22 @@ func (e *Executor) admitExecution(
 		if reason == "" {
 			reason = "tool execution requires admission approval"
 		}
+		if e.approveAdmit != nil {
+			req.Succeeded = true
+			e.approveAdmit(req)
+			return nil
+		}
 		_ = emit(session.ToolData{Run: e.toolRun(call, session.ToolRejected, "", reason, output)})
 		return errors.New(reason)
 	default:
 		return errors.New("unknown admission decision")
 	}
+}
+
+// outputLabeled reports whether the tool declares an output label, so an
+// unannotated tool's result is treated as an unresolved source at admission.
+func (*Executor) outputLabeled(tool string) bool {
+	return permission.IsKnownTrust(permission.DefaultTrustForToolOutput(tool).Trust)
 }
 
 func toolAction(name string) permission.Action {
@@ -417,22 +470,36 @@ func toolAction(name string) permission.Action {
 	}
 }
 
+// prospectiveGaps returns the prospective gaps of req so an authority ruling
+// can be bound to the specific requirement it covers, rather than to an
+// unnamed "consult" pseudo-gap. Nil when the gate exposes no trajectory.
+func (e *Executor) prospectiveGaps(req permission.Request) []string {
+	static := permission.StaticGateOf(e.gate)
+	if static == nil {
+		return nil
+	}
+	return static.EvaluateProspective(req).Gaps
+}
+
 // consultAuthority delegates to the gate's built-in authority handler so that
-// call-scoped rulings are logged atomically in trajectory state.
+// call-scoped rulings are logged atomically in trajectory state. gaps are the
+// prospective gaps the ruling is allowed to cover (Theorem 6: a dispatch that
+// ignores a release-side requirement must consume a ruling over that exact gap).
 func (e *Executor) consultAuthority(
 	ctx context.Context,
 	dec permission.Decision,
 	reason string,
 	req permission.Request,
+	gaps []string,
 ) (permission.Decision, string) {
 	if dec != permission.Ask {
 		return dec, reason
 	}
-	static, ok := e.gate.(*permission.StaticGate)
-	if !ok {
+	static := permission.StaticGateOf(e.gate)
+	if static == nil {
 		return dec, reason
 	}
-	return static.ConsultAuthority(ctx, dec, reason, req)
+	return static.ConsultAuthority(ctx, dec, reason, req, gaps)
 }
 
 func (e *Executor) checkPermission(
@@ -449,7 +516,7 @@ func (e *Executor) checkPermission(
 	}
 
 	dec, reason := e.gate.Check(ctx, req)
-	dec, reason = e.consultAuthority(ctx, dec, reason, req)
+	dec, reason = e.consultAuthority(ctx, dec, reason, req, e.prospectiveGaps(req))
 	switch dec {
 	case permission.Allow:
 		return llm.Message{}, false

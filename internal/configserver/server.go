@@ -2,6 +2,7 @@ package configserver
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,6 +35,7 @@ type ConfigDoc struct {
 	SemanticSearch *SemanticSearchDoc `yaml:"semantic_search,omitempty" json:"semanticSearch,omitempty"`
 	Judge          *JudgeDoc          `yaml:"judge,omitempty"           json:"judge,omitempty"`
 	Browser        *BrowserDoc        `yaml:"browser,omitempty"         json:"browser,omitempty"`
+	UI             *UIDoc             `yaml:"ui,omitempty"              json:"ui,omitempty"`
 }
 
 // ModelDoc describes a single model entry.
@@ -43,10 +45,10 @@ type ModelDoc struct {
 	BaseURL       string `yaml:"base_url"                 json:"baseUrl"`
 	ContextWindow *int   `yaml:"context_window,omitempty" json:"contextWindow,omitempty"`
 	ImageEnabled  *bool  `yaml:"image_enabled,omitempty"  json:"imageEnabled,omitempty"`
-	API           string `yaml:"api,omitempty"           json:"api,omitempty"`
-	ThinkEnabled  *bool  `yaml:"think_enabled,omitempty" json:"thinkEnabled,omitempty"`
-	ThinkLevel    string `yaml:"think_level,omitempty"   json:"thinkLevel,omitempty"`
-	Default       bool   `yaml:"default,omitempty"       json:"default,omitempty"`
+	API           string `yaml:"api,omitempty"            json:"api,omitempty"`
+	ThinkEnabled  *bool  `yaml:"think_enabled,omitempty"  json:"thinkEnabled,omitempty"`
+	ThinkLevel    string `yaml:"think_level,omitempty"    json:"thinkLevel,omitempty"`
+	Default       bool   `yaml:"default,omitempty"        json:"default,omitempty"`
 }
 
 // PermDoc describes permissions settings.
@@ -96,6 +98,13 @@ type BrowserDoc struct {
 	Profiles []string `yaml:"profiles" json:"profiles"`
 }
 
+// UIDoc describes terminal UI presentation settings.
+type UIDoc struct {
+	// AutoExpandToolOutput is a pointer so an absent key round-trips as absent
+	// (the resolver defaults it to true) rather than as an explicit false.
+	AutoExpandToolOutput *bool `yaml:"auto_expand_tool_output" json:"autoExpandToolOutput"`
+}
+
 // ModelListRequest is the request body for /api/models.
 type ModelListRequest struct {
 	BaseURL string `json:"baseUrl"`
@@ -116,17 +125,34 @@ type modelListResponse struct {
 }
 
 const (
-	defaultOpenAIBaseURL    = "https://api.openai.com/v1"
-	KiloGatewayBaseURL      = "https://api.kilo.ai/api/gateway"
-	anthropicAPIVersion     = "2023-06-01"
-	modelListRequestLimit   = 15 * time.Second
-	modelListBodyLimit      = int64(4 << 20)
+	defaultOpenAIBaseURL  = "https://api.openai.com/v1"
+	KiloGatewayBaseURL    = "https://api.kilo.ai/api/gateway"
+	anthropicAPIVersion   = "2023-06-01"
+	modelListRequestLimit = 15 * time.Second
+	modelListBodyLimit    = int64(4 << 20)
 )
 
 // Handler bundles the config file path with shared config-server helpers.
 type Handler struct {
 	ConfigPath string
 	configHTML []byte
+}
+
+//go:embed config.html
+var embeddedConfigHTML []byte
+
+// loadConfigHTML returns the editor document. The copy embedded in the binary
+// wins so an installed binary works from any directory; locating it on disk was
+// the only mechanism before embed and would silently 500 outside a source tree.
+func loadConfigHTML() ([]byte, error) {
+	if len(embeddedConfigHTML) > 0 {
+		return embeddedConfigHTML, nil
+	}
+	path, err := locateConfigHTML()
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(path)
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -160,13 +186,9 @@ func (h *Handler) loadHTML() ([]byte, error) {
 	if len(h.configHTML) > 0 {
 		return h.configHTML, nil
 	}
-	path, err := locateConfigHTML()
+	html, err := loadConfigHTML()
 	if err != nil {
 		return nil, err
-	}
-	html, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read config html: %w", err)
 	}
 	h.configHTML = html
 	return html, nil
@@ -500,11 +522,7 @@ func Start(ctx context.Context, configPath string) (string, func(), error) {
 		ctx = context.Background()
 	}
 
-	htmlPath, err := locateConfigHTML()
-	if err != nil {
-		return "", nil, err
-	}
-	html, err := os.ReadFile(htmlPath)
+	page, err := loadConfigHTML()
 	if err != nil {
 		return "", nil, fmt.Errorf("read config html: %w", err)
 	}
@@ -517,7 +535,7 @@ func Start(ctx context.Context, configPath string) (string, func(), error) {
 	pageURL := fmt.Sprintf("http://127.0.0.1:%d/", addr.Port)
 
 	srv := &http.Server{
-		Handler:           &Handler{ConfigPath: configPath, configHTML: html},
+		Handler:           &Handler{ConfigPath: configPath, configHTML: page},
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

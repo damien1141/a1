@@ -73,11 +73,13 @@ func FetchTool() tooldef.Tool {
 		DetailFromArgs: func(input json.RawMessage) string {
 			var in fetchInput
 			_ = json.Unmarshal(input, &in)
+			// No "fetch " prefix: the row already prints the tool name, and
+			// "fetch fetch https://…" is noise. The url alone identifies the call.
 			u := strings.TrimSpace(in.URL)
 			if u == "" {
-				return "fetch"
+				return ""
 			}
-			return fmt.Sprintf("fetch %s", u)
+			return u
 		},
 		Run: runFetch,
 	}
@@ -93,6 +95,7 @@ type fetchInput struct {
 }
 
 func runFetch(ctx context.Context, input json.RawMessage) (tooldef.Result, error) {
+	startedAt := time.Now()
 	var in fetchInput
 	if err := json.Unmarshal(input, &in); err != nil {
 		return tooldef.Result{}, fmt.Errorf("failed to parse fetch arguments: %w", err)
@@ -128,6 +131,8 @@ func runFetch(ctx context.Context, input json.RawMessage) (tooldef.Result, error
 		}
 	}
 
+	// The turn context carries no deadline (the stop button cancels it), so the
+	// client timeout is the only bound on a peer that never responds.
 	client := &http.Client{Timeout: fetchDefaultTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -157,10 +162,11 @@ func runFetch(ctx context.Context, input json.RawMessage) (tooldef.Result, error
 		bodyStr = fmt.Sprintf("[binary %s %d bytes]", resp.Header.Get("Content-Type"), len(body))
 	}
 
+	// The status line stays in Content — the model needs it to reason about the
+	// response — but the "Fetched GET" header, the "=" rule, and the "Status:" /
+	// "Content-Type:" preamble do not: they were display chrome that rendered
+	// into the transcript as a wall of headers. Summary carries the short form.
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Fetched %s %s\n", method, url))
-	sb.WriteString(strings.Repeat("=", 60))
-	sb.WriteString("\n\n")
 	sb.WriteString(fmt.Sprintf("Status: %d %s\n", resp.StatusCode, http.StatusText(resp.StatusCode)))
 	if ct := resp.Header.Get("Content-Type"); ct != "" {
 		sb.WriteString(fmt.Sprintf("Content-Type: %s\n", ct))
@@ -172,8 +178,11 @@ func runFetch(ctx context.Context, input json.RawMessage) (tooldef.Result, error
 	}
 	sb.WriteString("\n")
 
-	detail := fmt.Sprintf("%d %s", resp.StatusCode, http.StatusText(resp.StatusCode))
-	result := tooldef.Result{Content: sb.String(), Detail: detail, Output: sb.String()}
+	result := tooldef.Result{
+		Content: sb.String(),
+		Summary: Summary(url, resp.StatusCode, len(body), time.Since(startedAt)),
+		Output:  sb.String(),
+	}
 
 	// When links=true, append the site structure so the agent can see what
 	// subdomains and paths exist and navigate without guessing.

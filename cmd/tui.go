@@ -97,6 +97,7 @@ func runTUI() error {
 		cfg.SkillPath,
 		cfg.ContextWindow,
 		modelNames,
+		proj.Config().UI.AutoExpandToolOutputResolved(),
 	)
 	redraw.Bind(ui.RequestRedraw)
 	ui.StartUpdateCheck(proj.Global().Root())

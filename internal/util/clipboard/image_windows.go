@@ -10,7 +10,7 @@ import (
 )
 
 func readClipboardImagePlatform() (Image, error) {
-	tmpFile, err := os.CreateTemp("", "phi-clip-*.png")
+	tmpFile, err := os.CreateTemp("", "a1-clip-*.png")
 	if err != nil {
 		return Image{}, ErrUnavailable
 	}

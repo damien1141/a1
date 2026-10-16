@@ -45,7 +45,7 @@ func printf(w io.Writer, format string, args ...any) {
 }
 
 // Install installs a GitHub extension into Dir/<repo>/.
-// Prefer a platform release archive (same naming as phi update); fall back to
+// Prefer a platform release archive (same naming as `a1 update`); fall back to
 // a shallow git clone when no matching release asset exists.
 func Install(ctx context.Context, opts InstallOptions) error {
 	if opts.Dir == "" {
@@ -116,7 +116,7 @@ func installReleaseTree(
 		return fmt.Errorf("release asset %q has no download URL", asset.Name)
 	}
 
-	tmp, err := os.MkdirTemp("", "phi-plugin-")
+	tmp, err := os.MkdirTemp("", "a1-plugin-")
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
@@ -332,7 +332,7 @@ func placeTree(staging, dest string, replace bool) error {
 
 func printInstallWarnings(w io.Writer) {
 	printf(w, "warning: extensions run with your full process permissions; only install from sources you trust\n")
-	printf(w, "reload: Ctrl+K → extensions → reload (or restart phi)\n")
+	printf(w, "reload: Ctrl+K → extensions → reload (or restart a1)\n")
 }
 
 func defaultRunGit(ctx context.Context, gitBin string, args ...string) error {

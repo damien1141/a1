@@ -9,7 +9,29 @@ const (
 	ModeReadonly       Mode = "readonly"
 	ModeAutopilot      Mode = "autopilot"
 	ModeHeadlessStrict Mode = "headless-strict"
+	// ModeYolo disables prompting: every Ask becomes Allow. It is deliberately
+	// a mode rather than a config flag, so the deny list still fires and the
+	// APPA trajectory still records what happened. The two allow-everything
+	// flags (DangerouslyAllowAll, AllowAllSession) short-circuit before the
+	// gate consults anything, which means they also disable the deny rules.
+	ModeYolo Mode = "yolo"
 )
+
+// AllModes lists every mode in the order a shift-tab cycle should reach them.
+// Yolo is last so sweeping the cycle reaches it deliberately instead of
+// passing through it on the way somewhere else.
+//
+// Every surface that offers a mode choice reads this list, because the four
+// copies that used to exist drifted: adding a mode meant finding four places,
+// and missing one left a mode the web switcher could set but the terminal
+// could not.
+var AllModes = []Mode{
+	ModeInteractive,
+	ModeReadonly,
+	ModeAutopilot,
+	ModeHeadlessStrict,
+	ModeYolo,
+}
 
 // Decision is the gate outcome before optional Ask folding.
 type Decision int
@@ -80,6 +102,11 @@ type Request struct {
 
 	// OutputLabel is populated after tool execution for admission checks.
 	OutputLabel Label
+
+	// Succeeded reports whether the tool execution completed successfully.
+	// Effect tokens are committed only on reported success (APPA §3: "failed
+	// or indeterminate outcomes contribute none").
+	Succeeded bool
 }
 
 // Policy is the configurable permission ruleset.
@@ -106,6 +133,10 @@ type Policy struct {
 	// Admission controls (Step 3).
 	// NoUntrustedOutput denies admission when output trust is Untrusted.
 	NoUntrustedOutput bool
+	// RequireLabeledOutput denies admission (Ask) when the realized output
+	// carries no trust rank at all. Off by default: gradual typing exists so
+	// unannotated results can flow as unresolved sources instead of blocking.
+	RequireLabeledOutput bool
 	// RequiredEffects are effect tokens that must appear in EffectLog before
 	// admission is granted. Empty = no effect check.
 	RequiredEffects []string

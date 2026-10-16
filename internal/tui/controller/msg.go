@@ -92,6 +92,8 @@ const (
 	OverlayContinueDismiss
 	OverlayExtConfirm
 	OverlayExtConfirmDismiss
+	OverlayQuestionAsk
+	OverlayQuestionDismiss
 )
 
 // OverlayMsg drives permission / continue / extension-confirm UI.
@@ -108,6 +110,10 @@ type OverlayMsg struct {
 	MaxRounds int
 	ContReply chan ContinueReply
 
+	// Question ask (AskUserQuestion tool)
+	Question   *Question
+	QuestReply chan QuestionReply
+
 	// Extension confirm
 	Title        string
 	Message      string
@@ -118,6 +124,37 @@ type OverlayMsg struct {
 }
 
 func (OverlayMsg) isMsg() {}
+
+// Question is one structural question the agent asked the human, with the
+// choices offered. It is deliberately not a permission.Request: nothing is being
+// approved or denied, an answer is being collected.
+type Question struct {
+	// Header is a short chip label (<=12 runes) naming the question.
+	Header string
+	// Question is the full text.
+	Question string
+	// Options are the choices, in the order the agent ranked them. A "(Recommended)"
+	// suffix in Label is the agent steering, not a different option type.
+	Options []QuestionOption
+	// MultiSelect allows picking several options; Enter submits them all.
+	MultiSelect bool
+}
+
+// QuestionOption is one answer choice.
+type QuestionOption struct {
+	Label       string
+	Description string
+}
+
+// QuestionReply is the human's answer. Choice is the selected label, or the
+// typed text when the user picked "Other" and wrote their own.
+type QuestionReply struct {
+	Choice string
+	// Choices holds every picked label when the question was MultiSelect.
+	Choices []string
+	// Cancelled reports that the user dismissed the question without answering.
+	Cancelled bool
+}
 
 // ExtCommandResultMsg delivers the result of an extension slash command.
 type ExtCommandResultMsg struct {

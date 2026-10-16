@@ -210,3 +210,30 @@ func RunningToolCount(s Snapshot) int {
 	}
 	return n
 }
+
+// RunningToolCall returns the name and detail of the agent tool currently
+// running, or "" when none is. With several in flight the caller should prefer
+// RunningToolCount and a generic label, so the choice is deliberate rather than
+// an arbitrary map iteration order.
+func RunningToolCall(s Snapshot) (name, detail string) {
+	var fallback *ToolRun
+	for _, run := range s.Tools {
+		if run.Local {
+			continue
+		}
+		switch run.Status {
+		case ToolInProgress, ToolQueued:
+			if run.Status == ToolInProgress {
+				return run.Name, run.Detail
+			}
+			if fallback == nil {
+				r := run
+				fallback = &r
+			}
+		}
+	}
+	if fallback != nil {
+		return fallback.Name, fallback.Detail
+	}
+	return "", ""
+}

@@ -20,7 +20,7 @@ import (
 //
 //	{name}_{version}_{goos}_{goarch}.tar.gz|zip
 //
-// Version strips a leading v from the tag (same as phi update).
+// Version strips a leading v from the tag (same as `a1 update`).
 func platformArchiveName(project, tag string) (name, format string, err error) {
 	goos := runtime.GOOS
 	goarch := runtime.GOARCH

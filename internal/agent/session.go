@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/damien1141/a1/internal/llm"
 	"github.com/damien1141/a1/internal/project"
@@ -150,6 +151,24 @@ func (s *Session) invalidateContextCache() {
 	s.contextCacheValid = false
 }
 
+// nowSystemMessage is the wall-clock stamp carried by every turn's context.
+// Local time is used so the date matches what the user sees. The weekday is
+// spelled out because models misjudge day-of-week from a bare date, and the
+// ISO week pins down "this week" for relative phrasing. The zone name is
+// included so the model does not have to guess which clock it is reading.
+func nowSystemMessage() string {
+	now := time.Now()
+	year, week := now.ISOWeek()
+	return fmt.Sprintf(
+		"Current date and time: %s (%s), %s (ISO week %d-W%02d, zone %s).",
+		now.Format("Monday, 2 January 2006"),
+		now.Format("15:04:05"),
+		now.Format("2006-01-02"),
+		year, week,
+		now.Format("MST"),
+	)
+}
+
 // MemoryBank returns the session memory bank, opening it if needed.
 func (s *Session) MemoryBank() *memory.Bank {
 	if s == nil {
@@ -201,13 +220,19 @@ func (s *Session) PathEntries() []session.MessageEntry {
 
 // BuildContext returns the messages for LLM inference, oldest first.
 // Compaction entries are projected as user messages carrying the summary.
-// Memory bank entries are injected once per session as a system message.
+// Memory bank entries are injected once per session as a system message, and
+// the current date/time is refreshed on every turn as a leading system message.
 func (s *Session) BuildContext() []llm.Message {
 	if s.contextCacheValid {
 		return s.contextCache
 	}
 	entries := s.manager.BuildContext()
-	msgs := make([]llm.Message, 0, len(entries)+1)
+	msgs := make([]llm.Message, 0, len(entries)+2)
+	// Clock first: every provider merges system messages to the front of the
+	// request, so placement here does not reorder the conversation. The stamp
+	// is regenerated on each turn rather than cached with the session, so a
+	// long-lived session stops drifting away from the wall clock.
+	msgs = append(msgs, llm.Message{Role: llm.RoleSystem, Content: nowSystemMessage()})
 	if !s.memoryInjected {
 		if bank := s.MemoryBank(); bank != nil {
 			if recent, err := bank.Recent(10); err == nil && len(recent) > 0 {

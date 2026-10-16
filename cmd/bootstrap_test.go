@@ -17,7 +17,7 @@ import (
 )
 
 // testProject discovers a project under a temp HOME so tests never touch the
-// real ~/.phi, and returns a project plus a PATH dir for binary stubs.
+// real ~/.a1, and returns a project plus a PATH dir for binary stubs.
 func testProject(t *testing.T) (*project.Project, string) {
 	t.Helper()
 	home := t.TempDir()
@@ -101,7 +101,7 @@ func TestHeadlessGateDefaultsToStrict(t *testing.T) {
 	// Empty mode + Ask-default bash must fold to Deny (Ask≡Deny).
 	policy := permission.DefaultPolicy()
 	policy.Mode = "" // unset → headless-strict
-	gate, err := HeadlessGate(policy)
+	gate, err := HeadlessGate(policy, t.TempDir())
 	require.NoError(t, err)
 
 	dec, reason := gate.Check(t.Context(), permission.Request{
@@ -122,7 +122,7 @@ func TestHeadlessGateDefaultsToStrict(t *testing.T) {
 func TestHeadlessGateDangerouslyAllowAll(t *testing.T) {
 	policy := permission.DefaultPolicy()
 	policy.DangerouslyAllowAll = true
-	gate, err := HeadlessGate(policy)
+	gate, err := HeadlessGate(policy, t.TempDir())
 	require.NoError(t, err)
 
 	dec, _ := gate.Check(t.Context(), permission.Request{

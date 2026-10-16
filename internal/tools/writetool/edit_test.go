@@ -25,7 +25,10 @@ func TestRunEditReplacesText(t *testing.T) {
 
 	res, err := tool.Run(t.Context(), raw)
 	require.NoError(t, err)
-	require.Contains(t, res.Content, "@file ")
+	require.Contains(t, res.Content, "Updated")
+	require.Contains(t, res.Content, "-beta", "the diff shows the removed line")
+	require.Contains(t, res.Content, "+BETA", "the diff shows the added line")
+	require.NotContains(t, res.Content, "@file ", "no stale hash anchor")
 
 	got, err := os.ReadFile(path)
 	require.NoError(t, err)

@@ -30,6 +30,7 @@ import (
 	"github.com/damien1141/a1/internal/tools/nplusonetool"
 	"github.com/damien1141/a1/internal/tools/permissiontool"
 	"github.com/damien1141/a1/internal/tools/propertytool"
+	"github.com/damien1141/a1/internal/tools/questiontool"
 	"github.com/damien1141/a1/internal/tools/ranktool"
 	"github.com/damien1141/a1/internal/tools/readtool"
 	"github.com/damien1141/a1/internal/tools/runtimetool"
@@ -113,6 +114,7 @@ func DefaultTools() []Tool {
 		lstool.LsTool(),
 		writetool.EditTool(),
 		findtool.FindTool(),
+		questiontool.QuestionTool(),
 		watchertool.WatcherTool(),
 		stacktool.StackTool(),
 		testtool.TestTool(),
@@ -162,6 +164,7 @@ func ReadonlyTools() []Tool {
 		greptool.GrepTool(),
 		lstool.LsTool(),
 		findtool.FindTool(),
+		questiontool.QuestionTool(),
 		watchertool.WatcherTool(),
 		stacktool.StackTool(),
 		testtool.TestTool(),

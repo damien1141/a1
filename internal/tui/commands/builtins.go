@@ -70,6 +70,27 @@ func NewBuiltinRegistry(
 		Bus:  bus,
 		Ctrl: ctrl,
 	}
+	contextCmd := &ContextCommands{
+		Bus: bus,
+		Snap: func() session.Snapshot {
+			if tr != nil {
+				return tr.Snapshot()
+			}
+			return session.Snapshot{}
+		},
+		Window: func() int {
+			if ft != nil {
+				return ft.ContextWindow()
+			}
+			return 0
+		},
+		Tools: func() (int, int) {
+			if ctrl == nil {
+				return 0, 0
+			}
+			return ctrl.ToolSchemaBytes()
+		},
+	}
 
 	sessions.Register(r)
 	branches.Register(r)
@@ -82,6 +103,7 @@ func NewBuiltinRegistry(
 	snapshot.Register(r)
 	permission.Register(r)
 	config.Register(r)
+	contextCmd.Register(r)
 
 	return &Builtin{Registry: r, Sessions: sessions, Branches: branches, Ext: ext}
 }

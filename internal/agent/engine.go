@@ -22,6 +22,7 @@ import (
 	"github.com/damien1141/a1/internal/session"
 	"github.com/damien1141/a1/internal/session/compaction"
 	"github.com/damien1141/a1/internal/tools"
+	"github.com/damien1141/a1/internal/tools/tooldef"
 )
 
 // ErrMaxRounds is returned (wrapped) by Loop when the model exceeds the
@@ -77,6 +78,7 @@ type Engine struct {
 	hooks        llmclient.Hooks
 	gate         permission.Gate
 	ask          permission.AskFunc
+	question     tooldef.QuestionFunc
 	continueAsk  ContinueFunc
 	jobs         *job.Manager
 	extensions   *extension.Runner // nil = disabled; all methods are nil-safe no-ops
@@ -108,6 +110,7 @@ func NewEngine(model llm.ModelConfig, sess *Session, opts ...EngineOption) (*Eng
 		session:      sess,
 		gate:         cfg.gate,
 		ask:          cfg.ask,
+		question:     cfg.question,
 		continueAsk:  cfg.continueAsk,
 		jobs:         cfg.jobs,
 		extensions:   cfg.extensions,
@@ -217,11 +220,38 @@ func (engine *Engine) systemPrompt() string {
 }
 
 func (engine *Engine) bindExecutor(registry tools.Registry) {
-	engine.executor = NewExecutor(registry, engine.gate, engine.ask, engine.extensions)
+	engine.executor = NewExecutor(registry, engine.gate, engine.ask, engine.extensions, engine.question)
+	engine.executor.approveAdmit = approveAdmitFunc(engine.gate)
 	engine.executor.SetMeta(engine.SessionID(), engine.SessionCwd())
 	if engine.session != nil {
 		engine.executor.SetMemoryBank(engine.session.MemoryBank())
 	}
+}
+
+// ToolSchemaBytes returns the combined serialized size of every registered tool
+// definition, plus the count. The /context breakdown uses it to size the "Tools"
+// category: schemas are context the model pays for before the conversation
+// starts, and they grow as extensions and MCP servers register.
+func (engine *Engine) ToolSchemaBytes() (bytes, count int) {
+	if engine == nil || engine.executor == nil {
+		return 0, 0
+	}
+	for _, t := range engine.executor.registry {
+		bytes += len(t.Definition.Name) + len(t.Definition.Description)
+		if t.Definition.Params == nil {
+			count++
+			continue
+		}
+		bytes += len(t.Definition.Params.Type)
+		for k, v := range t.Definition.Params.Properties {
+			bytes += len(k) + toolsSchemaValueBytes(v)
+		}
+		for _, r := range t.Definition.Params.Required {
+			bytes += len(r)
+		}
+		count++
+	}
+	return bytes, count
 }
 
 // HasTool reports whether a tool is currently registered on the executor.
@@ -231,6 +261,29 @@ func (engine *Engine) HasTool(name string) bool {
 	}
 	_, ok := engine.executor.registry[name]
 	return ok
+}
+
+// toolsSchemaValueBytes sizes a JSON-schema-ish value without pulling
+// encoding/json into a per-call path.
+func toolsSchemaValueBytes(v any) int {
+	switch t := v.(type) {
+	case string:
+		return len(t)
+	case map[string]any:
+		n := 0
+		for k, vv := range t {
+			n += len(k) + toolsSchemaValueBytes(vv)
+		}
+		return n
+	case []any:
+		n := 0
+		for _, vv := range t {
+			n += toolsSchemaValueBytes(vv)
+		}
+		return n
+	default:
+		return 0
+	}
 }
 
 // SetPermission updates the gate and ask handler used by the tool executor.
@@ -243,7 +296,18 @@ func (engine *Engine) SetPermission(gate permission.Gate, ask permission.AskFunc
 	if engine.executor != nil {
 		engine.executor.gate = gate
 		engine.executor.ask = ask
+		engine.executor.approveAdmit = approveAdmitFunc(gate)
 	}
+}
+
+// approveAdmitFunc returns the callback that folds an approved Gate 2
+// admission into the trajectory. Nil when the gate cannot approve admissions.
+func approveAdmitFunc(gate permission.Gate) func(permission.Request) {
+	static := permission.StaticGateOf(gate)
+	if static == nil {
+		return nil
+	}
+	return static.ApproveAdmit
 }
 
 // SetContinueAsk sets the handler invoked when the tool-round budget is exhausted.

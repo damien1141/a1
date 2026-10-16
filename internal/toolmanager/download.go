@@ -200,7 +200,7 @@ func selectCompatibleAsset(
 }
 
 // DownloadTool downloads the specified tool from GitHub releases and installs
-// it to the phi bin directory (~/.a1/bin/).
+// it to the a1 bin directory (~/.a1/bin/).
 func DownloadTool(ctx context.Context, tool string) (string, error) {
 	config, ok := Tools[tool]
 	if !ok {

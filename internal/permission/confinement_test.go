@@ -4,19 +4,32 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+// newTestChild forks a child branch from a parent label, with a shape-bounded
+// integer return channel and a fresh effect log.
+func newTestChild(t *testing.T, parentLabel PartialLabel, id string) *ChildTrajectory {
+	t.Helper()
+	return NewChildTrajectory(parentLabel, id, AttestSchema{Type: "integer"}, NewEffectLog())
+}
 
 func TestChildTrajectory_InheritsParentLabel(t *testing.T) {
 	parentLabel := NewPartialLabel(Label{Trust: Trusted, ReaderSet: []string{"user"}}, []string{})
-	child := NewChildTrajectory(parentLabel, "child-1")
+	child := newTestChild(t, parentLabel, "child-1")
 	assert.Equal(t, parentLabel.Established.Trust, child.Label.Established.Trust, "child inherits parent trust")
-	assert.Equal(t, parentLabel.Established.ReaderSet, child.Label.Established.ReaderSet, "child inherits parent readers")
+	assert.Equal(
+		t,
+		parentLabel.Established.ReaderSet,
+		child.Label.Established.ReaderSet,
+		"child inherits parent readers",
+	)
 	assert.Equal(t, "child-1", child.ID, "child should have its own ID")
 }
 
 func TestChildTrajectory_LocalFolding(t *testing.T) {
 	parentLabel := NewPartialLabel(Label{Trust: Trusted, ReaderSet: []string{"user"}}, []string{})
-	child := NewChildTrajectory(parentLabel, "child-1")
+	child := newTestChild(t, parentLabel, "child-1")
 
 	// Child admits a tool that narrows its label.
 	child.Admit(Contract{Contribution: Label{Trust: User, ReaderSet: []string{}}})
@@ -30,7 +43,7 @@ func TestChildTrajectory_LocalFolding(t *testing.T) {
 
 func TestChildTrajectory_AbandonPreservesParent(t *testing.T) {
 	parentLabel := NewPartialLabel(Label{Trust: Trusted, ReaderSet: []string{"user"}}, []string{})
-	child := NewChildTrajectory(parentLabel, "child-1")
+	child := newTestChild(t, parentLabel, "child-1")
 
 	// Child narrows its label.
 	child.Admit(Contract{Contribution: Label{Trust: User, ReaderSet: []string{}}})
@@ -42,26 +55,37 @@ func TestChildTrajectory_AbandonPreservesParent(t *testing.T) {
 
 func TestChildTrajectory_StandardReturn(t *testing.T) {
 	parentLabel := NewPartialLabel(Label{Trust: Trusted, ReaderSet: []string{"user"}}, []string{})
-	child := NewChildTrajectory(parentLabel, "child-1")
+	child := newTestChild(t, parentLabel, "child-1")
 
-	// Child returns a value with label.
+	// Child returns a value with label. Return only proposes the candidate
+	// merge label; the parent decides whether a narrowing check is required.
 	returnedLabel := Label{Trust: User, ReaderSet: []string{"user"}}
-	newParent := child.Return(returnedLabel)
+	proposed := child.Return(returnedLabel)
 
-	// Parent label should meet with returned label.
-	assert.Equal(t, User, newParent.Established.Trust, "parent label should meet with returned label")
+	assert.Equal(t, User, proposed.Established.Trust, "returned label is the candidate merge label")
+	assert.Equal(t, Trusted, parentLabel.Established.Trust, "Return alone does not touch the parent")
+
+	res := Merge(parentLabel, child, OutcomeStandardReturn, returnedLabel)
+	assert.Equal(t, User, res.NewLabel.Established.Trust, "parent meets with returned label")
+	assert.True(t, res.RequiresAcceptance, "a narrowing return needs explicit acceptance")
 }
 
 func TestChildTrajectory_SanitizedReturn(t *testing.T) {
 	parentLabel := NewPartialLabel(Label{Trust: Trusted, ReaderSet: []string{"user"}}, []string{})
-	child := NewChildTrajectory(parentLabel, "child-1")
+	child := newTestChild(t, parentLabel, "child-1")
 
-	// Child returns sanitized value.
-	sanitizedLabel := Label{Trust: Trusted, ReaderSet: []string{"user", "external"}}
-	newParent := child.SanitizedReturn(sanitizedLabel)
+	// A sanitized return exits through the shape-bounded channel fixed at fork
+	// time, and carries the declared TCB mandate — not the raw child label.
+	mandate := Label{Trust: Trusted, ReaderSet: []string{"user", "external"}}
+	returned, err := child.SanitizedReturn(42, mandate)
+	require.NoError(t, err, "a bounded integer is a legal attest-schema return")
+	assert.Equal(t, Trusted, returned.Established.Trust, "merge label comes from the declared mandate")
+	assert.Equal(t, []string{"user", "external"}, returned.Established.ReaderSet)
 
-	// Parent label should meet with sanitized label.
-	assert.Equal(t, Trusted, newParent.Established.Trust, "parent label should preserve trust with sanitized return")
+	// Free text cannot leave the branch: the shape-bounded channel rejects it.
+	_, err = child.SanitizedReturn("free text payload", mandate)
+	require.Error(t, err, "attest-schema rejects free text")
+	assert.Contains(t, err.Error(), "attest-schema")
 }
 
 func TestAttestSchema_ValidatesShape(t *testing.T) {
@@ -161,18 +185,18 @@ func TestMergeOutcomes(t *testing.T) {
 	parent := NewPartialLabel(Label{Trust: Trusted, ReaderSet: []string{"user"}}, []string{})
 
 	// Abandon: parent unchanged.
-	result := Merge(parent, NewChildTrajectory(parent, "c1"), OutcomeAbandon, Label{})
+	result := Merge(parent, newTestChild(t, parent, "c1"), OutcomeAbandon, Label{})
 	assert.Equal(t, Trusted, result.NewLabel.Established.Trust)
 	assert.NoError(t, result.Error)
 
 	// Standard return: parent meets with returned label.
 	returned := Label{Trust: User, ReaderSet: []string{}}
-	result = Merge(parent, NewChildTrajectory(parent, "c1"), OutcomeStandardReturn, returned)
+	result = Merge(parent, newTestChild(t, parent, "c1"), OutcomeStandardReturn, returned)
 	assert.Equal(t, User, result.NewLabel.Established.Trust)
 
 	// Sanitized return: parent meets with sanitized label.
 	sanitized := Label{Trust: Trusted, ReaderSet: []string{"user", "external"}}
-	result = Merge(parent, NewChildTrajectory(parent, "c1"), OutcomeSanitizedReturn, sanitized)
+	result = Merge(parent, newTestChild(t, parent, "c1"), OutcomeSanitizedReturn, sanitized)
 	assert.Equal(t, Trusted, result.NewLabel.Established.Trust)
 }
 

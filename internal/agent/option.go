@@ -7,6 +7,7 @@ import (
 	"github.com/damien1141/a1/internal/mcp"
 	"github.com/damien1141/a1/internal/permission"
 	"github.com/damien1141/a1/internal/tools"
+	"github.com/damien1141/a1/internal/tools/tooldef"
 )
 
 // EngineOption configures optional NewEngine dependencies.
@@ -15,6 +16,7 @@ type EngineOption func(*engineConfig)
 type engineConfig struct {
 	gate         permission.Gate
 	ask          permission.AskFunc
+	question     tooldef.QuestionFunc
 	continueAsk  ContinueFunc
 	tools        []tools.Tool
 	maxRounds    int
@@ -28,6 +30,12 @@ type engineConfig struct {
 // WithGate sets the permission gate (nil = allow all).
 func WithGate(gate permission.Gate) EngineOption {
 	return func(c *engineConfig) { c.gate = gate }
+}
+
+// WithQuestion sets the AskUserQuestion handler. The tool dispatches through
+// this, so it needs the same TUI-backed asker the permission gate uses.
+func WithQuestion(fn tooldef.QuestionFunc) EngineOption {
+	return func(o *engineConfig) { o.question = fn }
 }
 
 // WithAsk sets the ask callback (nil = deny on Ask).

@@ -27,8 +27,9 @@ func ResolveToCwd(ctx context.Context, filePath string) (string, error) {
 
 // RelToCwd formats an absolute path for the model and UI: slash-separated and
 // relative to session/process cwd when the path is inside it, otherwise
-// absolute. Grep/find/read/edit headers must use this so @file path#TAG can be
-// passed back to read/edit (which resolve against cwd, not a search subdirectory).
+// absolute. Grep/find/read/edit headers must use this so a path relative to
+// the session cwd is what the model sees, regardless of which subdirectory the
+// search ran in.
 func RelToCwd(ctx context.Context, abs string) string {
 	cwd, err := Cwd(ctx)
 	if err != nil {

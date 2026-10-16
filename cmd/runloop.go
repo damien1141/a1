@@ -18,6 +18,7 @@ import (
 	"github.com/damien1141/a1/internal/job"
 	"github.com/damien1141/a1/internal/llm"
 	"github.com/damien1141/a1/internal/mcp"
+	"github.com/damien1141/a1/internal/permission"
 	"github.com/damien1141/a1/internal/project/model"
 	"github.com/damien1141/a1/internal/session"
 	"github.com/damien1141/a1/internal/tools"
@@ -89,34 +90,6 @@ func runHeadless(opts runOptions) error {
 		engineOpts = append(engineOpts, agent.WithMCP(pool))
 		defer func() { _ = pool.Close() }()
 	}
-	if bs.Config.Agents.Enabled {
-		parent := bs.Config.Model()
-		jobs, jobErr := agent.NewJobManager(bs.Proj.JobsDir(), parent, func(role job.Role) llm.ModelConfig {
-			m := bs.Config.Agents.Models
-			var name string
-			switch job.NormalizeRole(string(role)) {
-			case job.RoleReview:
-				name = m.Review
-			case job.RoleWorker:
-				name = m.Worker
-			default:
-				name = m.Explore
-			}
-			if cfg, ok := bs.Config.FindModel(name); ok {
-				return cfg
-			}
-			return parent
-		}, func() *extension.Runner {
-			return extRunner
-		})
-		if jobErr != nil {
-			fmt.Fprintln(os.Stderr, "a1 run:", jobErr)
-			return exitCode(ExitUsage)
-		}
-		defer func() { _ = jobs.Close(context.Background()) }()
-		engineOpts = append(engineOpts, agent.WithJobs(jobs))
-	}
-
 	sessionOpts := []agent.SessionOption{
 		agent.WithCwd(bs.Cwd),
 		agent.WithSessionDir(bs.SessionDir),
@@ -137,6 +110,36 @@ func runHeadless(opts runOptions) error {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "a1 run:", err)
 		return exitCode(ExitUsage)
+	}
+
+	if bs.Config.Agents.Enabled {
+		parent := bs.Config.Model()
+		jobs, jobErr := agent.NewJobManager(bs.Proj.JobsDir(), parent, func(role job.Role) llm.ModelConfig {
+			m := bs.Config.Agents.Models
+			var name string
+			switch job.NormalizeRole(string(role)) {
+			case job.RoleReview:
+				name = m.Review
+			case job.RoleWorker:
+				name = m.Worker
+			default:
+				name = m.Explore
+			}
+			if cfg, ok := bs.Config.FindModel(name); ok {
+				return cfg
+			}
+			return parent
+		}, func() *extension.Runner {
+			return extRunner
+		}, func() permission.Gate {
+			return engine.Gate()
+		})
+		if jobErr != nil {
+			fmt.Fprintln(os.Stderr, "a1 run:", jobErr)
+			return exitCode(ExitUsage)
+		}
+		defer func() { _ = jobs.Close(context.Background()) }()
+		engine.SetJobs(jobs)
 	}
 
 	fmt.Fprintf(os.Stderr, "session: %s\n", engine.SessionID())

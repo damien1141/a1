@@ -33,6 +33,10 @@ type FooterChrome struct {
 	updateHint    string
 	hookStatus    string
 	tick          int
+	// actionsHint overrides the status slot while the transcript cursor is
+	// active. The activity label and token readout both yield to it, because the
+	// keys that leave the mode matter more than either.
+	actionsHint string
 
 	composer     labelComposer
 	labelContext func() session.Snapshot
@@ -177,7 +181,7 @@ func (f *FooterChrome) Apply(msg controller.FooterMsg) {
 		}
 	case controller.FooterUpdateAvailable:
 		latest := strings.TrimPrefix(msg.Latest, "v")
-		f.updateHint = latest + " available · phi update"
+		f.updateHint = latest + " available · a1 update"
 	case controller.FooterTurnEnd:
 		if f.composer == nil {
 			break
@@ -228,9 +232,32 @@ func (f *FooterChrome) ApplySessionEffects(msg controller.ExtSessionEffectsMsg) 
 	}
 }
 
-// syncStatusSlot writes the composer bottom-left label: activity while busy, else tokens.
+// ContextWindow returns the model's usable context window, or 0 when unknown.
+func (f *FooterChrome) ContextWindow() int {
+	if f == nil {
+		return 0
+	}
+	return f.contextWindow
+}
+
+// SetActionsHint shows transcript-cursor copy in the status slot. Empty restores
+// the activity / token readout.
+func (f *FooterChrome) SetActionsHint(hint string) {
+	if f == nil {
+		return
+	}
+	f.actionsHint = strings.TrimSpace(hint)
+	f.syncStatusSlot()
+}
+
+// syncStatusSlot writes the composer bottom-left label: transcript cursor copy
+// while that mode is active, else activity while busy, else tokens.
 func (f *FooterChrome) syncStatusSlot() {
 	if f == nil || f.composer == nil {
+		return
+	}
+	if f.actionsHint != "" {
+		f.composer.SetBottomLeftLabel(f.activityStatusLabel(f.actionsHint))
 		return
 	}
 	var snap session.Snapshot

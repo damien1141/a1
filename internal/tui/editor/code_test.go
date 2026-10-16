@@ -32,6 +32,7 @@ func newTestEditor(t *testing.T) *Editor {
 		"",
 		0,
 		nil,
+		false,
 	)
 	require.NotNil(t, e)
 	return e

@@ -57,8 +57,10 @@ type ComposerPane struct {
 
 	overlayBlocksComposer func() bool
 	handlePermissionKey   WireKeyHandler
+	handleQuestionKey     WireKeyHandler
 	handleContinueKey     WireKeyHandler
 	handleConfirmKey      WireKeyHandler
+	messageActionsKey     WireKeyHandler
 	handleCopyKey         WireKeyHandler
 	requestFocusEditor    func()
 	requestFocus          func(components.Widget)
@@ -115,9 +117,11 @@ func (c *ComposerPane) Wire(
 	imageEnabled func() bool,
 	overlayBlocksComposer func() bool,
 	handlePermissionKey WireKeyHandler,
+	handleQuestionKey WireKeyHandler,
 	handleContinueKey WireKeyHandler,
 	handleConfirmKey WireKeyHandler,
 	handleCopyKey WireKeyHandler,
+	handleMessageActionsKey WireKeyHandler,
 	requestFocusEditor func(),
 	requestFocus func(components.Widget),
 	ctrlClose func(),
@@ -137,9 +141,11 @@ func (c *ComposerPane) Wire(
 	c.imageEnabled = imageEnabled
 	c.overlayBlocksComposer = overlayBlocksComposer
 	c.handlePermissionKey = handlePermissionKey
+	c.handleQuestionKey = handleQuestionKey
 	c.handleContinueKey = handleContinueKey
 	c.handleConfirmKey = handleConfirmKey
 	c.handleCopyKey = handleCopyKey
+	c.messageActionsKey = handleMessageActionsKey
 	c.requestFocusEditor = requestFocusEditor
 	c.requestFocus = requestFocus
 	c.ctrlClose = ctrlClose
@@ -712,6 +718,11 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 		if c.handlePermissionKey != nil && c.handlePermissionKey(ctx, ev) {
 			return
 		}
+		// The question overlay gets first refusal after permissions: it is the
+		// only modal that carries an answer the turn cannot proceed without.
+		if c.handleQuestionKey != nil && c.handleQuestionKey(ctx, ev) {
+			return
+		}
 		if c.handleContinueKey != nil && c.handleContinueKey(ctx, ev) {
 			return
 		}
@@ -748,7 +759,8 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 			ctx.ConsumeAndRedraw()
 			return
 		}
-		if ev.Press && ev.Mods.Has(xui.ModShift) && (ev.Code == xui.KeyTab || (ev.Code == xui.KeyRune && ev.Rune == '\t')) {
+		if ev.Press && ev.Mods.Has(xui.ModShift) &&
+			(ev.Code == xui.KeyTab || (ev.Code == xui.KeyRune && ev.Rune == '\t')) {
 			if c.cyclePermissionMode != nil {
 				c.cyclePermissionMode()
 			}
@@ -789,6 +801,9 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 				c.cycleThinkLevel()
 			}
 			ctx.ConsumeAndRedraw()
+			return
+		}
+		if c.messageActionsKey != nil && c.messageActionsKey(ctx, ev) {
 			return
 		}
 		if ev.Code == xui.KeyPageUp || ev.Code == xui.KeyPageDown {

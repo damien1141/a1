@@ -45,6 +45,48 @@ func WorkspaceRoot() string {
 	return start
 }
 
+// WorkspaceRootAt returns the git-root workspace for startDir, or startDir
+// itself when it is not inside a repository. The TUI resolves the session
+// workspace from the session cwd, never from the process cwd: a session
+// started in a subdirectory must gate paths against that subdirectory even
+// though the process runs elsewhere.
+func WorkspaceRootAt(startDir string) string {
+	if strings.TrimSpace(startDir) == "" {
+		return WorkspaceRoot()
+	}
+	abs, err := filepath.Abs(startDir)
+	if err != nil {
+		return ""
+	}
+	if _, err := os.Stat(abs); err != nil {
+		// Non-existent cwd (deleted directory): fall back to the nearest
+		// existing ancestor so the gate still has a bounded root.
+		for dir := abs; ; {
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+			if _, err := os.Stat(dir); err == nil {
+				abs = dir
+				break
+			}
+		}
+	}
+	dir := abs
+	for {
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return abs
+}
+
 // AbsCleanAt resolves path to an absolute cleaned path against cwd (no symlink resolve).
 // Empty cwd uses the process working directory.
 func AbsCleanAt(path, cwd string) (string, error) {

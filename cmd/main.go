@@ -36,6 +36,8 @@ func buildRoot() *cli.Command {
 		Name: "a1",
 		Desc: "terminal coding agent",
 		Long: `a1                start the interactive TUI
+a1 --web         start the web chat GUI on http://127.0.0.1:9001
+a1 web           same as a1 --web
 a1 tui            start the interactive TUI
 a1 config         open the HTML config editor (local web server)
 a1 update         install the latest release (see 'a1 update --help')
@@ -43,10 +45,16 @@ a1 run -p "..."   run one agent loop headlessly (see 'a1 run --help')
 a1 sessions list  list persisted sessions for this directory
 a1 mcp …          manage MCP servers (see 'a1 mcp --help')
 a1 plugin …          install/list/update/remove extensions (see 'a1 plugin --help')`,
+		Flags: []cli.Flag{
+			cli.Bool("web", "", "start the web chat GUI instead of the TUI"),
+		},
 	}
-	r.Run = func(args []string, _ cli.Flags) error {
+	r.Run = func(args []string, flags cli.Flags) error {
 		if len(args) > 0 {
 			return r.Usagef("unknown command %q", args[0])
+		}
+		if flags.Bool("web") {
+			return runWeb()
 		}
 		return runTUI()
 	}
@@ -58,6 +66,7 @@ a1 plugin …          install/list/update/remove extensions (see 'a1 plugin --h
 		&pluginCommand,
 		&configCommand,
 		&updateCommand,
+		&webCommand,
 	)
 	return r
 }

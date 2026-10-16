@@ -1,8 +1,9 @@
 package controller
 
 import (
-	"fmt"
+	"strconv"
 
+	"github.com/damien1141/a1/internal/components"
 	"github.com/damien1141/a1/internal/components/status"
 	"github.com/damien1141/a1/internal/session"
 )
@@ -114,7 +115,14 @@ func (h *ActivityHandler) Label(snap session.Snapshot) string {
 	if h.Current == ActivityTools {
 		n := session.RunningToolCount(snap)
 		if n > 1 {
-			return fmt.Sprintf("Calling %d tools…", n)
+			return "Calling " + strconv.Itoa(n) + " tools…"
+		}
+		// Name the running tool: "what's happening" is the whole point of the
+		// slot, and "Calling tools…" tells the operator nothing they can act on.
+		if name, detail := session.RunningToolCall(snap); name != "" {
+			// Byline the tool and its target so a missing target degrades to
+			// "Running grep…" instead of "Running grep ()…".
+			return "Running " + components.Byline(name, detail) + "…"
 		}
 	}
 	return activityMessage(h.Current)
@@ -135,7 +143,10 @@ func activityMessage(a Activity) string {
 	case ActivityRetrying:
 		return "Retrying after disconnect…"
 	case ActivityCancelled:
-		return "Stopped"
+		// Claude Code's interrupt line is "Interrupted · What should Claude do
+		// instead?" — closes the loop on a cancel by inviting the redirect
+		// right in the slot where the work used to be.
+		return "Stopped" + components.BylineSeparator + "What should I do instead?"
 	case ActivityAwaitingApproval:
 		return "Waiting for approval…"
 	default:

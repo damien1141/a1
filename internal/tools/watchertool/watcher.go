@@ -115,17 +115,21 @@ func runWatcher(ctx context.Context, input json.RawMessage) (tooldef.Result, err
 
 	glob := strings.TrimSpace(in.Glob)
 
+	// Snapshot the clock before walking: a file written during the walk has an
+	// mtime past this instant, so the next scan still reports it. Recording the
+	// time after the walk instead would silently swallow that write.
+	scannedAt := time.Now()
 	changed, err := findChangedFiles(searchPath, since, glob)
 	if err != nil {
 		return tooldef.Result{}, err
 	}
 
 	lastCheckMu.Lock()
-	lastCheck = time.Now()
+	lastCheck = scannedAt
 	lastCheckMu.Unlock()
 
 	if len(changed) == 0 {
-		content := fmt.Sprintf("No files changed since %s", since.Format(time.RFC3339))
+		content := "No files changed since " + since.Format(time.RFC3339)
 		return tooldef.Result{Content: content, Detail: "0 changed", Output: content}, nil
 	}
 

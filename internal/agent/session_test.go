@@ -111,7 +111,8 @@ func TestBuildContextInjectsMemoryOnce(t *testing.T) {
 	first := sess.BuildContext()
 	require.True(t, len(first) > 0)
 	assert.Equal(t, llm.RoleSystem, first[0].Role)
-	assert.Contains(t, first[0].Content, "remember this")
+	assert.Contains(t, first[0].Content, "Current date and time")
+	assert.Contains(t, first[1].Content, "remember this")
 
 	second := sess.BuildContext()
 	assert.Equal(t, first, second)
@@ -125,6 +126,24 @@ func TestBuildContextInjectsMemoryOnce(t *testing.T) {
 	assert.Equal(t, 1, systemCount, "memory system message should appear exactly once")
 }
 
+// The clock stamp is regenerated per context build, so a session that stays
+// open across a turn boundary does not drift away from the wall clock. It
+// leads the message list so the date is the first thing the model reads.
+func TestBuildContextRefreshesDateStamp(t *testing.T) {
+	sess, err := NewSession(WithCwd(t.TempDir()))
+	require.NoError(t, err)
+	require.NoError(t, sess.Append(llm.Message{Role: llm.RoleUser, Content: "hi"}))
+	sess.invalidateContextCache()
+
+	msgs := sess.BuildContext()
+	require.Len(t, msgs, 2, "clock stamp + the one user message")
+	assert.Equal(t, llm.RoleSystem, msgs[0].Role, "clock stamp must lead the context")
+	assert.Contains(t, msgs[0].Content, "Current date and time: ")
+	assert.Contains(t, msgs[0].Content, "ISO week ")
+	assert.Equal(t, llm.RoleUser, msgs[1].Role)
+	assert.Equal(t, "hi", msgs[1].Content)
+}
+
 func TestBuildContextSkipsMemoryWhenBankEmpty(t *testing.T) {
 	dir := t.TempDir()
 	sess, err := NewSession(WithCwd(dir), WithSessionDir(dir), WithPersist(true))
@@ -136,6 +155,10 @@ func TestBuildContextSkipsMemoryWhenBankEmpty(t *testing.T) {
 
 	ctx := sess.BuildContext()
 	for _, m := range ctx {
-		assert.NotEqual(t, llm.RoleSystem, m.Role, "no system memory message when bank is empty")
+		if m.Role != llm.RoleSystem {
+			continue
+		}
+		assert.NotContains(t, m.Content, "Session memory",
+			"no system memory message when bank is empty")
 	}
 }

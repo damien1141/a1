@@ -24,6 +24,7 @@ type Overlays struct {
 	perm     *permAskState
 	cont     *continueAskState
 	confirm  *confirmAskState
+	question *questionAskState
 	activity *controller.ActivityHandler
 	composer overlayComposer
 
@@ -92,8 +93,20 @@ func (o *Overlays) Apply(msg controller.OverlayMsg) {
 		o.beginExtConfirm(msg)
 	case controller.OverlayExtConfirmDismiss:
 		o.dismissExtConfirm()
+	case controller.OverlayQuestionAsk:
+		o.beginQuestionAsk(msg)
+	case controller.OverlayQuestionDismiss:
+		o.dismissQuestion()
 	}
 }
+
+// HandleQuestionKey handles keyboard input while a question overlay is active.
+func (o *Overlays) HandleQuestionKey(ctx *components.EventContext, e xui.KeyEvent) bool {
+	return o != nil && o.question != nil && o.handleQuestionKey(ctx, e)
+}
+
+// QuestionActive reports whether a question overlay is capturing keys.
+func (o *Overlays) QuestionActive() bool { return o != nil && o.question != nil }
 
 // HandlePermissionKey handles keyboard input while permission ask is active.
 func (o *Overlays) HandlePermissionKey(ctx *components.EventContext, e xui.KeyEvent) bool {
@@ -129,6 +142,9 @@ func (o *Overlays) PreferredBottomHeight(width int, method xui.WidthMethod) (hei
 	if o.confirm != nil {
 		return o.confirm.preferredAskHeight(), true
 	}
+	if o.question != nil {
+		return o.question.preferredQuestionHeight(width, method), true
+	}
 	return 0, false
 }
 
@@ -146,6 +162,9 @@ func (o *Overlays) DrawBottom(ctx components.DrawContext, width, height int) (co
 	if o.confirm != nil {
 		return o.drawExtConfirm(ctx, width, height), true
 	}
+	if o.question != nil {
+		return o.drawQuestionAsk(ctx, width, height), true
+	}
 	return components.Surface{}, false
 }
 
@@ -158,6 +177,11 @@ func (o *Overlays) beginPermissionAsk(msg controller.OverlayMsg) {
 	}
 	if o.confirm != nil {
 		o.resolveExtConfirm(controller.ExtConfirmReply{})
+	}
+	// A question supersedes a live permission ask, not the other way round: the
+	// agent asks before it acts, so the answer is what unblocks the turn.
+	if o.question != nil {
+		o.resolveQuestion(controller.QuestionReply{Cancelled: true})
 	}
 	if o.composer != nil {
 		o.composer.HideCompleters()
@@ -535,6 +559,83 @@ func (o *Overlays) drawContinueAsk(ctx components.DrawContext, width, height int
 	return paintAskPanel(body, width, height, chrome.ModalBorder(th), ctx.Method)
 }
 
+// drawQuestionAsk renders the question overlay: a chip header, the question,
+// each option with its description, and the always-present "Other" row.
+func (o *Overlays) drawQuestionAsk(ctx components.DrawContext, width, height int) components.Surface {
+	st := o.question
+	if st == nil || st.question == nil {
+		return components.NewSurface(width, height, nil)
+	}
+	th := o.theme
+	if width <= 0 {
+		width = 80
+	}
+	if height <= 0 {
+		height = st.preferredQuestionHeight(width, ctx.Method)
+	}
+	innerW := width - 4
+	if innerW < 10 {
+		innerW = width
+	}
+
+	primary := chrome.DecisionPrimary(th)
+
+	var body []components.RichLine
+	add := func(spans ...components.Span) {
+		body = append(body, components.WrapSpans(spans, innerW, ctx.Method)...)
+	}
+
+	if st.question.Header != "" {
+		add(components.Span{Text: " " + st.question.Header + " ", Style: xui.Style{Bold: true, Fg: primary.Fg}})
+	}
+	add(components.Span{Text: st.question.Question, Style: th.Foreground})
+	body = append(body, components.RichLine{})
+
+	if st.customOn {
+		body = append(body, st.customLines(th, primary, innerW, ctx.Method)...)
+		return paintAskPanel(body, width, height, chrome.ModalBorder(th), ctx.Method)
+	}
+
+	for i, opt := range st.question.Options {
+		selected := st.selected == i
+		// The option line already carries a selection dot, so MultiSelect gets
+		// its checkbox on the same row rather than a second prefix column.
+		if st.question.MultiSelect {
+			// The checkbox shares the row with the option label, on the same
+			// span set — emitting it separately put it on its own line.
+			mark := "[ ] "
+			markSt := th.Muted
+			if st.picked[i] {
+				mark = "[x] "
+				markSt = th.Success
+			}
+			body = append(
+				body,
+				st.optionRowMulti(th, primary, opt.Label, selected, mark, markSt, innerW, ctx.Method)...)
+		} else {
+			body = append(body, chrome.OptionLine(th, primary, opt.Label, selected, innerW, ctx.Method)...)
+		}
+		if opt.Description != "" {
+			descSt := th.Muted
+			if selected {
+				descSt = th.Foreground
+			}
+			add(components.Span{Text: "    " + opt.Description, Style: descSt})
+		}
+	}
+
+	// "Other" is never optional: a question with no free-text path would trap
+	// the user inside the agent's framing.
+	body = append(body, chrome.OptionLine(
+		th, primary, "Other", st.selected == st.optionCount(), innerW, ctx.Method,
+	)...)
+	body = append(body, components.WrapSpans([]components.Span{
+		{Text: st.hint(), Style: th.Muted},
+	}, innerW, ctx.Method)...)
+
+	return paintAskPanel(body, width, height, chrome.ModalBorder(th), ctx.Method)
+}
+
 type askOption int
 
 const (
@@ -552,6 +653,37 @@ var askOptionLabels = []string{
 var continueOptionLabels = []string{
 	"Continue",
 	"Stop",
+}
+
+// questionAskState is one in-flight AskUserQuestion prompt.
+type questionAskState struct {
+	question *controller.Question
+	reply    chan controller.QuestionReply
+
+	selected int
+	// picked holds the checked indices while MultiSelect is on.
+	picked map[int]bool
+	// custom is the "Other" free-text answer.
+	custom    string
+	customCur int
+	customOn  bool
+}
+
+// otherOptionIndex is the always-present escape hatch: a question without a
+// free-text path would trap the user into the agent's framing.
+const otherOptionIndex = -1
+
+func newQuestionAskState(q *controller.Question, reply chan controller.QuestionReply) *questionAskState {
+	return &questionAskState{question: q, reply: reply, picked: map[int]bool{}}
+}
+
+// optionCount counts the offered choices; the "Other" row is not among them,
+// because it is not a choice the agent made.
+func (s *questionAskState) optionCount() int {
+	if s.question == nil {
+		return 0
+	}
+	return len(s.question.Options)
 }
 
 type permAskState struct {
@@ -711,7 +843,7 @@ func (st *permAskState) feedbackLines(
 	out = append(out, components.WrapSpans([]components.Span{
 		{Text: chrome.Err + " ", Style: th.Destructive},
 		{Text: "Denied", Style: xui.Style{Bold: true, Fg: th.Destructive.Fg}},
-		{Text: " — tell Phi what to do instead", Style: th.Muted},
+		{Text: " — tell a1 what to do instead", Style: th.Muted},
 	}, innerW, method)...)
 	out = append(out, components.WrapSpans([]components.Span{
 		{Text: chrome.SoftPrompt, Style: xui.Style{Bold: true, Fg: primary.Fg}},
@@ -740,4 +872,307 @@ func paintAskPanel(
 		y++
 	}
 	return panel
+}
+
+// beginQuestionAsk opens a question overlay, superseding anything else up.
+func (o *Overlays) beginQuestionAsk(msg controller.OverlayMsg) {
+	if msg.Question == nil {
+		return
+	}
+	if o.perm != nil {
+		o.resolvePermission(controller.AskReply{})
+	}
+	if o.cont != nil {
+		o.resolveContinue(controller.ContinueReply{})
+	}
+	if o.confirm != nil {
+		o.resolveExtConfirm(controller.ExtConfirmReply{})
+	}
+	if o.question != nil {
+		o.resolveQuestion(controller.QuestionReply{Cancelled: true})
+	}
+	if o.composer != nil {
+		o.composer.HideCompleters()
+		o.composer.HidePalette()
+	}
+	o.question = newQuestionAskState(msg.Question, msg.QuestReply)
+	o.activity.Apply(controller.ActivityAwaitingApproval)
+	if o.focusEditor != nil {
+		o.focusEditor()
+	}
+}
+
+func (o *Overlays) dismissQuestion() {
+	wasAsk := o.question != nil
+	o.question = nil
+	if !wasAsk {
+		return
+	}
+	if o.activity != nil && o.activity.Current == controller.ActivityAwaitingApproval {
+		o.activity.Apply(controller.ActivityIdle)
+	}
+}
+
+// resolveQuestion sends the answer and clears the overlay.
+func (o *Overlays) resolveQuestion(r controller.QuestionReply) {
+	st := o.question
+	if st == nil {
+		return
+	}
+	o.question = nil
+	if o.activity != nil && o.activity.Current == controller.ActivityAwaitingApproval {
+		o.activity.Apply(controller.ActivityTools)
+	}
+	if o.focusChat != nil {
+		o.focusChat()
+	}
+	if st.reply != nil {
+		select {
+		case st.reply <- r:
+		default:
+		}
+	}
+}
+
+// handleQuestionKey drives the question overlay: arrows move, Enter picks,
+// Esc cancels, and typing while on "Other" collects free text.
+func (o *Overlays) handleQuestionKey(ctx *components.EventContext, e xui.KeyEvent) bool {
+	st := o.question
+	if st == nil || !e.Press {
+		return false
+	}
+	if st.customOn {
+		return o.handleQuestionCustomKey(ctx, e)
+	}
+
+	switch e.Code {
+	case xui.KeyEscape:
+		o.resolveQuestion(controller.QuestionReply{Cancelled: true})
+		ctx.ConsumeAndRedraw()
+		return true
+	case xui.KeyUp, xui.KeyLeft:
+		if st.selected > 0 {
+			st.selected--
+		} else {
+			st.selected = st.optionCount()
+		}
+		ctx.ConsumeAndRedraw()
+		return true
+	case xui.KeyDown, xui.KeyRight, xui.KeyTab:
+		st.selected = (st.selected + 1) % (st.optionCount() + 1)
+		ctx.ConsumeAndRedraw()
+		return true
+	case xui.KeyEnter:
+		if st.selected == otherOptionIndex || st.selected == st.optionCount() {
+			st.customOn = true
+			st.customCur = len([]rune(st.custom))
+			ctx.ConsumeAndRedraw()
+			return true
+		}
+		o.acceptQuestionOption(st.selected)
+		ctx.ConsumeAndRedraw()
+		return true
+	case xui.KeyRune:
+		if e.Mods.Has(xui.ModCtrl) || e.Mods.Has(xui.ModAlt) {
+			ctx.ConsumeAndRedraw()
+			return true
+		}
+		switch e.Rune {
+		case 'k', 'K', 'h', 'H':
+			if st.selected > 0 {
+				st.selected--
+			} else {
+				st.selected = st.optionCount()
+			}
+			ctx.ConsumeAndRedraw()
+			return true
+		case 'j', 'J', 'l', 'L':
+			st.selected = (st.selected + 1) % (st.optionCount() + 1)
+			ctx.ConsumeAndRedraw()
+			return true
+		case ' ':
+			if st.question.MultiSelect {
+				if st.selected >= 0 && st.selected < st.optionCount() {
+					if st.picked[st.selected] {
+						delete(st.picked, st.selected)
+					} else {
+						st.picked[st.selected] = true
+					}
+				}
+				ctx.ConsumeAndRedraw()
+				return true
+			}
+		}
+	}
+	ctx.ConsumeAndRedraw()
+	return true
+}
+
+// handleQuestionCustomKey collects the "Other" free-text answer.
+func (o *Overlays) handleQuestionCustomKey(ctx *components.EventContext, e xui.KeyEvent) bool {
+	st := o.question
+	switch e.Code {
+	case xui.KeyEscape:
+		st.customOn = false
+		st.custom = ""
+		st.customCur = 0
+		ctx.ConsumeAndRedraw()
+		return true
+	case xui.KeyEnter:
+		answer := strings.TrimSpace(st.custom)
+		if answer == "" {
+			// An empty "Other" is a cancel, not an answer.
+			o.resolveQuestion(controller.QuestionReply{Cancelled: true})
+			ctx.ConsumeAndRedraw()
+			return true
+		}
+		o.resolveQuestion(controller.QuestionReply{Choice: answer, Choices: []string{answer}})
+		ctx.ConsumeAndRedraw()
+		return true
+	case xui.KeyBackspace:
+		runes := []rune(st.custom)
+		if st.customCur > 0 && st.customCur <= len(runes) {
+			st.custom = string(append(runes[:st.customCur-1], runes[st.customCur:]...))
+			st.customCur--
+		}
+		ctx.ConsumeAndRedraw()
+		return true
+	case xui.KeyLeft:
+		if st.customCur > 0 {
+			st.customCur--
+		}
+		ctx.ConsumeAndRedraw()
+		return true
+	case xui.KeyRight:
+		if st.customCur < len([]rune(st.custom)) {
+			st.customCur++
+		}
+		ctx.ConsumeAndRedraw()
+		return true
+	case xui.KeyRune:
+		if e.Mods.Has(xui.ModCtrl) || e.Mods.Has(xui.ModAlt) {
+			ctx.ConsumeAndRedraw()
+			return true
+		}
+		runes := []rune(st.custom)
+		ch := string(e.Rune)
+		st.custom = string(append(runes[:st.customCur], append([]rune(ch), runes[st.customCur:]...)...))
+		st.customCur++
+		ctx.ConsumeAndRedraw()
+		return true
+	}
+	ctx.ConsumeAndRedraw()
+	return true
+}
+
+// acceptQuestionOption answers with the picked option, or for MultiSelect with
+// every checked one.
+func (o *Overlays) acceptQuestionOption(idx int) {
+	st := o.question
+	if st == nil || idx < 0 || idx >= st.optionCount() {
+		return
+	}
+	opt := st.question.Options[idx]
+	if st.question.MultiSelect {
+		var labels []string
+		for i, o2 := range st.question.Options {
+			if i == idx || st.picked[i] {
+				labels = append(labels, o2.Label)
+			}
+		}
+		o.resolveQuestion(controller.QuestionReply{Choice: opt.Label, Choices: labels})
+		return
+	}
+	o.resolveQuestion(controller.QuestionReply{Choice: opt.Label, Choices: []string{opt.Label}})
+}
+
+// optionRowMulti renders one multi-select row: the checkbox, the selection
+// arrow/dot, then the label. chrome.OptionLine cannot be reused directly
+// because it owns the leading arrow column.
+func (s *questionAskState) optionRowMulti(
+	th components.Theme,
+	primary xui.Style,
+	label string,
+	selected bool,
+	mark string,
+	markSt xui.Style,
+	innerW int,
+	method xui.WidthMethod,
+) []components.RichLine {
+	const (
+		selectArrow, selectDot = "▸", "●"
+		idleArrow, idleDot     = " ", "○"
+	)
+	arrow, dot := idleArrow, idleDot
+	labelSt, dotSt := th.Foreground, th.Muted
+	if selected {
+		arrow, dot = selectArrow, selectDot
+		labelSt = xui.Style{Bold: true, Fg: primary.Fg}
+		dotSt = primary
+	}
+	return components.WrapSpans([]components.Span{
+		{Text: arrow, Style: primary},
+		{Text: dot, Style: dotSt},
+		{Text: " " + mark, Style: markSt},
+		{Text: label, Style: labelSt},
+	}, innerW, method)
+}
+
+// hint names the keys that work here, which differ between single and multi
+// select — space checks a box only when several answers are allowed.
+func (s *questionAskState) hint() string {
+	if s.question != nil && s.question.MultiSelect {
+		return "↑↓ move" + chrome.Sep + "space check" + chrome.Sep + "Enter submit" + chrome.Sep + "Esc skip"
+	}
+	return chrome.AskHint("↑↓ move", "select", "skip")
+}
+
+// customLines renders the "Other" text field.
+func (s *questionAskState) customLines(
+	th components.Theme,
+	primary xui.Style,
+	innerW int,
+	method xui.WidthMethod,
+) []components.RichLine {
+	runes := []rune(s.custom)
+	// Render the caret inline so the field behaves like the permission
+	// feedback input rather than a static line.
+	head := string(runes[:min(s.customCur, len(runes))])
+	tail := string(runes[min(s.customCur, len(runes)):])
+	style := th.Foreground
+	return components.WrapSpans([]components.Span{
+		{Text: "Your answer: ", Style: th.Muted},
+		{Text: head, Style: style},
+		{Text: caretGlyph, Style: xui.Style{Bold: true, Fg: primary.Fg}},
+		{Text: tail, Style: style},
+	}, innerW, method)
+}
+
+const caretGlyph = "\u258d"
+
+// preferredQuestionHeight sizes the panel to its content.
+func (s *questionAskState) preferredQuestionHeight(width int, method xui.WidthMethod) int {
+	innerW := width - 4
+	if innerW < 10 {
+		innerW = width
+	}
+	h := 1 // header
+	if s.question != nil && s.question.Header != "" {
+		h++
+	}
+	if s.question != nil {
+		h += len(components.WrapSpans([]components.Span{
+			{Text: s.question.Question, Style: components.DefaultTheme().Foreground},
+		}, innerW, method))
+	}
+	h++ // blank
+	for _, opt := range s.question.Options {
+		h++
+		if opt.Description != "" {
+			h++
+		}
+	}
+	h++ // Other
+	h++ // hint
+	return h + 4
 }
