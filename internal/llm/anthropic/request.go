@@ -50,7 +50,10 @@ type anthropicImageSource struct {
 	Data      string `json:"data"`
 }
 
-// anthropicContentBlock represents a single content block inside an Anthropic message.
+// anthropicContentBlock represents a single content block inside an Anthropic
+// message. Content is the tool_result payload: a plain string, or an array
+// of text/image blocks when the tool result carries images (multimodal
+// tool_result).
 type anthropicContentBlock struct {
 	Type         string                `json:"type"`
 	Text         string                `json:"text,omitempty"`
@@ -58,7 +61,7 @@ type anthropicContentBlock struct {
 	Name         string                `json:"name,omitempty"`
 	Input        json.RawMessage       `json:"input,omitempty"`
 	ToolUseID    string                `json:"tool_use_id,omitempty"`
-	Content      string                `json:"content,omitempty"`
+	Content      any                   `json:"content,omitempty"`
 	Source       *anthropicImageSource `json:"source,omitempty"`
 	CacheControl *cacheControl         `json:"cache_control,omitempty"`
 }

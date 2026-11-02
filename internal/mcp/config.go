@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-const envDisable = "PHI_MCP"
+const envDisable = "A1_MCP"
 
 // ServerConfig describes one MCP server.
 type ServerConfig struct {
@@ -27,7 +27,7 @@ type fileShape struct {
 	Servers map[string]ServerConfig `json:"servers"`
 }
 
-// Disabled reports whether PHI_MCP=off.
+// Disabled reports whether A1_MCP=off.
 func Disabled() bool {
 	v := strings.TrimSpace(strings.ToLower(os.Getenv(envDisable)))
 	return v == "0" || v == "false" || v == "off" || v == "no"
@@ -42,10 +42,10 @@ func UserConfigPath() (string, error) {
 	return filepath.Join(home, ".a1", "mcp.json"), nil
 }
 
-// LogDir returns ~/.a1/logs/mcp (or PHI_MCP_LOG_DIR if set).
+// LogDir returns ~/.a1/logs/mcp (or A1_MCP_LOG_DIR if set).
 func LogDir() (string, error) {
-	if override := strings.TrimSpace(os.Getenv("PHI_MCP_LOG_DIR")); override != "" {
-		//nolint:gosec // G703: PHI_MCP_LOG_DIR is an explicit user override
+	if override := strings.TrimSpace(os.Getenv("A1_MCP_LOG_DIR")); override != "" {
+		//nolint:gosec // G703: A1_MCP_LOG_DIR is an explicit user override
 		if err := os.MkdirAll(override, 0o755); err != nil {
 			return "", err
 		}

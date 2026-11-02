@@ -22,7 +22,9 @@ func TestSpecForRoleExplore(t *testing.T) {
 	assert.True(t, names["read"])
 	assert.True(t, names["bash"])
 	assert.False(t, names["write"])
-	assert.False(t, names["edit"])
+	// `edit` is no longer a separate tool — it's mode=edit of `write`.
+	// `agent_spawn` is added separately by the executor when jobs are wired,
+	// so it isn't part of the role's tool set.
 	assert.False(t, names["agent_spawn"])
 }
 
@@ -31,10 +33,11 @@ func TestSpecForRoleWorker(t *testing.T) {
 	assert.Equal(t, job.RoleWorker, spec.Role)
 	assert.Equal(t, permission.ModeHeadlessStrict, spec.Mode)
 	assert.Contains(t, spec.Hint, "worker sub-agent")
-	assert.Contains(t, spec.Hint, "cannot spawn further agents")
+	assert.Contains(t, spec.Hint, "spawn your own sub-agents")
 	names := toolNameSet(spec.Tools)
 	assert.True(t, names["write"])
-	assert.True(t, names["edit"])
+	// `edit` was folded into `write` (mode=edit). The worker role still
+	// has full write/edit capability — both behind the `write` tool.
 	assert.True(t, names["read"])
 	assert.False(t, names["agent_spawn"])
 }
@@ -47,7 +50,9 @@ func TestSpecForRoleReview(t *testing.T) {
 	assert.NotContains(t, spec.Hint, "allowlisted")
 	names := toolNameSet(spec.Tools)
 	assert.True(t, names["bash"])
-	assert.True(t, names["grep"])
+	// `grep` was folded into `search` (mode=grep). The review role
+	// still has grep capability — behind the `search` tool.
+	assert.True(t, names["search"])
 	assert.False(t, names["write"])
 }
 

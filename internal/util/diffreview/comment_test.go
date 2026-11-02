@@ -9,7 +9,7 @@ import (
 )
 
 func TestSaveLoadFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), ".phi", "review.json")
+	path := filepath.Join(t.TempDir(), ".a1", "review.json")
 	file := CommentFile{
 		Version: 1,
 		Comments: []CommentDraft{{
@@ -30,7 +30,7 @@ func TestSaveLoadFile(t *testing.T) {
 }
 
 func TestLoadFileMissingReturnsEmptyFile(t *testing.T) {
-	file, err := LoadFile(filepath.Join(t.TempDir(), ".phi", "review.json"))
+	file, err := LoadFile(filepath.Join(t.TempDir(), ".a1", "review.json"))
 	require.NoError(t, err)
 	assert.Equal(t, 1, file.Version)
 	assert.Empty(t, file.Comments)

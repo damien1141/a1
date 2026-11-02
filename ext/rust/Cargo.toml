@@ -1,12 +1,12 @@
 [package]
-name = "phi-ext"
+name = "a1-ext"
 version = "0.6.1"
 edition = "2021"
 rust-version = "1.75"
-description = "Rust author SDK for Phi PXB extensions (port of ext/go)"
+description = "Rust author SDK for a1 PXB extensions (port of ext/go)"
 license = "MIT"
-repository = "https://github.com/pulseaiclub/phi"
-keywords = ["phi", "coding-agent", "extension", "pxb"]
+repository = "https://github.com/damien1141/a1"
+keywords = ["a1", "coding-agent", "extension", "pxb"]
 categories = ["development-tools"]
 
 [dependencies]

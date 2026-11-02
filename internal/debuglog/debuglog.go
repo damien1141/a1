@@ -22,7 +22,7 @@ func Enabled() bool {
 	defer mu.Unlock()
 	if !checked {
 		checked = true
-		enabled = os.Getenv("PHI_DEBUG") == "1" || strings.EqualFold(os.Getenv("PHI_DEBUG"), "true")
+		enabled = os.Getenv("A1_DEBUG") == "1" || strings.EqualFold(os.Getenv("A1_DEBUG"), "true")
 	}
 	return enabled
 }
@@ -46,7 +46,7 @@ func openLocked() error {
 	return nil
 }
 
-// Logf writes a timestamped line when PHI_DEBUG is set.
+// Logf writes a timestamped line when A1_DEBUG is set.
 func Logf(format string, args ...any) {
 	if !Enabled() {
 		return

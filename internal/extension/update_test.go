@@ -19,14 +19,14 @@ import (
 	"github.com/damien1141/a1/internal/util/githubrelease"
 )
 
-// managedPlugin seeds a phi-managed extension dir: phi.yaml, exec binary, and
+// managedPlugin seeds a a1-managed extension dir: a1.yaml, exec binary, and
 // install metadata.
 func managedPlugin(t *testing.T, dir string, meta InstallMeta, marker string) {
 	t.Helper()
 	const id = "greet"
 	d := filepath.Join(dir, id)
 	require.NoError(t, os.MkdirAll(d, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(d, "phi.yaml"), []byte("name: "+id+"\nexec: ./"+id+"\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(d, "a1.yaml"), []byte("name: "+id+"\nexec: ./"+id+"\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(d, id), []byte(marker), 0o755))
 	require.NoError(t, writeInstallMeta(d, meta))
 }
@@ -85,7 +85,7 @@ func TestUpdateToNewerRelease(t *testing.T) {
 	}, "#!/bin/sh\n# v1\n")
 
 	rel, assets := releaseWithAsset(t, "v2.0.0", "greet", map[string]string{
-		"phi.yaml": "name: greet\nexec: ./greet\n",
+		"a1.yaml": "name: greet\nexec: ./greet\n",
 		"greet":    "#!/bin/sh\n# v2\n",
 	})
 
@@ -198,7 +198,7 @@ func TestUpdateGitSourceRefreshesClone(t *testing.T) {
 			require.NoError(t, os.MkdirAll(dest, 0o755))
 			require.NoError(
 				t,
-				os.WriteFile(filepath.Join(dest, "phi.yaml"), []byte("name: greet\nexec: ./greet\n"), 0o644),
+				os.WriteFile(filepath.Join(dest, "a1.yaml"), []byte("name: greet\nexec: ./greet\n"), 0o644),
 			)
 			return os.WriteFile(filepath.Join(dest, "greet"), []byte("#!/bin/sh\n# new\n"), 0o755)
 		},
@@ -228,7 +228,7 @@ func TestUpdateRefOverride(t *testing.T) {
 	}, "#!/bin/sh\n# v1\n")
 
 	rel, assets := releaseWithAsset(t, "v2.0.0", "greet", map[string]string{
-		"phi.yaml": "name: greet\nexec: ./greet\n",
+		"a1.yaml": "name: greet\nexec: ./greet\n",
 		"greet":    "#!/bin/sh\n# v2\n",
 	})
 
@@ -254,7 +254,7 @@ func TestUpdateUnmanagedRefused(t *testing.T) {
 	dir := t.TempDir()
 	d := filepath.Join(dir, "greet")
 	require.NoError(t, os.MkdirAll(d, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(d, "phi.yaml"), []byte("name: greet\nexec: ./greet\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(d, "a1.yaml"), []byte("name: greet\nexec: ./greet\n"), 0o644))
 
 	err := Update(t.Context(), UpdateOptions{Dir: dir, ID: "greet", Stdout: io.Discard})
 	require.Error(t, err)
@@ -284,7 +284,7 @@ func TestRemoveRefusesUnmanaged(t *testing.T) {
 	dir := t.TempDir()
 	d := filepath.Join(dir, "greet")
 	require.NoError(t, os.MkdirAll(d, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(d, "phi.yaml"), []byte("name: greet\nexec: ./greet\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(d, "a1.yaml"), []byte("name: greet\nexec: ./greet\n"), 0o644))
 
 	err := Remove(dir, "greet")
 	require.Error(t, err)

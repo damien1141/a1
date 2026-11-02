@@ -3,7 +3,7 @@
 | Path                     | Purpose                                        |
 | ------------------------ | ---------------------------------------------- |
 | `cmd/`                   | Entry points (`main.go` via pli: `a1 run`, `a1 update`, `a1 sessions`, …) |
-| `ext/`                   | Public extension API, PXB protocol (`ext/go/pxb`), author SDK (`ext/go/phi`) — nested Go module `github.com/damien1141/a1/ext/go` |
+| `ext/`                   | Public extension API, PXB protocol (`ext/go/pxb`), author SDK (`ext/go/a1`) — nested Go module `github.com/damien1141/a1/ext/go` |
 | `internal/util/update/`  | Self-update check + GitHub Releases install    |
 | `internal/agent/`        | Agent engine, executor, jobs                     |
 | `internal/agent/prompt/` | System prompt templates + Skills/MCP catalogs    |
@@ -42,3 +42,38 @@
 | [`models.md`](models.md) | Supported models, presets, explicit `api`, thinking config |
 | [`tui.md`](tui.md) | TUI: package layout, aggregation, interaction flows |
 | [`session-context-building.md`](session-context-building.md) | Sessions: tree model, compaction, context building |
+
+## Runtime data layout — the Vault (Bet 08, decided 2026-11)
+
+One SQLite database, `~/.a1/a1.db`, owns every durable byte the harness
+writes (package `internal/vault`):
+
+| Table family | Scope | Replaces |
+| ------------ | ----- | -------- |
+| `personas` | user | `personas/personas.json` |
+| `memory_banks` | per bank key | `personas/memory/persona:<id>.jsonl`, `sessions/memory/<sid>.jsonl` |
+| `evidence_receipts` | per project session-dir | `session/--<cwd>--/evidence.jsonl` |
+| `sessions` + `session_entries` | per project | `session/--<cwd>--/*.jsonl` (tree keyed `(session, seq, parent)`, payload byte-faithful) |
+| `mem_p_<id>_*` / `mem_shared_*` | per persona / engine | `personas/memory/semantic/<id>.sqlite`, `agent/memories.db` |
+
+Decisions, made once:
+
+- **One DB, not per-project DBs.** Backup and delete are the operations
+  that matter: "copy one file" and "DELETE with FK cascade" beat any
+  sharding argument at personal scale. Sessions stay project-*scoped*
+  (rows keyed by the project session dir), just not project-*stored*.
+- **The synthetic path contract.** Vault sessions report the same
+  `<dir>/<ts>_<id>.jsonl` path the file era used, so every path-derived
+  behavior — evidence scope, resume-by-path, job session logging, the
+  screenshots directory — is unchanged. Files that exist from before the
+  migration are stale shadows; resolution is always vault-first.
+- **config.yaml, mcp.json, skills, extensions, and avatars stay files** —
+  things a user edits by hand or ships as artifacts. Everything the
+  harness alone reads and writes is rows.
+- **One-shot migration.** `vault.Boot` imports the legacy layout on
+  first open and stamps `vault_meta.migrated`; every step is idempotent
+  by key, so a crash mid-import simply resumes. Legacy files are left in
+  place (delete at will) but never win resolution again.
+- **Degradation is a feature.** A vault that fails to open logs and the
+  process keeps running on the legacy file layout — the harness never
+  refuses to start because its database had a bad morning.

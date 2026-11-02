@@ -1,343 +1,382 @@
 package footer
 
 import (
-	"fmt"
-	"strings"
+        "fmt"
+        "strings"
 
-	"github.com/pulseaiclub/xui"
+        "github.com/pulseaiclub/xui"
 
-	"github.com/damien1141/a1/internal/components"
-	"github.com/damien1141/a1/internal/components/layout"
-	"github.com/damien1141/a1/internal/components/status"
-	"github.com/damien1141/a1/internal/session"
-	"github.com/damien1141/a1/internal/tui/controller"
+        "github.com/damien1141/a1/internal/components"
+        "github.com/damien1141/a1/internal/components/layout"
+        "github.com/damien1141/a1/internal/components/status"
+        "github.com/damien1141/a1/internal/session"
+        "github.com/damien1141/a1/internal/tui/controller"
 )
 
 type labelComposer interface {
-	SetTopCenterLabel(layout.BorderLabel)
-	ClearTopCenterLabel()
-	SetBottomLeftLabel(layout.BorderLabel)
-	ClearBottomLeftLabel()
-	SetTopLeftLabel(layout.BorderLabel)
-	ClearTopLeftLabel()
+        SetTopCenterLabel(layout.BorderLabel)
+        ClearTopCenterLabel()
+        SetBottomLeftLabel(layout.BorderLabel)
+        ClearBottomLeftLabel()
+        SetTopLeftLabel(layout.BorderLabel)
+        ClearTopLeftLabel()
 }
 
 // FooterChrome owns the composer status slot (activity ↔ tokens), spinner,
 // and the bottom footer row reserved for extension/ambient chrome.
 type FooterChrome struct {
-	theme         components.Theme
-	spin          *status.Spinner
-	activity      *controller.ActivityHandler
-	contextWindow int
-	lastUsage     session.TokenUsage
-	updateHint    string
-	hookStatus    string
-	tick          int
-	// actionsHint overrides the status slot while the transcript cursor is
-	// active. The activity label and token readout both yield to it, because the
-	// keys that leave the mode matter more than either.
-	actionsHint string
+        theme         components.Theme
+        spin          *status.Spinner
+        activity      *controller.ActivityHandler
+        contextWindow int
+        // windowFn is a live context-window source (the engine's resolved
+        // runtime window). When set it takes precedence over the fixed
+        // constructor value, so the ctx label's denominator tracks model switches
+        // and learned windows without rebuilding the footer.
+        windowFn    func() int
+        lastUsage   session.TokenUsage
+        updateHint  string
+        hookStatus  string
+        tick        int
+        // actionsHint overrides the status slot while the transcript cursor is
+        // active. The activity label and token readout both yield to it, because the
+        // keys that leave the mode matter more than either.
+        actionsHint string
 
-	composer     labelComposer
-	labelContext func() session.Snapshot
-	liveJobs     func() int
+        composer     labelComposer
+        labelContext func() session.Snapshot
+        liveJobs     func() int
 }
 
 // NewFooterChrome builds footer chrome with a fresh spinner and activity handler.
 func NewFooterChrome(theme components.Theme, contextWindow int) *FooterChrome {
-	spin := status.NewSpinner(theme.ToolName)
-	f := &FooterChrome{
-		theme:         theme,
-		spin:          spin,
-		activity:      controller.NewActivityHandler(spin),
-		contextWindow: contextWindow,
-	}
-	f.activity.SetOnChange(f.syncStatusSlot)
-	return f
+        spin := status.NewSpinner(theme.ToolName)
+        f := &FooterChrome{
+                theme:         theme,
+                spin:          spin,
+                activity:      controller.NewActivityHandler(spin),
+                contextWindow: contextWindow,
+        }
+        f.activity.SetOnChange(f.syncStatusSlot)
+        return f
 }
 
 // Spinner returns the shared spinner (e.g. for TranscriptPane mapper).
 func (f *FooterChrome) Spinner() *status.Spinner {
-	if f == nil {
-		return nil
-	}
-	return f.spin
+        if f == nil {
+                return nil
+        }
+        return f.spin
 }
 
 // Activity returns the activity handler.
 func (f *FooterChrome) Activity() *controller.ActivityHandler {
-	if f == nil {
-		return nil
-	}
-	return f.activity
+        if f == nil {
+                return nil
+        }
+        return f.activity
 }
 
 // BindComposer wires the composer for status-slot updates.
 func (f *FooterChrome) BindComposer(c labelComposer) {
-	if f != nil {
-		f.composer = c
-		f.syncStatusSlot()
-	}
+        if f != nil {
+                f.composer = c
+                f.syncStatusSlot()
+        }
 }
 
 // SetLabelContext supplies snap for activity status labels.
 func (f *FooterChrome) SetLabelContext(fn func() session.Snapshot) {
-	if f != nil {
-		f.labelContext = fn
-	}
+        if f != nil {
+                f.labelContext = fn
+        }
 }
 
 // SetLiveJobs supplies live sub-agent job count for the footer row.
 func (f *FooterChrome) SetLiveJobs(fn func() int) {
-	if f != nil {
-		f.liveJobs = fn
-	}
+        if f != nil {
+                f.liveJobs = fn
+        }
 }
 
 // AdvanceTick drives spinner animation during active work.
 func (f *FooterChrome) AdvanceTick() {
-	if f == nil {
-		return
-	}
-	f.tick++
-	if f.activity.ShowSpinner() && f.tick%4 == 0 && f.spin != nil {
-		f.spin.Tick()
-		f.syncStatusSlot()
-	}
+        if f == nil {
+                return
+        }
+        f.tick++
+        if f.activity.ShowSpinner() && f.tick%4 == 0 && f.spin != nil {
+                f.spin.Tick()
+                f.syncStatusSlot()
+        }
 }
 
 // SyncFromSnap refreshes activity from the session snapshot.
 func (f *FooterChrome) SyncFromSnap(snap session.Snapshot) {
-	if f == nil || f.activity == nil {
-		return
-	}
-	f.activity.SyncFromSnap(snap)
-	f.syncStatusSlot()
+        if f == nil || f.activity == nil {
+                return
+        }
+        f.activity.SyncFromSnap(snap)
+        f.syncStatusSlot()
 }
 
 // SetTheme updates footer chrome styling.
 func (f *FooterChrome) SetTheme(th components.Theme) {
-	if f == nil {
-		return
-	}
-	f.theme = th
-	if f.spin != nil {
-		f.spin.Style = th.ToolName
-	}
-	f.syncStatusSlot()
+        if f == nil {
+                return
+        }
+        f.theme = th
+        if f.spin != nil {
+                f.spin.Style = th.ToolName
+        }
+        f.syncStatusSlot()
 }
 
 // UpdateTokenDisplay stores usage and refreshes the status slot. Zero usage
 // clears the label, so a session switch never leaves the previous session's
 // counts on screen.
 func (f *FooterChrome) UpdateTokenDisplay(usage session.TokenUsage) {
-	if f == nil {
-		return
-	}
-	f.lastUsage = usage
-	f.syncStatusSlot()
-	if f.composer != nil {
-		if usage.TPS > 0 {
-			f.composer.SetTopLeftLabel(layout.BorderLabel{
-				Text:  fmt.Sprintf("%.0f tok/s", usage.TPS),
-				Style: f.theme.IdentityOrSuccess(),
-			})
-		} else {
-			f.composer.ClearTopLeftLabel()
-		}
-	}
+        if f == nil {
+                return
+        }
+        f.lastUsage = usage
+        f.syncStatusSlot()
+        if f.composer != nil {
+                if usage.TPS > 0 {
+                        f.composer.SetTopLeftLabel(layout.BorderLabel{
+                                Text:  fmt.Sprintf("%.0f tok/s", usage.TPS),
+                                Style: f.theme.IdentityOrSuccess(),
+                        })
+                } else {
+                        f.composer.ClearTopLeftLabel()
+                }
+        }
 }
 
 // ClearTokenDisplay clears stored usage and refreshes the status slot.
 func (f *FooterChrome) ClearTokenDisplay() {
-	if f == nil {
-		return
-	}
-	f.UpdateTokenDisplay(session.TokenUsage{})
+        if f == nil {
+                return
+        }
+        f.UpdateTokenDisplay(session.TokenUsage{})
 }
 
 // SetExtensionStatus sets the extension status shown on the bottom footer row.
 func (f *FooterChrome) SetExtensionStatus(status string) {
-	if f != nil {
-		f.hookStatus = status
-	}
+        if f != nil {
+                f.hookStatus = status
+        }
 }
 
 // Apply handles footer bus messages.
 func (f *FooterChrome) Apply(msg controller.FooterMsg) {
-	if f == nil {
-		return
-	}
-	switch msg.Kind {
-	case controller.FooterSetActivity:
-		f.activity.Apply(msg.Activity)
-		if msg.Activity == controller.ActivityStreaming {
-			f.composer.ClearTopCenterLabel()
-		}
-	case controller.FooterClearIfActivity:
-		if f.activity.Current == msg.If {
-			f.activity.Apply(controller.ActivityIdle)
-			f.composer.ClearTopCenterLabel()
-		}
-	case controller.FooterUpdateAvailable:
-		latest := strings.TrimPrefix(msg.Latest, "v")
-		f.updateHint = latest + " available · a1 update"
-	case controller.FooterTurnEnd:
-		if f.composer == nil {
-			break
-		}
-		text := ""
-		if strings.TrimSpace(msg.Label) != "" {
-			text = strings.TrimSpace(msg.Label)
-		} else {
-			snap := session.Snapshot{}
-			if f.labelContext != nil {
-				snap = f.labelContext()
-			}
-			for i := len(snap.Messages) - 1; i >= 0; i-- {
-				if snap.Messages[i].Role == session.RoleAssistant {
-					if snap.Messages[i].State != session.StateStreaming {
-						text = snap.Messages[i].State.String()
-					}
-					break
-				}
-			}
-		}
-		if text == "" {
-			break
-		}
-		tps := ""
-		if f.lastUsage.TPS > 0 {
-			tps = fmt.Sprintf("%.0f tok/s", f.lastUsage.TPS)
-		}
-		if tps != "" {
-			tps = tps + " · " + text
-		} else {
-			tps = text
-		}
-		f.composer.SetTopLeftLabel(layout.BorderLabel{
-			Text:  tps,
-			Style: f.theme.IdentityOrSuccess(),
-		})
-	}
+        if f == nil {
+                return
+        }
+        switch msg.Kind {
+        case controller.FooterSetActivity:
+                f.activity.Apply(msg.Activity)
+                if msg.Activity == controller.ActivityStreaming {
+                        f.composer.ClearTopCenterLabel()
+                }
+        case controller.FooterClearIfActivity:
+                if f.activity.Current == msg.If {
+                        f.activity.Apply(controller.ActivityIdle)
+                        f.composer.ClearTopCenterLabel()
+                }
+        case controller.FooterUpdateAvailable:
+                latest := strings.TrimPrefix(msg.Latest, "v")
+                f.updateHint = latest + " available · a1 update"
+        case controller.FooterTurnEnd:
+                if f.composer == nil {
+                        break
+                }
+                text := ""
+                if strings.TrimSpace(msg.Label) != "" {
+                        text = strings.TrimSpace(msg.Label)
+                } else {
+                        snap := session.Snapshot{}
+                        if f.labelContext != nil {
+                                snap = f.labelContext()
+                        }
+                        for i := len(snap.Messages) - 1; i >= 0; i-- {
+                                if snap.Messages[i].Role == session.RoleAssistant {
+                                        if snap.Messages[i].State != session.StateStreaming {
+                                                text = snap.Messages[i].State.String()
+                                        }
+                                        break
+                                }
+                        }
+                }
+                if text == "" {
+                        break
+                }
+                tps := ""
+                if f.lastUsage.TPS > 0 {
+                        tps = fmt.Sprintf("%.0f tok/s", f.lastUsage.TPS)
+                }
+                if tps != "" {
+                        tps = tps + " · " + text
+                } else {
+                        tps = text
+                }
+                f.composer.SetTopLeftLabel(layout.BorderLabel{
+                        Text:  tps,
+                        Style: f.theme.IdentityOrSuccess(),
+                })
+        }
 }
 
 // ApplySessionEffects applies toast/status from session lifecycle extensions.
 func (f *FooterChrome) ApplySessionEffects(msg controller.ExtSessionEffectsMsg) {
-	if f == nil {
-		return
-	}
-	if msg.StatusSet {
-		f.hookStatus = msg.Status
-	}
+        if f == nil {
+                return
+        }
+        if msg.StatusSet {
+                f.hookStatus = msg.Status
+        }
 }
 
 // ContextWindow returns the model's usable context window, or 0 when unknown.
+// A live window source (SetWindowSource) takes precedence over the fixed
+// constructor value.
 func (f *FooterChrome) ContextWindow() int {
-	if f == nil {
-		return 0
-	}
-	return f.contextWindow
+        return f.currentWindow()
+}
+
+// SetWindowSource supplies a live context-window source (e.g. the engine's
+// resolved runtime window: config → probe → assumed → learned). When set it
+// takes precedence over the constructor value, so the ctx label re-scales on
+// model switches without rebuilding the footer.
+func (f *FooterChrome) SetWindowSource(fn func() int) {
+        if f == nil {
+                return
+        }
+        f.windowFn = fn
+        f.syncStatusSlot()
+}
+
+// SyncNow repaints the status slot — used when a model switch changed the
+// ctx denominator without a new usage event to trigger a repaint.
+func (f *FooterChrome) SyncNow() {
+        if f == nil {
+                return
+        }
+        f.syncStatusSlot()
+}
+
+// currentWindow resolves the display window: the live source when it yields
+// a positive value, else the constructor value.
+func (f *FooterChrome) currentWindow() int {
+        if f == nil {
+                return 0
+        }
+        if f.windowFn != nil {
+                if w := f.windowFn(); w > 0 {
+                        return w
+                }
+        }
+        return f.contextWindow
 }
 
 // SetActionsHint shows transcript-cursor copy in the status slot. Empty restores
 // the activity / token readout.
 func (f *FooterChrome) SetActionsHint(hint string) {
-	if f == nil {
-		return
-	}
-	f.actionsHint = strings.TrimSpace(hint)
-	f.syncStatusSlot()
+        if f == nil {
+                return
+        }
+        f.actionsHint = strings.TrimSpace(hint)
+        f.syncStatusSlot()
 }
 
 // syncStatusSlot writes the composer bottom-left label: transcript cursor copy
 // while that mode is active, else activity while busy, else tokens.
 func (f *FooterChrome) syncStatusSlot() {
-	if f == nil || f.composer == nil {
-		return
-	}
-	if f.actionsHint != "" {
-		f.composer.SetBottomLeftLabel(f.activityStatusLabel(f.actionsHint))
-		return
-	}
-	var snap session.Snapshot
-	if f.labelContext != nil {
-		snap = f.labelContext()
-	}
-	if msg := f.activity.Label(snap); msg != "" {
-		f.composer.SetBottomLeftLabel(f.activityStatusLabel(msg))
-		return
-	}
-	if !f.lastUsage.Reported() {
-		f.composer.ClearBottomLeftLabel()
-		return
-	}
-	label := tokenStatusLabel(f.theme, f.lastUsage, f.contextWindow)
-	if !label.Visible() {
-		f.composer.ClearBottomLeftLabel()
-		return
-	}
-	f.composer.SetBottomLeftLabel(label)
+        if f == nil || f.composer == nil {
+                return
+        }
+        if f.actionsHint != "" {
+                f.composer.SetBottomLeftLabel(f.activityStatusLabel(f.actionsHint))
+                return
+        }
+        var snap session.Snapshot
+        if f.labelContext != nil {
+                snap = f.labelContext()
+        }
+        if msg := f.activity.Label(snap); msg != "" {
+                f.composer.SetBottomLeftLabel(f.activityStatusLabel(msg))
+                return
+        }
+        if !f.lastUsage.Reported() {
+                f.composer.ClearBottomLeftLabel()
+                return
+        }
+        label := tokenStatusLabel(f.theme, f.lastUsage, f.currentWindow())
+        if !label.Visible() {
+                f.composer.ClearBottomLeftLabel()
+                return
+        }
+        f.composer.SetBottomLeftLabel(label)
 }
 
 func (f *FooterChrome) activityStatusLabel(msg string) layout.BorderLabel {
-	// Ambient chrome + typing-color sheen: one frame dialect, motion without a
-	// competing brand hue (no ToolName cyan on the border).
-	dim := ChromeLabelStyle(f.theme)
-	if !f.activity.ShowSpinner() || f.spin == nil {
-		return layout.BorderLabel{Text: msg, Style: dim}
-	}
-	on := f.theme.Foreground
-	spans := make([]layout.BorderSpan, 0, len(msg)+1)
-	f.spin.ForEachFlowCell(msg, func(ch string, lit bool) {
-		st := dim
-		if lit {
-			st = on
-		}
-		spans = append(spans, layout.BorderSpan{Text: ch, Style: st})
-	})
-	return layout.BorderLabel{Spans: spans}
+        // Ambient chrome + typing-color sheen: one frame dialect, motion without a
+        // competing brand hue (no ToolName cyan on the border).
+        dim := ChromeLabelStyle(f.theme)
+        if !f.activity.ShowSpinner() || f.spin == nil {
+                return layout.BorderLabel{Text: msg, Style: dim}
+        }
+        on := f.theme.Foreground
+        spans := make([]layout.BorderSpan, 0, len(msg)+1)
+        f.spin.ForEachFlowCell(msg, func(ch string, lit bool) {
+                st := dim
+                if lit {
+                        st = on
+                }
+                spans = append(spans, layout.BorderSpan{Text: ch, Style: st})
+        })
+        return layout.BorderLabel{Spans: spans}
 }
 
 // Draw renders the bottom footer row (extension status, jobs, update hint).
 // Activity/spinner live on the composer status slot, not here.
 func (f *FooterChrome) Draw(ctx components.DrawContext, width int) components.Surface {
-	if f == nil {
-		return components.NewSurface(width, 1, nil)
-	}
-	footer := components.NewSurface(width, 1, nil)
-	dim := f.theme.Muted
-	var parts []string
-	if hs := strings.TrimSpace(f.hookStatus); hs != "" {
-		parts = append(parts, hs)
-	}
-	if f.liveJobs != nil {
-		if n := f.liveJobs(); n > 0 {
-			jobBit := fmt.Sprintf("%d job", n)
-			if n != 1 {
-				jobBit += "s"
-			}
-			parts = append(parts, jobBit)
-		}
-	}
-	msg := strings.Join(parts, " · ")
+        if f == nil {
+                return components.NewSurface(width, 1, nil)
+        }
+        footer := components.NewSurface(width, 1, nil)
+        dim := f.theme.Muted
+        var parts []string
+        if hs := strings.TrimSpace(f.hookStatus); hs != "" {
+                parts = append(parts, hs)
+        }
+        if f.liveJobs != nil {
+                if n := f.liveJobs(); n > 0 {
+                        jobBit := fmt.Sprintf("%d job", n)
+                        if n != 1 {
+                                jobBit += "s"
+                        }
+                        parts = append(parts, jobBit)
+                }
+        }
+        msg := strings.Join(parts, " · ")
 
-	x := 1
-	if msg != "" {
-		footer.Print(x, 0, msg, dim, ctx.Method)
-		x += xui.StringWidth(msg, ctx.Method)
-	}
+        x := 1
+        if msg != "" {
+                footer.Print(x, 0, msg, dim, ctx.Method)
+                x += xui.StringWidth(msg, ctx.Method)
+        }
 
-	hint := strings.TrimSpace(f.updateHint)
-	if hint != "" {
-		hw := xui.StringWidth(hint, ctx.Method)
-		hx := width - hw - 1
-		hx = max(hx, x+2)
-		if hx+hw <= width {
-			st := f.theme.TitleOrForeground()
-			st.Bold = false
-			footer.Print(hx, 0, hint, st, ctx.Method)
-		}
-	}
-	return footer
+        hint := strings.TrimSpace(f.updateHint)
+        if hint != "" {
+                hw := xui.StringWidth(hint, ctx.Method)
+                hx := width - hw - 1
+                hx = max(hx, x+2)
+                if hx+hw <= width {
+                        st := f.theme.TitleOrForeground()
+                        st.Bold = false
+                        footer.Print(hx, 0, hint, st, ctx.Method)
+                }
+        }
+        return footer
 }

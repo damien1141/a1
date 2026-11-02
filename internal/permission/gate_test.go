@@ -21,7 +21,7 @@ func TestCheckWriteOutsideWorkspace(t *testing.T) {
 	ws := t.TempDir()
 	g, err := NewGate(DefaultPolicy(), ws)
 	require.NoError(t, err)
-	outside := filepath.Join(os.TempDir(), "phi-perm-test-outside")
+	outside := filepath.Join(os.TempDir(), "a1-perm-test-outside")
 	dec, _ := g.Check(t.Context(), Request{
 		Action: ActionWrite,
 		Tool:   "write",
@@ -160,7 +160,7 @@ func TestCheckReadOutsideWorkspaceAsks(t *testing.T) {
 	ws := t.TempDir()
 	g, err := NewGate(DefaultPolicy(), ws)
 	require.NoError(t, err)
-	outside := filepath.Join(os.TempDir(), "phi-perm-test-read-outside")
+	outside := filepath.Join(os.TempDir(), "a1-perm-test-read-outside")
 	dec, _ := g.Check(t.Context(), Request{
 		Action: ActionRead,
 		Tool:   "read",
@@ -175,7 +175,7 @@ func TestCheckReadOutsideWorkspaceDeniedInReadonly(t *testing.T) {
 	p.Mode = ModeReadonly
 	g, err := NewGate(p, ws)
 	require.NoError(t, err)
-	outside := filepath.Join(os.TempDir(), "phi-perm-test-read-outside")
+	outside := filepath.Join(os.TempDir(), "a1-perm-test-read-outside")
 	dec, _ := g.Check(t.Context(), Request{
 		Action: ActionRead,
 		Tool:   "read",
@@ -189,7 +189,7 @@ func TestCheckReadOutsideWorkspaceDeniedInAutopilot(t *testing.T) {
 	p.Mode = ModeAutopilot
 	g, err := NewGate(p, t.TempDir())
 	require.NoError(t, err)
-	outside := filepath.Join(os.TempDir(), "phi-perm-test-read-outside")
+	outside := filepath.Join(os.TempDir(), "a1-perm-test-read-outside")
 	dec, _ := g.Check(t.Context(), Request{
 		Action: ActionRead,
 		Tool:   "read",
@@ -204,7 +204,7 @@ func TestCheckWriteOutsideWorkspaceAllowedWhenDisabled(t *testing.T) {
 	p.WorkspaceOnlyWrites = false
 	g, err := NewGate(p, ws)
 	require.NoError(t, err)
-	outside := filepath.Join(os.TempDir(), "phi-perm-test-outside")
+	outside := filepath.Join(os.TempDir(), "a1-perm-test-outside")
 	dec, _ := g.Check(t.Context(), Request{
 		Action: ActionWrite,
 		Tool:   "write",
@@ -219,7 +219,7 @@ func TestCheckReadOutsideWorkspaceAllowedWhenDisabled(t *testing.T) {
 	p.WorkspaceOnlyReads = false
 	g, err := NewGate(p, ws)
 	require.NoError(t, err)
-	outside := filepath.Join(os.TempDir(), "phi-perm-test-read-outside")
+	outside := filepath.Join(os.TempDir(), "a1-perm-test-read-outside")
 	dec, _ := g.Check(t.Context(), Request{
 		Action: ActionRead,
 		Tool:   "read",

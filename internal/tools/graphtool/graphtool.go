@@ -9,6 +9,7 @@ import (
 	"github.com/damien1141/a1/internal/graph"
 	"github.com/damien1141/a1/internal/llm"
 	"github.com/damien1141/a1/internal/project"
+	"github.com/damien1141/a1/internal/session"
 	"github.com/damien1141/a1/internal/tools/tooldef"
 )
 
@@ -93,7 +94,10 @@ func runGraph(ctx context.Context, input json.RawMessage) (tooldef.Result, error
 		return tooldef.Result{}, fmt.Errorf("graph: project config not loaded")
 	}
 	root := proj.Root()
-	g, err := graph.OpenGraph(ctx, root)
+	// The vault handle is process-wide and set by every surface at boot;
+	// a nil vault (or its nil db) degrades OpenGraphCached to the plain
+	// per-call walk, so no vault means exactly the old behavior.
+	g, err := graph.OpenGraphCached(ctx, root, session.DefaultVault().DB(), in.Rescan)
 	if err != nil {
 		return tooldef.Result{}, fmt.Errorf("build graph: %w", err)
 	}

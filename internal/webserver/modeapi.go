@@ -48,10 +48,15 @@ func (s *Server) handleSetMode(w http.ResponseWriter, r *http.Request) {
 
 	mode := strings.TrimSpace(req.Mode)
 	if mode == "cycle" {
-		if err := s.setPermissionMode(modes.cycle()); err != nil {
+		next := modes.cycle()
+		if err := s.setPermissionMode(next); err != nil {
 			writeStatus(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		// Surface-driven change: the engines' restore base follows,
+		// so a later persona-settings pass (memory toggle, persona
+		// switch) cannot revert the gate to its boot-time mode.
+		s.updateEngineBaseModes(next)
 		writeJSON(w, http.StatusOK, s.modeView())
 		return
 	}
@@ -60,6 +65,7 @@ func (s *Server) handleSetMode(w http.ResponseWriter, r *http.Request) {
 		writeStatus(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.updateEngineBaseModes(permission.Mode(mode))
 	writeJSON(w, http.StatusOK, s.modeView())
 }
 

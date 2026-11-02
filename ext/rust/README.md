@@ -1,9 +1,9 @@
-# Phi Rust extension SDK (`ext/rust`)
+# a1 Rust extension SDK (`ext/rust`)
 
-Rust is a **first-class language for Phi extensions** — on par with the Go SDK
+Rust is a **first-class language for a1 extensions** — on par with the Go SDK
 in [`ext/go`](../go). Same PXB wire protocol on stdin/stdout, same host
 features (LLM tools, slash commands, intercepts, event subscriptions, confirm
-dialogs), byte-for-byte interop, and the same install flow (`phi.yaml` + a
+dialogs), byte-for-byte interop, and the same install flow (`a1.yaml` + a
 binary under `~/.a1/extensions/<name>/`). The only dependencies are
 `serde`/`serde_json` at the JSON edges (tool schemas, confirm payloads) plus
 `tokio` (`rt` feature) to drive async tool handlers; the
@@ -30,7 +30,7 @@ the published version:
 ```toml
 [dependencies]
 # pre-release: tracks the latest main
-phi-ext = { git = "https://github.com/pulseaiclub/phi", branch = "main" }
+phi-ext = { git = "https://github.com/damien1141/a1", branch = "main" }
 # release: published crate version (tagged ext/rust/vX.Y.Z)
 # phi-ext = "0.1.0"
 ```
@@ -90,12 +90,12 @@ Command handlers get a [`phi::Context`](src/phi.rs) for host interaction:
 `confirm_opts`. Commands themselves stay synchronous: their `Context` reads
 nested PXB frames off the same pipe, which only works on the loop thread.
 
-Build and install (a `phi.yaml` manifest must live next to the binary):
+Build and install (a `a1.yaml` manifest must live next to the binary):
 
 ```bash
 cargo build --release --example hello
 mkdir -p ~/.a1/extensions/hello
-cp target/release/examples/hello phi.yaml ~/.a1/extensions/hello/
+cp target/release/examples/hello a1.yaml ~/.a1/extensions/hello/
 ```
 
 Reload in the TUI: **Ctrl+K → extensions → reload**.

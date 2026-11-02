@@ -11,6 +11,17 @@ import (
 	"strings"
 )
 
+// parseablePath reports whether rel carries an extension the light parsers
+// handle. It mirrors parseImports's switch so the cache walk (cache.go) can
+// decide which files need rows without reading them first.
+func parseablePath(rel string) bool {
+	switch strings.ToLower(filepath.Ext(rel)) {
+	case ".go", ".py", ".rs", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs":
+		return true
+	}
+	return false
+}
+
 func parseImports(path, rel string) ([]string, bool) {
 	switch ext := strings.ToLower(filepath.Ext(rel)); ext {
 	case ".go":

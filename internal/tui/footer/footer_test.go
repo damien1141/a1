@@ -155,3 +155,28 @@ func TestStatusSlotSwapsActivityAndTokens(t *testing.T) {
 	assert.Contains(t, comp.label.Text, "↑1.2k")
 	assert.Empty(t, comp.label.Spans)
 }
+
+// TestWindowSourceRescalesContextLabel pins the model-switch bug fix: the
+// ctx fill label's denominator must follow the live window source (the
+// engine's resolved runtime window), not the value frozen at construction.
+func TestWindowSourceRescalesContextLabel(t *testing.T) {
+	f := NewFooterChrome(components.DefaultTheme(), 1000000)
+	comp := &stubComposer{}
+	f.BindComposer(comp)
+
+	// 12k of a 1M window reads as 1%.
+	f.UpdateTokenDisplay(session.TokenUsage{PromptTokens: 12000, TotalTokens: 12000})
+	require.True(t, comp.set)
+	assert.Contains(t, comp.label.Text, "1%/1.0M")
+
+	// Model switch to a 65k local model: the live source takes precedence,
+	// and the same 12k tokens now read against the new denominator.
+	f.SetWindowSource(func() int { return 65536 })
+	assert.Contains(t, comp.label.Text, "18%/65k")
+	assert.NotContains(t, comp.label.Text, "1.0M")
+
+	// A source that yields 0 (engine not resolved yet) falls back to the
+	// constructor value rather than blanking the label.
+	f.SetWindowSource(func() int { return 0 })
+	assert.Contains(t, comp.label.Text, "1.0M")
+}

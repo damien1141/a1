@@ -56,7 +56,7 @@ func TestListInstalled(t *testing.T) {
 
 	managed := filepath.Join(dir, "alpha")
 	require.NoError(t, os.MkdirAll(managed, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(managed, "phi.yaml"), []byte("name: alpha\nexec: ./alpha\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(managed, "a1.yaml"), []byte("name: alpha\nexec: ./alpha\n"), 0o644))
 	require.NoError(t, writeInstallMeta(managed, InstallMeta{
 		Spec:       Spec{Owner: "alice", Repo: "alpha"},
 		Source:     SourceRelease,
@@ -65,7 +65,7 @@ func TestListInstalled(t *testing.T) {
 
 	manual := filepath.Join(dir, "beta")
 	require.NoError(t, os.MkdirAll(manual, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(manual, "phi.yaml"), []byte("name: beta\nexec: ./beta\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(manual, "a1.yaml"), []byte("name: beta\nexec: ./beta\n"), 0o644))
 
 	// Dirs without a manifest and stray files are not extensions.
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "no-manifest"), 0o755))

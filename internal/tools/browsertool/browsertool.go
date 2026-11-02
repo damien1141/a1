@@ -6,69 +6,61 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
-	"time"
 
-	"github.com/damien1141/a1/internal/debuglog"
+	"github.com/damien1141/a1/internal/bw"
 	"github.com/damien1141/a1/internal/llm"
 	"github.com/damien1141/a1/internal/project"
 	"github.com/damien1141/a1/internal/tools/tooldef"
-
-	"github.com/mxschmitt/playwright-go"
+	imgutil "github.com/damien1141/a1/internal/util/image"
 )
+
+// The browser tool drives BetterWright, a persistent browser daemon, through
+// its CLI. The tool surface (open/navigate/search/click/type/screenshot/
+// content/close/profile/proxy) and the APPA gating are unchanged from the
+// playwright era; the engine underneath swapped. The daemon keeps tabs and
+// page state alive between calls, the profiles keep their cookies on disk
+// after close, and bot challenges surface as handoff events routed through
+// the permission ask flow.
+//
+// The model still cannot spawn the browser on its own: runBrowser refuses
+// until the user opens it (/browser open …), which keeps the "ask nicely"
+// gate while the daemon makes the opened browser actually stick.
 
 var (
-	// pw is the Playwright driver instance. It is kept global so browserClose
-	// can call pw.Stop() to tear down the node driver; otherwise the driver
-	// lingers and the next playwright.Run() fails with "browser is already
-	// in use".
-	pw              *playwright.Playwright
-	profiles        map[string]playwright.BrowserContext
-	pages           map[string]playwright.Page
-	currentProfile  string
+	// browserMu serializes every action against the one shared session —
+	// two interleaved calls against the same page produce nonsense, and the
+	// daemon serializes calls within a session anyway, so the mutex makes
+	// the tool safe, the daemon makes it correct.
+	browserMu sync.Mutex
+	// bwOpened is the user-opened latch. Only /browser (RunBrowserCommand)
+	// sets it; runBrowser refuses everything but proxy until then.
+	bwOpened bool
+	// currentProfile is the active BetterWright profile ("default" = the
+	// shared profile).
+	currentProfile = bw.DefaultProfile
+	// browserProxyURL / lastProxyURL carry the proxy state. Chromium on
+	// Linux honors HTTP(S)_PROXY env vars, so the URL rides the CLI spawn;
+	// other platforms pick proxies up from system settings.
 	browserProxyURL string
 	lastProxyURL    string
-	browserMu       sync.Mutex
-	betterfoxDir    = filepath.Join(".temp", "Betterfox")
 )
 
-func init() {
-	profiles = make(map[string]playwright.BrowserContext)
-	pages = make(map[string]playwright.Page)
-	currentProfile = "default"
-}
+const contentMaxChars = 12_000
 
-const (
-	browserDefaultTimeout = 30 * time.Second
-	contentMaxChars       = 12_000
-)
+var browserDescription = `Control the user's BetterWright browser daemon; the user must open it
+first (/browser open <url>) — every action except proxy errors until then.
+The daemon keeps tabs, page state, and profile logins alive between calls.
 
-var browserDescription = `Control an already-open web browser via Playwright.
+open/navigate: url, scheme auto-added. search: text, Mojeek results.
+click: selector. type: selector+text (fill, not append). screenshot: PNG
+to a temp path, visible to vision models; optional name grades the
+screenshot:<name> evidence check. content: visible text, boilerplate
+stripped, 12K cap. profile: subcommands (see param). close. proxy:
+on|off|URL for the next launch; works with no browser open.
 
-If the browser is not open, this tool will ask the user to open it first
-with /browser open <url>. It does not spawn Firefox itself.
-
-Actions:
-- open <url>: open a URL in the current profile (scheme auto-prepended, so
-  "google.com" works).
-- navigate <url>: go to a URL in the already-open page.
-- search <query>: search on the current page or open duckduckgo.com and run a search in one step. Tries common search input selectors; if none match it lists visible inputs so you can target them with click/type.
-- click <selector>: click the first element matching a CSS selector.
-- type <selector> <text>: fill an input matching a CSS selector.
-- screenshot: save the visible viewport to /tmp/browser-screenshot.png.
-- content: return the visible text of the page (trimmed, not raw HTML).
-- close: close the browser and release the Playwright driver so a subsequent
-  open can spawn a new one.
-- profile list|create <name>|switch <name>|delete <name>: manage profiles.
-- proxy on|off|<url>: toggle the HTTP/HTTPS/SOCKS proxy for the next launch
-  (e.g. "http://127.0.0.1:8885"). "on" re-enables the last-used URL (or the
-  browser.proxy config value); "off" disables it. Takes effect on the next
-  open after a close; also configurable via browser.proxy in config.yaml.
-
-Use /browser to open a URL, then use the browser_* tools to interact with it.`
+Prefer browser_navigate/browser_interact/browser_read for page work.`
 
 // BrowserTool returns the browser control tool definition + handler.
 func BrowserTool() tooldef.Tool {
@@ -81,23 +73,27 @@ func BrowserTool() tooldef.Tool {
 				Properties: llm.Object{
 					"action": llm.Object{
 						"type":        "string",
-						"description": "Action: open, navigate, search, click, type, screenshot, content, close, profile. Example: open",
+						"description": "open|navigate|search|click|type|screenshot|content|close|profile|proxy",
 					},
 					"url": llm.Object{
 						"type":        "string",
-						"description": "URL to open or navigate to. Example: https://example.com",
+						"description": "URL for open/navigate.",
 					},
 					"selector": llm.Object{
 						"type":        "string",
-						"description": "CSS selector for click/type. Example: #submit",
+						"description": "CSS selector, e.g. #submit",
 					},
 					"text": llm.Object{
 						"type":        "string",
-						"description": "Text to type into an input. Example: hello world",
+						"description": "Text to type, or the search query.",
 					},
 					"profile": llm.Object{
 						"type":        "string",
-						"description": "Browser profile name for isolation, or profile subcommand. Example: work",
+						"description": "Name for open; or list|create|switch|delete <name>.",
+					},
+					"name": llm.Object{
+						"type":        "string",
+						"description": "Optional screenshot name: grades the screenshot:<name> evidence check when declared in a contract.",
 					},
 				},
 				Required: []string{"action"},
@@ -111,7 +107,7 @@ func BrowserTool() tooldef.Tool {
 		DetailFromArgs: func(input json.RawMessage) string {
 			var in browserInput
 			_ = json.Unmarshal(input, &in)
-			a := strings.TrimSpace(in.Action)
+			a := strings.ToLower(strings.TrimSpace(in.Action))
 			if a == "" {
 				return "browser"
 			}
@@ -127,12 +123,13 @@ type browserInput struct {
 	URL      string `json:"url,omitempty"`
 	Selector string `json:"selector,omitempty"`
 	Text     string `json:"text,omitempty"`
+	Name     string `json:"name,omitempty"`
 }
 
-// runBrowser is the LLM-facing tool handler. It does NOT auto-launch the
-// browser; it only controls an already-open browser. This prevents the model
-// from spawning Firefox on its own. If the browser is not open, it returns an
-// error directing the user to /browser open <url>.
+// runBrowser is the LLM-facing tool handler. It does NOT open the browser;
+// it only controls the user's already-open daemon session. This prevents the
+// model from spawning browsers on its own. If the browser is not open, it
+// returns an error directing the user to /browser open <url>.
 func runBrowser(ctx context.Context, input json.RawMessage) (tooldef.Result, error) {
 	var in browserInput
 	if err := json.Unmarshal(input, &in); err != nil {
@@ -147,29 +144,28 @@ func runBrowser(ctx context.Context, input json.RawMessage) (tooldef.Result, err
 	}
 
 	// proxy is the only action that does not need the browser up: it sets the
-	// URL used by the next launch. Firefox picks up the proxy at launch time,
-	// so a change takes effect on the next open after a close.
+	// URL used by the next spawn. The daemon picks the proxy up from the
+	// environment at launch time, so a change takes effect on the next open
+	// after a close.
 	if action == "proxy" {
 		return browserProxy(in)
 	}
 
 	// Hold browserMu for the whole action so every sub-call can read and
-	// mutate the shared maps without a race. No sub-action re-acquires it.
+	// mutate the shared state without a race. No sub-action re-acquires it.
 	browserMu.Lock()
 	defer browserMu.Unlock()
 
-	for _, p := range pages {
-		if p != nil {
-			return dispatchBrowserAction(action, in)
-		}
+	if !bwOpened {
+		return tooldef.Result{}, fmt.Errorf(
+			"browser is not open; please ask the user nicely to open the browser with /browser open <url> or use the fetch tool",
+		)
 	}
-	return tooldef.Result{}, fmt.Errorf(
-		"browser is not open; please ask the user nicely to open the browser with /browser open <url> or use the fetch tool",
-	)
+	return dispatchBrowserAction(ctx, action, in)
 }
 
-// RunBrowserCommand is the slash-command handler. It auto-launches the
-// browser if needed, then runs the requested action. Only the user-facing
+// RunBrowserCommand is the slash-command handler. It opens the browser
+// daemon if needed, then runs the requested action. Only the user-facing
 // /browser command should call this; the LLM tool uses runBrowser instead.
 func RunBrowserCommand(ctx context.Context, input json.RawMessage) (tooldef.Result, error) {
 	var in browserInput
@@ -195,29 +191,29 @@ func RunBrowserCommand(ctx context.Context, input json.RawMessage) (tooldef.Resu
 	browserMu.Lock()
 	defer browserMu.Unlock()
 
-	return dispatchBrowserAction(action, in)
+	return dispatchBrowserAction(ctx, action, in)
 }
 
-func dispatchBrowserAction(action string, in browserInput) (tooldef.Result, error) {
+func dispatchBrowserAction(ctx context.Context, action string, in browserInput) (tooldef.Result, error) {
 	switch action {
 	case "open":
-		return browserOpen(in)
+		return browserOpen(ctx, in)
 	case "navigate":
-		return browserNavigate(in)
+		return browserNavigate(ctx, in)
 	case "search":
-		return browserSearch(in)
+		return browserSearch(ctx, in)
 	case "click":
-		return browserClick(in)
+		return browserClick(ctx, in)
 	case "type":
-		return browserType(in)
+		return browserType(ctx, in)
 	case "screenshot":
-		return browserScreenshot()
+		return browserScreenshot(ctx, in)
 	case "content":
-		return browserContent()
+		return browserContent(ctx)
 	case "close":
-		return browserClose()
+		return browserClose(ctx)
 	case "profile":
-		return browserProfile(in)
+		return browserProfile(ctx, in)
 	default:
 		return tooldef.Result{}, fmt.Errorf(
 			"unknown action %q: use open, navigate, click, type, screenshot, content, close, profile",
@@ -226,49 +222,14 @@ func dispatchBrowserAction(action string, in browserInput) (tooldef.Result, erro
 	}
 }
 
-// ensureBrowser launches the persistent Firefox process and the default
-// profile on first use. It is called from runBrowser while NOT holding
-// browserMu, so the lock is free to acquire below. It holds browserMu for
-// the whole launch so two concurrent runBrowser calls (browser is Readable,
-// so it can run in a concurrent batch) cannot both spawn a browser.
-// launchTimeoutMs caps how long a browser launch may take. Playwright defaults
-// to 180s; a profile that cannot start would otherwise hang the whole turn.
-const launchTimeoutMs = 30000
-
-// profileSizeWarning flags a profile dir big enough to stall launch. Firefox
-// holds a 15 MB places.sqlite fine but chokes on a storage/ dir accumulated
-// over months of browsing, which shows up as exactly this timeout.
-func profileSizeWarning(dir string) string {
-	var total int64
-	_ = filepath.WalkDir(dir, func(_ string, d os.DirEntry, err error) error {
-		if err != nil || d == nil || d.IsDir() {
-			return nil
-		}
-		if info, err := d.Info(); err == nil {
-			total += info.Size()
-		}
-		return nil
-	})
-	const warnBytes = 512 << 20
-	if total < warnBytes {
-		return ""
-	}
-	return fmt.Sprintf("profile %s is %.0f MB — a large profile can make launch time out; "+
-		"rename it to use a fresh one", dir, float64(total)/(1<<20))
-}
-
-// hasDisplay reports whether a graphical session is reachable. A bare
-// DISPLAY/WAYLAND_DISPLAY check is enough: playwright's launch is what fails
-// without one, and it fails slowly.
+// hasDisplay reports whether a graphical session is reachable. Headed mode
+// needs one; a daemon spawn without a display would fail slowly otherwise.
 func hasDisplay() bool {
-	if os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != "" {
-		return true
-	}
-	return false
+	return os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != ""
 }
 
-// browserHeadless decides the launch mode, honouring A1_BROWSER_HEADLESS as an
-// explicit override.
+// browserHeadless decides the daemon's launch mode, honouring
+// A1_BROWSER_HEADLESS as an explicit override.
 func browserHeadless() bool {
 	if v := strings.TrimSpace(os.Getenv("A1_BROWSER_HEADLESS")); v != "" {
 		return v != "0" && !strings.EqualFold(v, "false")
@@ -276,21 +237,24 @@ func browserHeadless() bool {
 	return !hasDisplay()
 }
 
+// ensureBrowser warms the daemon: a trivial run per profile spawns its
+// browser, mirroring the old launch-all-at-open behavior. Called from
+// RunBrowserCommand while NOT holding browserMu, so the lock is free to
+// acquire below; it holds browserMu for the whole warm-up so two concurrent
+// commands cannot double-spawn.
 func ensureBrowser(ctx context.Context) error {
 	// Slash commands run on the UI goroutine and may pass a nil context.
-	// context.WithCancel panics on a nil parent, so fall back to a
-	// background context here rather than propagating the panic.
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	browserMu.Lock()
 	defer browserMu.Unlock()
-	if pw != nil {
+	if bwOpened {
 		return nil
 	}
 
 	// Seed the proxy from config at startup so a configured proxy takes
-	// effect on the very first launch. Runtime overrides via SetProxy /
+	// effect on the very first spawn. Runtime overrides via SetProxy /
 	// browserProxy win because they are checked first.
 	if browserProxyURL == "" {
 		if proj := project.GetDefaultProject(); proj != nil && proj.Config() != nil {
@@ -298,502 +262,374 @@ func ensureBrowser(ctx context.Context) error {
 		}
 	}
 
-	pwLocal, err := playwright.Run()
-	if err != nil {
-		// playwright's own message ("please install the driver (v1.62.1)
-		// first") names no command the user can run. Say what to do.
-		if strings.Contains(err.Error(), "install the driver") {
-			return fmt.Errorf("playwright driver is not installed — run `go run github.com/mxschmitt/playwright-go/cmd/playwright install --with-deps` "+
-				"(or `playwright install`), then retry: %w", err)
-		}
-		return fmt.Errorf("playwright run: %w", err)
+	headed := !browserHeadless()
+	if _, err := bw.Run(ctx, "", headed, "return true"); err != nil {
+		return err
 	}
-	pw = pwLocal
-
-	// Headful needs a display, so the launch mode is browserHeadless()'s job:
-	// no DISPLAY/WAYLAND_DISPLAY means headless, which also works headful
-	// everywhere. A1_BROWSER_HEADLESS overrides it explicitly.
-	launchOpts := playwright.BrowserTypeLaunchPersistentContextOptions{
-		Headless: playwright.Bool(browserHeadless()),
-		// Playwright's default is 180s, which turns a broken or oversized profile
-		// into three minutes of silence. Bound it, and say why on failure.
-		Timeout: playwright.Float(launchTimeoutMs),
-	}
-	if browserProxyURL != "" {
-		launchOpts.Proxy = &playwright.Proxy{Server: browserProxyURL}
-	}
-
-	userDataDir := filepath.Join(os.Getenv("HOME"), ".a1", "browser-profiles", "default")
-	if warn := profileSizeWarning(userDataDir); warn != "" {
-		// Not fatal — a big profile usually still launches — but the operator
-		// should know before the wait.
-		debuglog.Logf("browser: %s", warn)
-	}
-	if err := os.MkdirAll(userDataDir, 0o755); err != nil {
-		pw.Stop()
-		pw = nil
-		return fmt.Errorf("create profile dir: %w", err)
-	}
-	// Firefox leaves a "lock" symlink in the profile dir while it runs, and
-	// Playwright's LaunchPersistentContext will start a SECOND Firefox on
-	// the same profile dir rather than reuse it when the lock is stale —
-	// e.g. after a crash or a killed process left an orphaned content
-	// proc. Clear it so the launch always takes over cleanly.
-	if err := clearStaleProfileLock(userDataDir); err != nil {
-		// Non-fatal: a bad lock is a hint, not a launch blocker.
-	}
-	if err := seedProfileTweaks(userDataDir); err != nil {
-		pw.Stop()
-		pw = nil
-		return fmt.Errorf("seed profile tweaks: %w", err)
-	}
-	ctx2, err := pwLocal.Firefox.LaunchPersistentContext(userDataDir, launchOpts)
-	if err != nil {
-		pw.Stop()
-		pw = nil
-		return fmt.Errorf("launch browser: %w", err)
-	}
-	profiles["default"] = ctx2
-	// LaunchPersistentContext already opens an about:blank page; calling
-	// NewPage() on top of it spawns the second window the agent sees. Reuse
-	// the existing page when there is one.
-	var page playwright.Page
-	if existing := ctx2.Pages(); len(existing) > 0 {
-		page = existing[0]
-	} else {
-		var err error
-		page, err = ctx2.NewPage()
-		if err != nil {
-			ctx2.Close()
-			delete(profiles, "default")
-			pw.Stop()
-			pw = nil
-			return fmt.Errorf("new page for default profile: %w", err)
-		}
-	}
-	pages["default"] = page
-
-	// Create any additional profiles from config.
+	// Warm any additional profiles from config. Errors are logged by failing
+	// silently — a bad profile name must not block the default one.
 	if proj := project.GetDefaultProject(); proj != nil && proj.Config() != nil {
 		seen := make(map[string]struct{}, len(proj.Config().Browser.Profiles))
 		for _, name := range proj.Config().Browser.Profiles {
 			name = strings.TrimSpace(name)
-			if name == "" || name == "default" {
+			if name == "" || name == bw.DefaultProfile {
 				continue
 			}
 			if _, ok := seen[name]; ok {
 				continue
 			}
 			seen[name] = struct{}{}
-			if err := createProfile(name); err != nil {
-				// Log but don't fail startup for a bad profile name.
+			if !validProfileName(name) {
 				continue
 			}
+			_, _ = bw.Run(ctx, name, headed, "return true")
 		}
 	}
 
+	bwOpened = true
 	return nil
 }
 
-// createProfile creates a persistent Firefox profile dir under
-// ~/.a1/browser-profiles/<name>, seeds Betterfox/smoothfox tweaks, then
-// launches a persistent context pointing at that dir.
-func createProfile(name string) error {
-	userDataDir := filepath.Join(os.Getenv("HOME"), ".a1", "browser-profiles", name)
-	if err := os.MkdirAll(userDataDir, 0o755); err != nil {
-		return fmt.Errorf("create profile dir %q: %w", name, err)
-	}
-	if err := seedProfileTweaks(userDataDir); err != nil {
-		return fmt.Errorf("seed profile tweaks for %q: %w", name, err)
-	}
-	// Clear stale locks before launch so recreating a crashed profile does
-	// not spawn a secondary browser instance on the same dir.
-	if err := clearStaleProfileLock(userDataDir); err != nil {
-		// Non-fatal
-	}
-	launchOpts := playwright.BrowserTypeLaunchPersistentContextOptions{
-		Headless: playwright.Bool(browserHeadless()),
-		Timeout:  playwright.Float(launchTimeoutMs),
-	}
-	if browserProxyURL != "" {
-		launchOpts.Proxy = &playwright.Proxy{Server: browserProxyURL}
-	}
-	ctx, err := pw.Firefox.LaunchPersistentContext(userDataDir, launchOpts)
-	if err != nil {
-		return fmt.Errorf("create profile %q (if this times out, the profile dir is likely oversized or corrupt — rename %s and retry): %w",
-			name, userDataDir, err)
-	}
-	profiles[name] = ctx
-	// LaunchPersistentContext already opens an about:blank page; calling
-	// NewPage() on top of it spawns the second window the agent sees.
-	var page playwright.Page
-	if existing := ctx.Pages(); len(existing) > 0 {
-		page = existing[0]
-	} else {
-		page, err = ctx.NewPage()
-		if err != nil {
-			ctx.Close()
-			delete(profiles, name)
-			return fmt.Errorf("new page for profile %q: %w", name, err)
-		}
-	}
-	pages[name] = page
-	return nil
-}
-
-// seedProfileTweaks copies Betterfox user.js into the profile dir if
-// available. smoothfox.js is optional and ignored when missing.
-func seedProfileTweaks(dir string) error {
-	if _, err := os.Stat(betterfoxDir); err != nil {
-		return nil
-	}
-	src := filepath.Join(betterfoxDir, "user.js")
-	if _, err := os.Stat(src); err != nil {
-		return nil
-	}
-	dst := filepath.Join(dir, "user.js")
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-	if _, err := out.ReadFrom(in); err != nil {
-		return err
-	}
-	smooth := filepath.Join(betterfoxDir, "smoothfox.js")
-	if _, err := os.Stat(smooth); err != nil {
-		return nil
-	}
-	appendTo := func(path string) error {
-		f, err := os.OpenFile(dst, os.O_APPEND|os.O_WRONLY, 0o644)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		_, err = f.Write(b)
-		return err
-	}
-	return appendTo(smooth)
-}
-
-// clearStaleProfileLock removes stale Firefox profile locks when no Firefox
-// process is actually holding them. LaunchPersistentContext starts a second
-// browser on the same profile dir rather than reuse it when a lock survives
-// a crash — e.g. after a killed process left an orphaned content proc — so
-// the agent opens two windows in one profile. Firefox uses several lock files
-// depending on the OS; if .parentlock or parent.lock survive, Playwright
-// still thinks the profile is in use.
-func clearStaleProfileLock(dir string) error {
-	for _, name := range []string{"lock", ".parentlock", "parent.lock"} {
-		path := filepath.Join(dir, name)
-		if name == "lock" {
-			st, err := os.Lstat(path)
-			if err != nil {
-				continue
-			}
-			if st.Mode()&os.ModeSymlink == 0 {
-				continue
-			}
-			target, err := os.Readlink(path)
-			if err != nil {
-				continue
-			}
-			if pid, ok := parseLockPID(target); ok && pidAlive(pid) {
-				continue // process is actually alive, don't remove
-			}
-		}
-		_ = os.Remove(path)
-	}
-	return nil
-}
-
-// parseLockPID extracts a PID from a Firefox profile lock target, which is
-// formatted as "host:pid" (the pid may be prefixed with "+").
-func parseLockPID(target string) (int, bool) {
-	idx := strings.LastIndex(target, ":")
-	if idx < 0 || idx == len(target)-1 {
-		return 0, false
-	}
-	raw := strings.TrimPrefix(target[idx+1:], "+")
-	n, err := strconv.Atoi(raw)
-	if err != nil || n <= 0 {
-		return 0, false
-	}
-	return n, true
-}
-
-func pidAlive(pid int) bool {
-	if pid <= 0 {
+// validProfileName gates profile names: BetterWright allows letters, digits,
+// dot, dash, underscore; "/" and friends would escape the profiles dir.
+func validProfileName(name string) bool {
+	if name == "" || len(name) > 64 {
 		return false
 	}
-	_, err := os.Stat(fmt.Sprintf("/proc/%d", pid))
-	return err == nil
-}
-
-// SetProxy sets the proxy URL used by the next browser launch. It takes effect
-// on the next open after a close, since Firefox picks up the proxy at launch
-// time. Pass "" to disable the proxy. Thread-safe. The URL is remembered so
-// "proxy on" can re-enable it later without retyping.
-func SetProxy(url string) {
-	browserMu.Lock()
-	defer browserMu.Unlock()
-	url = strings.TrimSpace(url)
-	if url != "" {
-		lastProxyURL = url
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '-', r == '_', r == '.':
+		default:
+			return false
+		}
 	}
-	browserProxyURL = url
+	return name != "." && name != ".."
 }
 
-// ProxyURL returns the proxy currently configured for the next launch.
-func ProxyURL() string {
-	browserMu.Lock()
-	defer browserMu.Unlock()
-	return browserProxyURL
-}
-
-func currentPage() playwright.Page {
-	if p, ok := pages[currentProfile]; ok {
-		return p
+// profileName maps an a1 profile name to the BetterWright profile flag:
+// "default" means the shared profile (empty flag).
+func profileName(name string) string {
+	if name == bw.DefaultProfile {
+		return ""
 	}
-	return nil
+	return name
 }
 
-// browserSearch bypasses the DuckDuckGo homepage UI — cookie banners,
-// captchas, and selector fragility — and jumps straight to the results URL.
-// This is faster and ignores captchas that only trigger on homepage UI
-// interaction.
-func browserSearch(in browserInput) (tooldef.Result, error) {
+// runPage executes js in the current profile and returns the envelope.
+func runPage(ctx context.Context, js string) (bw.Envelope, error) {
+	return bw.Run(ctx, profileName(currentProfile), !browserHeadless(), js)
+}
+
+// browserSearch jumps straight to a results page. BetterWright blocks
+// automation of the big public search UIs (Google, Bing, DuckDuckGo) on its
+// managed browser, so the in-browser search action uses Mojeek — an
+// independent index with no aggressive bot walls. The fetch tool's search
+// router remains the primary search path; this action is for when the model
+// is already in the browser and wants to follow a query.
+func browserSearch(ctx context.Context, in browserInput) (tooldef.Result, error) {
 	query := strings.TrimSpace(in.Text)
 	if query == "" {
 		return tooldef.Result{}, fmt.Errorf("text (the search query) is required for search")
 	}
-	page := currentPage()
-	if page == nil {
-		return tooldef.Result{}, fmt.Errorf("browser not open; use action=open first")
-	}
-	// Bypass the homepage UI entirely — DDG's search input selectors change
-	// and get blocked by cookie banners, so just land on the results page.
-	searchURL := "https://duckduckgo.com/?q=" + url.QueryEscape(query)
-	if _, err := page.Goto(searchURL); err != nil {
+	searchURL := "https://www.mojeek.com/search?q=" + url.QueryEscape(query)
+	env, err := runPage(ctx, fmt.Sprintf(
+		"await page.goto(%s); return {url: page.url(), title: await page.title()}", bw.JSString(searchURL),
+	))
+	if err != nil {
 		return tooldef.Result{}, fmt.Errorf("navigate to search: %w", err)
 	}
-	if err := page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
-		State: playwright.LoadStateDomcontentloaded,
-	}); err != nil {
-		return tooldef.Result{}, fmt.Errorf("wait for load: %w", err)
+	var out struct {
+		URL   string `json:"url"`
+		Title string `json:"title"`
 	}
-	title, _ := page.Title()
-	return tooldef.Result{
-		Content: fmt.Sprintf("Searched DuckDuckGo for %q\nURL: %s\nTitle: %s", query, searchURL, title),
+	_ = json.Unmarshal(env.Result, &out)
+	res := tooldef.Result{
+		Content: fmt.Sprintf("Searched Mojeek for %q\nURL: %s\nTitle: %s", query, searchURL, out.Title),
 		Detail:  fmt.Sprintf("search %q", query),
 		Summary: Summary("Searched", hostOf(searchURL), 0, 0),
-		Output:  fmt.Sprintf("Searched DuckDuckGo for %q", query),
-	}, nil
+		Output:  fmt.Sprintf("Searched Mojeek for %q", query),
+	}
+	applyChallenges(&res, env)
+	return res, nil
 }
 
 // browserOpen is called from runBrowser while browserMu is held.
-func browserOpen(in browserInput) (tooldef.Result, error) {
+func browserOpen(ctx context.Context, in browserInput) (tooldef.Result, error) {
 	profile := strings.TrimSpace(in.Profile)
 	if profile == "" {
 		profile = currentProfile
 	}
-	url := normalizeURL(strings.TrimSpace(in.URL))
-	if url == "" {
+	u := normalizeURL(strings.TrimSpace(in.URL))
+	if u == "" {
 		return tooldef.Result{}, fmt.Errorf("url is required for open")
 	}
-	// ensureBrowser was already called by runBrowser before the lock, so
-	// browserMu is held here by the caller for the whole action.
-	if profile == "default" {
-		// The default profile is created once by ensureBrowser and reused
-		// for every open. Never spawn a second Firefox on the same profile
-		// dir — LaunchPersistentContext on an already-open userDataDir leaves
-		// the first process orphaned and opens a second window.
-		if _, exists := profiles["default"]; !exists {
-			return tooldef.Result{}, fmt.Errorf("default profile not initialized; retry the open")
+	if profile != bw.DefaultProfile {
+		if !validProfileName(profile) {
+			return tooldef.Result{}, fmt.Errorf("invalid profile name %q", profile)
 		}
-	} else if _, exists := profiles[profile]; !exists {
-		if err := createProfile(profile); err != nil {
-			return tooldef.Result{}, err
+		if err := os.MkdirAll(bw.ProfileDir(profile), 0o755); err != nil {
+			return tooldef.Result{}, fmt.Errorf("create profile dir: %w", err)
 		}
 	}
 	currentProfile = profile
-	page := pages[profile]
-	if _, err := page.Goto(url); err != nil {
+	env, err := bw.Run(ctx, profileName(profile), !browserHeadless(), fmt.Sprintf(
+		"await page.goto(%s); return {url: page.url(), title: await page.title()}", bw.JSString(u),
+	))
+	if err != nil {
 		return tooldef.Result{}, fmt.Errorf("navigate: %w", err)
 	}
-	title, _ := page.Title()
-	return tooldef.Result{
-		Content: fmt.Sprintf("Opened %s\nProfile: %s\nTitle: %s", url, profile, title),
-		Detail:  url,
-		Summary: Summary("Opened", hostOf(url), 0, 0),
-		Output:  fmt.Sprintf("Opened %s", url),
-	}, nil
+	var out struct {
+		URL   string `json:"url"`
+		Title string `json:"title"`
+	}
+	_ = json.Unmarshal(env.Result, &out)
+	res := tooldef.Result{
+		Content: fmt.Sprintf("Opened %s\nProfile: %s\nTitle: %s", u, profile, out.Title),
+		Detail:  u,
+		Summary: Summary("Opened", hostOf(u), 0, 0),
+		Output:  fmt.Sprintf("Opened %s", u),
+	}
+	applyChallenges(&res, env)
+	return res, nil
 }
 
 // browserNavigate is called from runBrowser while browserMu is held.
-func browserNavigate(in browserInput) (tooldef.Result, error) {
-	url := normalizeURL(strings.TrimSpace(in.URL))
-	if url == "" {
+func browserNavigate(ctx context.Context, in browserInput) (tooldef.Result, error) {
+	u := normalizeURL(strings.TrimSpace(in.URL))
+	if u == "" {
 		return tooldef.Result{}, fmt.Errorf("url is required for navigate")
 	}
-	page := currentPage()
-	if page == nil {
-		return tooldef.Result{}, fmt.Errorf("browser not open; use action=open first")
-	}
-	if _, err := page.Goto(url); err != nil {
+	env, err := runPage(ctx, fmt.Sprintf(
+		"await page.goto(%s); return {url: page.url(), title: await page.title()}", bw.JSString(u),
+	))
+	if err != nil {
 		return tooldef.Result{}, fmt.Errorf("navigate: %w", err)
 	}
-	title, _ := page.Title()
-	return tooldef.Result{
-		Content: fmt.Sprintf("Navigated to %s\nTitle: %s", url, title),
-		Detail:  url,
-		Summary: Summary("Navigated", hostOf(url), 0, 0),
-		Output:  fmt.Sprintf("Navigated to %s", url),
-	}, nil
+	var out struct {
+		URL   string `json:"url"`
+		Title string `json:"title"`
+	}
+	_ = json.Unmarshal(env.Result, &out)
+	res := tooldef.Result{
+		Content: fmt.Sprintf("Navigated to %s\nTitle: %s", u, out.Title),
+		Detail:  u,
+		Summary: Summary("Navigated", hostOf(u), 0, 0),
+		Output:  fmt.Sprintf("Navigated to %s", u),
+	}
+	applyChallenges(&res, env)
+	return res, nil
 }
 
 // browserClick is called from runBrowser while browserMu is held.
-func browserClick(in browserInput) (tooldef.Result, error) {
+func browserClick(ctx context.Context, in browserInput) (tooldef.Result, error) {
 	sel := strings.TrimSpace(in.Selector)
 	if sel == "" {
 		return tooldef.Result{}, fmt.Errorf("selector is required for click")
 	}
-	page := currentPage()
-	if page == nil {
-		return tooldef.Result{}, fmt.Errorf("browser not open; use action=open first")
-	}
-	if err := page.Click(sel); err != nil {
+	env, err := runPage(ctx, fmt.Sprintf(
+		"await page.click(%s); await page.waitForLoadState('domcontentloaded').catch(() => {}); return true",
+		bw.JSString(sel),
+	))
+	if err != nil {
 		return tooldef.Result{}, fmt.Errorf("click %q: %w", sel, err)
 	}
-	// Sync state: if the click triggered a navigation, wait for the new page
-	// to render before returning, so a follow-up content call sees the new
-	// page rather than the old one. domcontentloaded returns instantly when
-	// no navigation occurred, so it won't hang on JS modals.
-	_ = page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
-		State: playwright.LoadStateDomcontentloaded,
-	})
-
-	return tooldef.Result{
+	res := tooldef.Result{
 		Content: fmt.Sprintf("Clicked %s", sel),
 		Detail:  sel,
 		Summary: Summary("Clicked", sel, 0, 0),
 		Output:  fmt.Sprintf("Clicked %s", sel),
-	}, nil
+	}
+	applyChallenges(&res, env)
+	return res, nil
 }
 
 // browserType is called from runBrowser while browserMu is held.
-func browserType(in browserInput) (tooldef.Result, error) {
+func browserType(ctx context.Context, in browserInput) (tooldef.Result, error) {
 	sel := strings.TrimSpace(in.Selector)
 	text := in.Text
 	if sel == "" {
 		return tooldef.Result{}, fmt.Errorf("selector is required for type")
 	}
-	page := currentPage()
-	if page == nil {
-		return tooldef.Result{}, fmt.Errorf("browser not open; use action=open first")
-	}
-	if err := page.Fill(sel, text); err != nil {
+	env, err := runPage(ctx, fmt.Sprintf(
+		"await page.fill(%s, %s); await page.waitForLoadState('domcontentloaded').catch(() => {}); return true",
+		bw.JSString(sel), bw.JSString(text),
+	))
+	if err != nil {
 		return tooldef.Result{}, fmt.Errorf("type into %q: %w", sel, err)
 	}
-	// Sync state for form submissions — if the fill/submit triggered a
-	// navigation, wait for the new page to render before returning.
-	_ = page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
-		State: playwright.LoadStateDomcontentloaded,
-	})
-
-	return tooldef.Result{
+	res := tooldef.Result{
 		Content: fmt.Sprintf("Typed into %s", sel),
 		Detail:  sel,
 		Summary: Summary("Typed into", sel, 0, 0),
 		Output:  fmt.Sprintf("Typed into %s", sel),
-	}, nil
+	}
+	applyChallenges(&res, env)
+	return res, nil
 }
 
-func browserScreenshot() (tooldef.Result, error) {
-	page := currentPage()
-	if page == nil {
-		return tooldef.Result{}, fmt.Errorf("browser not open; use action=open first")
+// applyChallenges turns envelope challenges into a handoff hint so the
+// executor can route the state through the permission ask flow.
+func applyChallenges(res *tooldef.Result, env bw.Envelope) {
+	if reason := env.HandoffReason(); reason != "" {
+		res.Handoff = &tooldef.Handoff{Reason: reason}
+		for _, c := range env.Challenges {
+			if c.URL != "" {
+				res.Handoff.URL = c.URL
+				break
+			}
+		}
 	}
-	buf, err := page.Screenshot()
+}
+
+func browserScreenshot(ctx context.Context, in browserInput) (tooldef.Result, error) {
+	env, err := runPage(ctx,
+		"const s = await screenshot({kind: 'proof', name: 'a1.png', type: 'png'}); return s;")
 	if err != nil {
 		return tooldef.Result{}, fmt.Errorf("screenshot: %w", err)
 	}
-	path := "/tmp/browser-screenshot.png"
+	var shot struct {
+		Kind  string `json:"kind"`
+		Path  string `json:"path"`
+		Media string `json:"media"`
+	}
+	if err := json.Unmarshal(env.Result, &shot); err != nil || shot.Path == "" {
+		return tooldef.Result{}, fmt.Errorf("screenshot: unexpected daemon result %.200s", string(env.Result))
+	}
+	buf, err := os.ReadFile(shot.Path)
+	if err != nil {
+		return tooldef.Result{}, fmt.Errorf("read capture artifact: %w", err)
+	}
+	// Copy into a per-call temp file: concurrent sessions and repeated
+	// screenshots used to clobber /tmp/browser-screenshot.png, and daemon
+	// artifacts live under a size quota that evicts the oldest — the a1
+	// path is the stable copy the transcript points at.
+	path, closeFn, err := newScreenshotPath()
+	if err != nil {
+		return tooldef.Result{}, fmt.Errorf("create screenshot temp file: %w", err)
+	}
 	if err := os.WriteFile(path, buf, 0o644); err != nil {
+		closeFn(true) // remove on failure
 		return tooldef.Result{}, fmt.Errorf("write screenshot: %w", err)
 	}
+	closeFn(false) // close only, keep the file
 	// The action is the identity and the filename is the summary. The full path
 	// stays in Content and in the expanded body, where it can be copied — the row
 	// header is the glanceable part and a long path made it unreadable.
-	return tooldef.Result{
+	res := tooldef.Result{
 		Content: fmt.Sprintf("Screenshot saved to %s (%d bytes)", path, len(buf)),
 		Detail:  "screenshot",
 		Summary: ScreenshotSummary(path),
 		Output:  fmt.Sprintf("Screenshot: %s", path),
-	}, nil
+	}
+	// Vision-capable models see the capture itself, not just its path. The
+	// fit bounds the bytes (~1 MiB, ≤1600px) so a 4K screenshot cannot
+	// dominate the context; blind models keep the path-only text above.
+	if tooldef.ImageEnabledFrom(ctx) {
+		if fitted, mime, err := imgutil.FitForModel(buf, "image/png", 0, 0); err == nil {
+			res.Images = []llm.Image{imgutil.ToLLM(imgutil.Result{Data: fitted, MimeType: mime})}
+		}
+	}
+	// Named captures feed the evidence ledger's screenshot:<name> watches;
+	// the executor's hook grades them against the stored baseline.
+	if name := strings.TrimSpace(in.Name); name != "" {
+		res.Screenshot = &tooldef.ScreenshotFact{Name: name, Path: path}
+	}
+	applyChallenges(&res, env)
+	return res, nil
 }
 
-func browserContent() (tooldef.Result, error) {
-	page := currentPage()
-	if page == nil {
-		return tooldef.Result{}, fmt.Errorf("browser not open; use action=open first")
+// newScreenshotPath creates a per-call temp file for a browser screenshot and
+// returns its path plus a cleanup closure. The closure should be called with
+// remove=true on write failure (deletes the file) or remove=false on success
+// (just closes the handle). Each call returns a unique path so concurrent
+// sessions and repeated screenshots in one session no longer clobber each
+// other at /tmp/browser-screenshot.png.
+//
+// The file is created with the `a1-screenshot-*.png` pattern under the OS temp
+// dir; the * is replaced by a random string by os.CreateTemp.
+func newScreenshotPath() (path string, cleanup func(remove bool), err error) {
+	tmp, err := os.CreateTemp("", "a1-screenshot-*.png")
+	if err != nil {
+		return "", nil, err
 	}
-	// page.TextContent("body") returns the entire DOM, including <nav>,
-	// <footer>, and <script> tags. Inject a small JS snippet to strip
-	// boilerplate and append hrefs to links so the LLM knows where they
-	// point instead of guessing.
-	extractJS := `() => {
-		const clone = document.body.cloneNode(true);
-		const noise = clone.querySelectorAll('script, style, noscript, svg, iframe, nav, footer, aside, header, [role="banner"], [role="navigation"], [role="complementary"]');
-		noise.forEach(el => el.remove());
-		// format links so the llm knows what they point to without guessing
-		clone.querySelectorAll('a').forEach(a => {
-			const href = a.getAttribute('href');
-			if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
-				a.innerText = a.innerText + ' (' + href + ')';
-			}
-		});
-		return clone.innerText;
-	}`
+	path = tmp.Name()
+	cleanup = func(remove bool) {
+		_ = tmp.Close()
+		if remove {
+			_ = os.Remove(path)
+		}
+	}
+	return path, cleanup, nil
+}
 
-	rawText, err := page.Evaluate(extractJS)
+// contentJS extracts readable text from the page body: clone, strip the
+// noise tags, append hrefs to links so the model knows where they point
+// without guessing. Executed inside the daemon's page.evaluate.
+const contentJS = `const text = await page.evaluate(() => {
+        const clone = document.body.cloneNode(true);
+        const noise = clone.querySelectorAll('script, style, noscript, svg, iframe, nav, footer, aside, header, [role="banner"], [role="navigation"], [role="complementary"]');
+        noise.forEach(el => el.remove());
+        clone.querySelectorAll('a').forEach(a => {
+                const href = a.getAttribute('href');
+                if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
+                        a.innerText = a.innerText + ' (' + href + ')';
+                }
+        });
+        return clone.innerText;
+});
+return {text: text, url: page.url(), title: await page.title()};`
+
+func browserContent(ctx context.Context) (tooldef.Result, error) {
+	env, err := runPage(ctx, contentJS)
 	if err != nil {
 		return tooldef.Result{}, fmt.Errorf("content: %w", err)
 	}
-	text, ok := rawText.(string)
-	if !ok {
-		text = fmt.Sprintf("%v", rawText)
+	var out struct {
+		Text  string `json:"text"`
+		URL   string `json:"url"`
+		Title string `json:"title"`
+		// Spilled-output shape: BetterWright bounds result sizes; an
+		// over-limit value is spilled to a file and replaced with
+		// {truncated, preview, fullOutputPath}.
+		Truncated      bool   `json:"truncated"`
+		FullOutputPath string `json:"fullOutputPath"`
+	}
+	if err := json.Unmarshal(env.Result, &out); err != nil {
+		return tooldef.Result{}, fmt.Errorf("content: unexpected daemon result %.200s", string(env.Result))
+	}
+	if out.Truncated && out.FullOutputPath != "" {
+		if b, rerr := os.ReadFile(out.FullOutputPath); rerr == nil {
+			var spilled struct {
+				Text  string `json:"text"`
+				URL   string `json:"url"`
+				Title string `json:"title"`
+			}
+			if jerr := json.Unmarshal(b, &spilled); jerr == nil && spilled.Text != "" {
+				out.Text, out.URL, out.Title = spilled.Text, spilled.URL, spilled.Title
+			}
+		}
 	}
 
-	title, _ := page.Title()
-	url := page.URL()
-
-	text = strings.TrimSpace(text)
+	text := strings.TrimSpace(out.Text)
 	text = collapseWhitespace(text)
 	if len(text) > contentMaxChars {
 		text = text[:contentMaxChars] + "\n…[truncated]"
 	}
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("URL: %s\nTitle: %s\nProfile: %s\n\n", url, title, currentProfile))
+	sb.WriteString(fmt.Sprintf("URL: %s\nTitle: %s\nProfile: %s\n\n", out.URL, out.Title, currentProfile))
 	sb.WriteString(text)
 	// Detail was the page title here, which silently replaced the call's identity
 	// ("browser content" became whatever the page happened to be called). The
 	// url is the identity; the title and size belong in Summary.
-	return tooldef.Result{
+	res := tooldef.Result{
 		Content: sb.String(),
 		Detail:  "content",
-		Summary: Summary("Read", hostOf(url), len(text), 0),
+		Summary: Summary("Read", hostOf(out.URL), len(text), 0),
 		Output:  sb.String(),
-	}, nil
+	}
+	applyChallenges(&res, env)
+	return res, nil
 }
 
 // collapseWhitespace replaces runs of whitespace (including newlines) with a
@@ -816,28 +652,24 @@ func collapseWhitespace(s string) string {
 	return sb.String()
 }
 
-func browserClose() (tooldef.Result, error) {
-	for name, ctx := range profiles {
-		ctx.Close()
-		delete(profiles, name)
+func browserClose(ctx context.Context) (tooldef.Result, error) {
+	// --all closes every profile's daemon and stops them now; the on-disk
+	// profiles and their logins survive, which is the whole point of the
+	// daemon — a later open lands in a still-signed-in session.
+	if err := bw.Close(ctx, true, ""); err != nil {
+		return tooldef.Result{}, fmt.Errorf("close: %w", err)
 	}
-	for name := range pages {
-		delete(pages, name)
-	}
-	currentProfile = "default"
-	if pw != nil {
-		pw.Stop()
-		pw = nil
-	}
+	bwOpened = false
+	currentProfile = bw.DefaultProfile
 	return tooldef.Result{
-		Content: "Browser closed",
+		Content: "Browser closed (profiles and logins kept on disk)",
 		Detail:  "closed",
 		Summary: Summary("Closed", "", 0, 0),
-		Output:  "Browser closed",
+		Output:  "Browser closed (profiles and logins kept on disk)",
 	}, nil
 }
 
-func browserProfile(in browserInput) (tooldef.Result, error) {
+func browserProfile(ctx context.Context, in browserInput) (tooldef.Result, error) {
 	profile := strings.TrimSpace(in.Profile)
 	if profile == "" {
 		return browserProfileList()
@@ -856,24 +688,33 @@ func browserProfile(in browserInput) (tooldef.Result, error) {
 	case "switch":
 		return browserProfileSwitch(arg)
 	case "delete":
-		return browserProfileDelete(arg)
+		return browserProfileDelete(ctx, arg)
 	default:
 		return tooldef.Result{}, fmt.Errorf("unknown profile command %q: use list, create, switch, delete", cmd)
 	}
 }
 
-func browserProfileList() (tooldef.Result, error) {
-	if len(profiles) == 0 {
-		return tooldef.Result{
-			Content: "No profiles",
-			Detail:  "0 profiles",
-			Summary: ProfilesSummary(0),
-			Output:  "No profiles",
-		}, nil
+// listProfiles returns the known profile names: "default" (the shared
+// profile) plus every directory under BetterWright's profiles dir.
+func listProfiles() []string {
+	names := []string{bw.DefaultProfile}
+	entries, err := os.ReadDir(bw.ProfilesDir())
+	if err != nil {
+		return names
 	}
+	for _, e := range entries {
+		if e.IsDir() && validProfileName(e.Name()) {
+			names = append(names, e.Name())
+		}
+	}
+	return names
+}
+
+func browserProfileList() (tooldef.Result, error) {
+	names := listProfiles()
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Profiles (%d):\n", len(profiles)))
-	for name := range profiles {
+	sb.WriteString(fmt.Sprintf("Profiles (%d):\n", len(names)))
+	for _, name := range names {
 		marker := ""
 		if name == currentProfile {
 			marker = " (active)"
@@ -882,26 +723,34 @@ func browserProfileList() (tooldef.Result, error) {
 	}
 	return tooldef.Result{
 		Content: sb.String(),
-		Detail:  fmt.Sprintf("%d profiles", len(profiles)),
-		Summary: ProfilesSummary(len(profiles)),
+		Detail:  fmt.Sprintf("%d profiles", len(names)),
+		Summary: ProfilesSummary(len(names)),
 		Output:  sb.String(),
 	}, nil
 }
 
 // browserProfileCreate is called from runBrowser while browserMu is held.
+// BetterWright materializes a profile directory on first use; creating it
+// here just registers the name so list/switch see it before the first open.
 func browserProfileCreate(name string) (tooldef.Result, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return tooldef.Result{}, fmt.Errorf("profile name is required")
 	}
-	if name == "default" {
+	if name == bw.DefaultProfile {
 		return tooldef.Result{}, fmt.Errorf("cannot create profile named 'default'")
 	}
-	if _, exists := profiles[name]; exists {
+	if !validProfileName(name) {
+		return tooldef.Result{}, fmt.Errorf(
+			"invalid profile name %q: letters, digits, dot, dash, underscore only",
+			name,
+		)
+	}
+	if _, err := os.Stat(bw.ProfileDir(name)); err == nil {
 		return tooldef.Result{}, fmt.Errorf("profile %q already exists", name)
 	}
-	if err := createProfile(name); err != nil {
-		return tooldef.Result{}, err
+	if err := os.MkdirAll(bw.ProfileDir(name), 0o755); err != nil {
+		return tooldef.Result{}, fmt.Errorf("create profile dir: %w", err)
 	}
 	return tooldef.Result{
 		Content: fmt.Sprintf("Created profile %q", name),
@@ -916,7 +765,14 @@ func browserProfileSwitch(name string) (tooldef.Result, error) {
 	if name == "" {
 		return tooldef.Result{}, fmt.Errorf("profile name is required")
 	}
-	if _, exists := profiles[name]; !exists {
+	found := false
+	for _, p := range listProfiles() {
+		if p == name {
+			found = true
+			break
+		}
+	}
+	if !found {
 		return tooldef.Result{}, fmt.Errorf("profile %q not found", name)
 	}
 	currentProfile = name
@@ -928,23 +784,26 @@ func browserProfileSwitch(name string) (tooldef.Result, error) {
 }
 
 // browserProfileDelete is called from runBrowser while browserMu is held.
-func browserProfileDelete(name string) (tooldef.Result, error) {
+func browserProfileDelete(ctx context.Context, name string) (tooldef.Result, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return tooldef.Result{}, fmt.Errorf("profile name is required")
 	}
-	if name == "default" {
+	if name == bw.DefaultProfile {
 		return tooldef.Result{}, fmt.Errorf("cannot delete the default profile")
 	}
-	ctx, ok := profiles[name]
-	if !ok {
+	dir := bw.ProfileDir(name)
+	if _, err := os.Stat(dir); err != nil {
 		return tooldef.Result{}, fmt.Errorf("profile %q not found", name)
 	}
-	ctx.Close()
-	delete(profiles, name)
-	delete(pages, name)
+	// Stop the profile's daemon first so the browser is not running on a
+	// directory about to disappear.
+	_ = bw.Close(ctx, false, name)
+	if err := os.RemoveAll(dir); err != nil {
+		return tooldef.Result{}, fmt.Errorf("delete profile %q: %w", name, err)
+	}
 	if currentProfile == name {
-		currentProfile = "default"
+		currentProfile = bw.DefaultProfile
 	}
 	return tooldef.Result{
 		Content: fmt.Sprintf("Deleted profile %q", name),
@@ -954,7 +813,7 @@ func browserProfileDelete(name string) (tooldef.Result, error) {
 }
 
 // normalizeURL prepends a scheme when one is missing so bare hostnames like
-// "google.com" resolve to https://google.com. Playwright's page.Goto treats
+// "google.com" resolve to https://google.com. The daemon's page.goto treats
 // a scheme-less string as a relative path and silently no-ops.
 func normalizeURL(raw string) string {
 	raw = strings.TrimSpace(raw)
@@ -963,7 +822,7 @@ func normalizeURL(raw string) string {
 	}
 	// Check against a whitelist so "localhost:8080" is not misidentified as
 	// having the scheme "localhost" — that would bypass the https:// prepend
-	// and Goto would fail with a navigation error.
+	// and goto would fail with a navigation error.
 	if idx := strings.IndexByte(raw, ':'); idx > 0 {
 		scheme := strings.ToLower(raw[:idx])
 		switch scheme {
@@ -978,38 +837,39 @@ func normalizeURL(raw string) string {
 	return "https://" + raw
 }
 
-// browserProxy sets the proxy URL used by the next browser launch. Firefox
-// picks up the proxy at launch time, so a change takes effect on the next
-// open after a close.
+// browserProxy sets the proxy URL used by the next browser spawn. The
+// daemon's Chromium picks the proxy up from the environment at launch time
+// (HTTP(S)_PROXY on Linux; system settings elsewhere), so a change takes
+// effect on the next open after a close.
 //
 //	/browser proxy <url>     set an explicit proxy URL
 //	/browser proxy on        re-enable the last-used proxy (or the config
 //	                         browser.proxy value if none was set yet)
 //	/browser proxy off       disable the proxy
 func browserProxy(in browserInput) (tooldef.Result, error) {
-	url := strings.TrimSpace(in.URL)
-	switch strings.ToLower(url) {
+	u := strings.TrimSpace(in.URL)
+	switch strings.ToLower(u) {
 	case "on":
 		browserMu.Lock()
-		url = lastProxyURL
+		u = lastProxyURL
 		browserMu.Unlock()
-		if url == "" {
+		if u == "" {
 			if proj := project.GetDefaultProject(); proj != nil && proj.Config() != nil {
-				url = proj.Config().Browser.Proxy
+				u = proj.Config().Browser.Proxy
 			}
 		}
-		if url == "" {
+		if u == "" {
 			return tooldef.Result{
 				Content: "No proxy URL to enable: set one first with /browser proxy <url>, or browser.proxy in config.yaml",
 				Detail:  "proxy none",
 				Output:  "No proxy configured",
 			}, nil
 		}
-		SetProxy(url)
+		SetProxy(u)
 		return tooldef.Result{
-			Content: fmt.Sprintf("Proxy enabled: %s (takes effect on the next open after a close)", url),
-			Detail:  fmt.Sprintf("proxy on %s", url),
-			Output:  fmt.Sprintf("Proxy: %s", url),
+			Content: fmt.Sprintf("Proxy enabled: %s (takes effect on the next open after a close)", u),
+			Detail:  fmt.Sprintf("proxy on %s", u),
+			Output:  fmt.Sprintf("Proxy: %s", u),
 		}, nil
 	case "off", "":
 		SetProxy("")
@@ -1019,10 +879,32 @@ func browserProxy(in browserInput) (tooldef.Result, error) {
 			Output:  "Proxy disabled",
 		}, nil
 	}
-	SetProxy(url)
+	SetProxy(u)
 	return tooldef.Result{
-		Content: fmt.Sprintf("Proxy set to %s (takes effect on the next open after a close)", url),
-		Detail:  fmt.Sprintf("proxy %s", url),
-		Output:  fmt.Sprintf("Proxy: %s", url),
+		Content: fmt.Sprintf("Proxy set to %s (takes effect on the next open after a close)", u),
+		Detail:  fmt.Sprintf("proxy %s", u),
+		Output:  fmt.Sprintf("Proxy: %s", u),
 	}, nil
+}
+
+// SetProxy sets the proxy URL used by the next browser spawn. It takes
+// effect on the next open after a close, since the daemon's Chromium reads
+// proxy settings at launch time. Pass "" to disable. Thread-safe. The URL
+// is remembered so "proxy on" can re-enable it later without retyping.
+func SetProxy(u string) {
+	browserMu.Lock()
+	defer browserMu.Unlock()
+	u = strings.TrimSpace(u)
+	if u != "" {
+		lastProxyURL = u
+	}
+	browserProxyURL = u
+	bw.SetProxy(u)
+}
+
+// ProxyURL returns the proxy currently configured for the next spawn.
+func ProxyURL() string {
+	browserMu.Lock()
+	defer browserMu.Unlock()
+	return browserProxyURL
 }

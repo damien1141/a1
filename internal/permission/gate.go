@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/damien1141/a1/internal/sandbox"
 )
 
 // Gate evaluates permission requests. Check is the prospective Gate 1
@@ -22,6 +24,21 @@ type AdmissionGate interface {
 	// Admit evaluates whether a completed tool execution should be admitted
 	// based on output labels and effect-log requirements.
 	Admit(ctx context.Context, req Request) (Decision, string)
+}
+
+// UnresolvedSourceResolver is an optional Gate capability: cast resolution
+// for sources accumulated as Unresolved on the trajectory label. Admit
+// adds unresolved sources for unannotated tools; the executor calls
+// ResolveUnresolved after Admit returns Allow so registered casts get
+// applied at admission time (per APPA §4 "incremental adoption via gradual
+// security typing") rather than accumulating forever. The executor uses a
+// type assertion against this interface so non-StaticGate implementations
+// are not forced to implement cast resolution.
+type UnresolvedSourceResolver interface {
+	// ResolveUnresolved walks the trajectory's unresolved sources and
+	// attempts each registered cast. Returns the count of sources that
+	// were successfully resolved this call.
+	ResolveUnresolved() int
 }
 
 // TrajectoryState tracks the APPA trajectory label L=(R,t), effect log E(ℓ),
@@ -105,6 +122,10 @@ func (t *TrajectoryState) String() string {
 type StaticGate struct {
 	Policy    Policy
 	Workspace string
+	// sandboxed reports whether OS-level bash containment is enforcing on
+	// this host (policy.Sandbox + a supported backend). Computed once at
+	// construction; the checkBash containment branch consults it.
+	sandboxed bool
 
 	bashAllow    []*regexp.Regexp
 	bashDeny     []*regexp.Regexp
@@ -113,6 +134,14 @@ type StaticGate struct {
 	acceptNarrow func(ctx context.Context, req Request, reason string) (bool, error)
 	recovery     *RecoveryGraph
 	resolver     Resolver
+
+	// casts holds the registered CastResolvers consulted by ResolveUnresolved.
+	// Each entry is a TCB transformation that lifts one unresolved source
+	// identifier into a concrete Label, bounded by its may_cast ceiling.
+	// Admit adds an unresolved source for unannotated tools; without a cast,
+	// that source accumulates forever. The executor calls ResolveUnresolved
+	// after every Admit so registered casts get applied incrementally.
+	casts []CastResolver
 }
 
 func compilePatterns(patterns []string) ([]*regexp.Regexp, error) {
@@ -136,6 +165,7 @@ func NewGate(policy Policy, workspace string) (*StaticGate, error) {
 	g := &StaticGate{
 		Policy:     policy,
 		Workspace:  workspace,
+		sandboxed:  sandboxEnforcing(policy),
 		contracts:  DefaultContracts(),
 		trajectory: NewTrajectoryState(),
 		recovery:   NewRecoveryGraph(),
@@ -224,6 +254,79 @@ func (g *StaticGate) SetContracts(reg *ContractRegistry) {
 	if g != nil {
 		g.contracts = reg
 	}
+}
+
+// RegisterCast adds a CastResolver to the gate's cast registry. Each cast
+// lifts one unresolved source identifier (e.g. "out:custom_tool") into a
+// concrete Label, bounded by the cast's may_cast ceiling. Casts are
+// consulted by ResolveUnresolved, which the executor calls after every
+// Admit so unresolved sources get folded incrementally instead of
+// accumulating forever.
+//
+// Multiple casts for the same source are allowed; the first one that
+// resolves successfully wins. This matches the paper's "first matching
+// cast" semantics for TCB transformations.
+func (g *StaticGate) RegisterCast(c CastResolver) {
+	if g == nil {
+		return
+	}
+	g.casts = append(g.casts, c)
+}
+
+// RegisterCasts replaces the gate's cast registry with the provided list.
+// Convenience for batch registration at construction time.
+func (g *StaticGate) RegisterCasts(casts []CastResolver) {
+	if g == nil {
+		return
+	}
+	g.casts = append(g.casts[:0], casts...)
+}
+
+// Casts returns a snapshot of the registered casts. Read-only; callers
+// must not mutate the returned slice.
+func (g *StaticGate) Casts() []CastResolver {
+	if g == nil {
+		return nil
+	}
+	out := make([]CastResolver, len(g.casts))
+	copy(out, g.casts)
+	return out
+}
+
+// ResolveUnresolved walks the trajectory's unresolved source set and
+// attempts each registered cast. For each source that a cast resolves
+// successfully (label ≤ may_cast ceiling), the source is removed from
+// Unresolved and the resolved Label is folded into Established via Meet
+// (PartialLabel.Resolve). Sources with no matching cast stay unresolved —
+// gradual typing lets them travel without premature blocking. Returns
+// the count of sources resolved this call.
+//
+// Called by the executor after Admit returns Allow, so casts are applied
+// incrementally at admission time rather than lazily at consumption time.
+// This is the wire-up that issues.md #9 calls for: previously, unresolved
+// sources accumulated forever because nothing ever called Resolve or
+// ResolveCast.
+func (g *StaticGate) ResolveUnresolved() int {
+	if g == nil || g.trajectory == nil || len(g.casts) == 0 {
+		return 0
+	}
+	resolved := 0
+	// Snapshot the unresolved set so we can iterate while Resolve mutates
+	// the partial label. Resolve removes the matched source from Unresolved
+	// and folds the contribution into Established.
+	sources := append([]string(nil), g.trajectory.Label.Unresolved...)
+	for _, src := range sources {
+		for _, c := range g.casts {
+			label, err := c.ResolveCast(src)
+			if err != nil {
+				continue // no cast for this source, or cast failed
+			}
+			g.trajectory.Label = g.trajectory.Label.Resolve(src, label)
+			resolved++
+			break
+		}
+	}
+	return resolved
 }
 
 // Trajectory returns the current trajectory state for inspection.
@@ -569,6 +672,26 @@ func (g *StaticGate) checkBash(req Request) (Decision, string) {
 			}
 		}
 	}
+	// Containment substitutes for approval: when OS-level sandboxing is
+	// enforcing, an Ask-eligible command is already contained — writes land
+	// inside the workspace/caches or fail, network egress follows the
+	// policy toggle, and the deny list has already fired above. Three
+	// contracts still win over containment: readonly sessions ("this
+	// session writes nothing" — a writable sandbox violates it),
+	// headless-strict sessions (Ask≡Deny is the whole mode; an unattended
+	// run must not discover an approval authority in the sandbox), and an
+	// explicit BashDefault=Deny (the operator said no — containment does
+	// not overrule a stated default).
+	if g.sandboxed &&
+		g.Policy.Mode != ModeReadonly &&
+		g.Policy.Mode != ModeHeadlessStrict &&
+		g.Policy.BashDefault != Deny {
+		note := "sandboxed: writes confined to the workspace, network denied"
+		if g.Policy.SandboxNetwork == "allow" {
+			note = "sandboxed: writes confined to the workspace"
+		}
+		return Allow, note
+	}
 	def := g.Policy.BashDefault
 	if def == Allow {
 		return Allow, ""
@@ -577,6 +700,28 @@ func (g *StaticGate) checkBash(req Request) (Decision, string) {
 		return Deny, "bash denied by default policy"
 	}
 	return Ask, "bash requires approval: " + truncate(cmd, 120)
+}
+
+// sandboxSupported is the host probe seam; tests override it because a
+// container may not expose Landlock even though the code is correct.
+var sandboxSupported = sandbox.Supported
+
+// sandboxEnforcing decides whether the policy's sandbox setting yields
+// enforcement on this host.
+func sandboxEnforcing(p Policy) bool {
+	switch strings.ToLower(strings.TrimSpace(p.Sandbox)) {
+	case "off", "false", "no":
+		return false
+	case "on", "true", "yes":
+		return sandboxSupported()
+	default: // "" or auto
+		return sandboxSupported()
+	}
+}
+
+// Sandboxed reports whether this gate treats bash as OS-contained.
+func (g *StaticGate) Sandboxed() bool {
+	return g != nil && g.sandboxed
 }
 
 // checkWrite evaluates write/edit requests.

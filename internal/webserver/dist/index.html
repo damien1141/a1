@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>a1</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script>
+    // Theme boot: resolve light/dark BEFORE first paint so a dark-mode
+    // reload never flashes the paper theme. Same key + precedence as
+    // web/src/theme.ts (stored choice beats OS preference).
+    (function () {
+      try {
+        var t = localStorage.getItem('a1-theme');
+        if (t !== 'light' && t !== 'dark') {
+          t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.dataset.theme = t;
+      } catch (e) {
+        document.documentElement.dataset.theme = 'light';
+      }
+    })();
+  </script>
+  <style>
+    /* HarmonyOS Sans — loaded if installed on the system; falls back to
+       Noto Sans SC → Noto Sans → Segoe UI → sans-serif per the Tailwind
+       font-sans config. The @font-face below is for when the TTFs are
+       cached in ~/.a1/fonts/ (same system as the agent harness). */
+  </style>
+  <script type="module" crossorigin src="/assets/index-BujGBAnh.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-Bq73X8e8.css">
+</head>
+<body>
+  <div id="app"></div>
+</body>
+</html>

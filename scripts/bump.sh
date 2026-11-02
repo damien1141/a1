@@ -3,8 +3,8 @@
 # Usage: ./scripts/bump.sh <new-version>
 #
 # Updates internal/version/version.go, keeps root go.mod's require on the nested
-# ext module in sync, commits the change, and creates annotated git tags for phi
-# (vX.Y.Z) and the nested ext module (ext/go/vX.Y.Z). Pushing the phi tag triggers
+# ext module in sync, commits the change, and creates annotated git tags for a1
+# (vX.Y.Z) and the nested ext module (ext/go/vX.Y.Z). Pushing the a1 tag triggers
 # .github/workflows/release.yml (GoReleaser); release notes come from the matching
 # CHANGELOG.md section (see release.yml).
 # Example: ./scripts/bump.sh v0.2.0
@@ -66,7 +66,7 @@ git -C "$ROOT" add "$VERSION_FILE"
 [ -f "$ROOT_GOMOD" ] && git -C "$ROOT" add "$ROOT_GOMOD"
 git -C "$ROOT" commit -m "chore: bump version to $NEW_VERSION"
 
-# Tag the version-bump commit (phi binary + nested Go ext module).
+# Tag the version-bump commit (a1 binary + nested Go ext module).
 git -C "$ROOT" tag -a "$NEW_VERSION" -m "Release $NEW_VERSION"
 git -C "$ROOT" tag -a "$EXT_TAG" -m "Release $EXT_TAG"
 

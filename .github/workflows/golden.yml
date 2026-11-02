@@ -1,0 +1,43 @@
+# Golden-set eval (Bet 07 — The Mirror): nightly regression gate over the
+# pinned ~20-task suite (go/rust/python) plus the hermetic test suite.
+#
+# The golden run needs a configured model. Secrets provide it via A1_MODEL /
+# A1_API_KEY / A1_BASE_URL and a minimal config written into a temp HOME;
+# when the secrets are absent the golden step prints its no-model notice and
+# exits 0, so fork PRs without credentials stay green while the nightly on
+# main measures everything.
+name: golden
+on:
+  schedule:
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  golden:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+
+      - name: Test
+        run: make test
+
+      - name: Golden set
+        env:
+          A1_MODEL: ${{ secrets.A1_GOLDEN_MODEL }}
+          A1_API_KEY: ${{ secrets.A1_GOLDEN_API_KEY }}
+          A1_BASE_URL: ${{ secrets.A1_GOLDEN_BASE_URL }}
+        run: |
+          if [ -n "$A1_MODEL" ] && [ -n "$A1_API_KEY" ]; then
+            # Model env overrides need a config skeleton to land on.
+            HOME="$RUNNER_TEMP" ./scripts/golden-config.sh
+          fi
+          make eval-golden

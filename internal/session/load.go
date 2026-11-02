@@ -1,320 +1,424 @@
 package session
 
 import (
-	"bufio"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
-	"sort"
-	"strings"
-	"time"
+        "bufio"
+        "encoding/json"
+        "errors"
+        "fmt"
+        "os"
+        "path/filepath"
+        "sort"
+        "strings"
+        "time"
 
-	"github.com/damien1141/a1/internal/llm"
-	"github.com/damien1141/a1/internal/util"
+        "github.com/damien1141/a1/internal/llm"
+        "github.com/damien1141/a1/internal/util"
+
+	"github.com/damien1141/a1/internal/vault"
 )
 
 // SessionMeta is a lightweight listing row for persisted sessions.
 type SessionMeta struct {
-	ID        string
-	File      string
-	Timestamp string
-	Cwd       string
-	Mtime     time.Time
-	Preview   string // truncated last user text
+        ID        string
+        File      string
+        Timestamp string
+        Cwd       string
+        Mtime     time.Time
+        Preview   string // truncated last user text
 }
 
 // ListSessions returns session files under dir, newest mtime first.
 // Callers should pass a per-cwd directory (e.g. project.SessionDir()), not the
 // global session base, so listings stay scoped to the current project.
 func ListSessions(dir string) ([]SessionMeta, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
+        // Vault sessions first (Bet 08); their ids suppress the stale file
+        // shadows so migrated sessions are listed exactly once.
+        inVault := make(map[string]bool)
+        out := make([]SessionMeta, 0)
+        if v := DefaultVault(); v != nil {
+                if rows, err := v.ListSessions(dir); err == nil {
+                        for _, r := range rows {
+                                inVault[r.ID] = true
+                                m := SessionMeta{
+                                        ID:        r.ID,
+                                        File:      vault.SessionPath(r.Project, r.Ts, r.ID),
+                                        Timestamp: r.Ts,
+                                        Cwd:       r.Cwd,
+                                        Mtime:     r.CreatedAt,
+                                }
+                                // Vault rows carry no preview column and SessionPath is a
+                                // synthetic identity path (no file on disk), so the label
+                                // text comes from the stored entry lines. Without this,
+                                // vault-backed sessions show their hex id in the sidebar
+                                // forever.
+                                m.Preview = vaultPreview(v, r.ID)
+                                out = append(out, m)
+                        }
+                }
+        }
 
-	out := make([]SessionMeta, 0, len(entries))
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
-			continue
-		}
-		path := filepath.Join(dir, e.Name())
-		meta, err := readSessionMeta(path, e)
-		if err != nil {
-			continue // skip unreadable / malformed files in listings
-		}
-		out = append(out, meta)
-	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].Mtime.After(out[j].Mtime)
-	})
-	return out, nil
+        entries, err := os.ReadDir(dir)
+        if err != nil {
+                if !os.IsNotExist(err) {
+                        return nil, err
+                }
+                sort.Slice(out, func(i, j int) bool {
+                        return out[i].Mtime.After(out[j].Mtime)
+                })
+                return out, nil
+        }
+
+        for _, e := range entries {
+                if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
+                        continue
+                }
+                path := filepath.Join(dir, e.Name())
+                meta, err := readSessionMeta(path, e)
+                if err != nil {
+                        continue // skip unreadable / malformed files in listings
+                }
+                if sid, ok := sessionIDFromFilename(e.Name()); ok && inVault[sid] {
+                        continue // vault rows already cover this session
+                }
+                out = append(out, meta)
+        }
+        sort.Slice(out, func(i, j int) bool {
+                return out[i].Mtime.After(out[j].Mtime)
+        })
+        return out, nil
+}
+
+// vaultPreview extracts the sidebar label (the last user message text)
+// from a vault-backed session's stored entry lines, scanning newest-first
+// with an early exit so the cost tracks the conversation tail, not its
+// length. Best-effort: any error reads as no preview and the caller
+// falls back to the short session id.
+func vaultPreview(v *vault.Vault, id string) string {
+        lines, err := v.LoadSessionEntries(id)
+        if err != nil {
+                return ""
+        }
+        for i := len(lines) - 1; i >= 0; i-- {
+                if strings.TrimSpace(lines[i]) == "" {
+                        continue
+                }
+                entry, err := decodeEntryLine([]byte(lines[i]), i+1)
+                if err != nil {
+                        continue
+                }
+                if e, ok := entry.(SessionMessageEntry); ok &&
+                        e.Message.Role == llm.RoleUser && strings.TrimSpace(e.Message.Content) != "" {
+                        return truncatePreview(e.Message.Content, 72)
+                }
+        }
+        return ""
 }
 
 func readSessionMeta(path string, e os.DirEntry) (SessionMeta, error) {
-	info, err := e.Info()
-	if err != nil {
-		return SessionMeta{}, err
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return SessionMeta{}, err
-	}
-	defer f.Close()
+        info, err := e.Info()
+        if err != nil {
+                return SessionMeta{}, err
+        }
+        f, err := os.Open(path)
+        if err != nil {
+                return SessionMeta{}, err
+        }
+        defer f.Close()
 
-	meta := SessionMeta{
-		File:  path,
-		Mtime: info.ModTime(),
-	}
-	sc := bufio.NewScanner(f)
-	// Session files can grow; allow large lines for tool payloads.
-	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+        meta := SessionMeta{
+                File:  path,
+                Mtime: info.ModTime(),
+        }
+        sc := bufio.NewScanner(f)
+        // Session files can grow; allow large lines for tool payloads.
+        sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 
-	lineNo := 0
-	for sc.Scan() {
-		lineNo++
-		line := sc.Bytes()
-		if strings.TrimSpace(string(line)) == "" {
-			continue
-		}
-		entry, err := decodeEntryLine(line, lineNo)
-		if err != nil {
-			if meta.ID == "" {
-				return SessionMeta{}, err
-			}
-			break
-		}
-		switch e := entry.(type) {
-		case SessionHeader:
-			meta.ID = e.ID
-			meta.Timestamp = e.Timestamp
-			meta.Cwd = e.Cwd
-		case SessionMessageEntry:
-			if e.Message.Role == llm.RoleUser && strings.TrimSpace(e.Message.Content) != "" {
-				meta.Preview = truncatePreview(e.Message.Content, 72)
-			}
-		}
-	}
-	if meta.ID != "" {
-		return meta, nil
-	}
-	// Fall back to filename id when header missing.
-	id, ok := sessionIDFromFilename(filepath.Base(path))
-	if !ok {
-		return SessionMeta{}, fmt.Errorf("session: no header in %s", path)
-	}
-	meta.ID = id
-	return meta, nil
+        lineNo := 0
+        for sc.Scan() {
+                lineNo++
+                line := sc.Bytes()
+                if strings.TrimSpace(string(line)) == "" {
+                        continue
+                }
+                entry, err := decodeEntryLine(line, lineNo)
+                if err != nil {
+                        if meta.ID == "" {
+                                return SessionMeta{}, err
+                        }
+                        break
+                }
+                switch e := entry.(type) {
+                case SessionHeader:
+                        meta.ID = e.ID
+                        meta.Timestamp = e.Timestamp
+                        meta.Cwd = e.Cwd
+                case SessionMessageEntry:
+                        if e.Message.Role == llm.RoleUser && strings.TrimSpace(e.Message.Content) != "" {
+                                meta.Preview = truncatePreview(e.Message.Content, 72)
+                        }
+                }
+        }
+        if meta.ID != "" {
+                return meta, nil
+        }
+        // Fall back to filename id when header missing.
+        id, ok := sessionIDFromFilename(filepath.Base(path))
+        if !ok {
+                return SessionMeta{}, fmt.Errorf("session: no header in %s", path)
+        }
+        meta.ID = id
+        return meta, nil
 }
 
 func truncatePreview(s string, n int) string {
-	s = util.ReplaceAll(s, "\n", " ")
-	s = strings.TrimSpace(s)
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
+        s = util.ReplaceAll(s, "\n", " ")
+        s = strings.TrimSpace(s)
+        if len(s) <= n {
+                return s
+        }
+        return s[:n] + "…"
 }
 
 // FindSessionFile resolves id to a unique jsonl path under dir.
-// id may be exact or a unique prefix of the session id.
+// id may be exact or a unique prefix of the session id. Vault sessions
+// resolve to their synthetic paths (Bet 08) so resume-by-id is uniform
+// across both backings.
 func FindSessionFile(dir, id string) (string, error) {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return "", errors.New("session: empty id")
-	}
-	if filepath.IsAbs(id) || strings.HasSuffix(id, ".jsonl") {
-		if _, err := os.Stat(id); err != nil {
-			return "", fmt.Errorf("session: file %q: %w", id, err)
-		}
-		return id, nil
-	}
+        id = strings.TrimSpace(id)
+        if id == "" {
+                return "", errors.New("session: empty id")
+        }
+        if filepath.IsAbs(id) || strings.HasSuffix(id, ".jsonl") {
+                if _, err := os.Stat(id); err != nil {
+                        // A synthetic vault path may not exist on disk — accept it when
+                        // the vault knows the session.
+                        if v := DefaultVault(); v == nil {
+                                return "", fmt.Errorf("session: file %q: %w", id, err)
+                        } else if sid, ok := sessionIDFromFilename(filepath.Base(id)); ok {
+                                if has, verr := v.HasSession(sid); verr == nil && has {
+                                        return id, nil
+                                }
+                        }
+                        return "", fmt.Errorf("session: file %q: %w", id, err)
+                }
+                return id, nil
+        }
 
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return "", err
-	}
+        if v := DefaultVault(); v != nil {
+                if rows, err := v.ListSessions(dir); err == nil {
+                        var exact, prefix []string
+                        for _, r := range rows {
+                                path := vault.SessionPath(r.Project, r.Ts, r.ID)
+                                if r.ID == id {
+                                        exact = append(exact, path)
+                                } else if strings.HasPrefix(r.ID, id) {
+                                        prefix = append(prefix, path)
+                                }
+                        }
+                        if len(exact) == 1 {
+                                return exact[0], nil
+                        }
+                        if len(exact) > 1 {
+                                return "", fmt.Errorf("session: ambiguous id %q (%d matches)", id, len(exact))
+                        }
+                        if len(prefix) == 1 {
+                                return prefix[0], nil
+                        }
+                }
+        }
 
-	var exact, prefix []string
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
-			continue
-		}
-		sid, ok := sessionIDFromFilename(e.Name())
-		if !ok {
-			continue
-		}
-		path := filepath.Join(dir, e.Name())
-		if sid == id {
-			exact = append(exact, path)
-		} else if strings.HasPrefix(sid, id) {
-			prefix = append(prefix, path)
-		}
-	}
-	if len(exact) == 1 {
-		return exact[0], nil
-	}
-	if len(exact) > 1 {
-		return "", fmt.Errorf("session: ambiguous id %q (%d matches)", id, len(exact))
-	}
-	if len(prefix) == 1 {
-		return prefix[0], nil
-	}
-	if len(prefix) > 1 {
-		return "", fmt.Errorf("session: ambiguous id prefix %q (%d matches)", id, len(prefix))
-	}
-	return "", fmt.Errorf("session: id %q not found in %s", id, dir)
+        entries, err := os.ReadDir(dir)
+        if err != nil {
+                return "", err
+        }
+
+        var exact, prefix []string
+        for _, e := range entries {
+                if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
+                        continue
+                }
+                sid, ok := sessionIDFromFilename(e.Name())
+                if !ok {
+                        continue
+                }
+                path := filepath.Join(dir, e.Name())
+                if sid == id {
+                        exact = append(exact, path)
+                } else if strings.HasPrefix(sid, id) {
+                        prefix = append(prefix, path)
+                }
+        }
+        if len(exact) == 1 {
+                return exact[0], nil
+        }
+        if len(exact) > 1 {
+                return "", fmt.Errorf("session: ambiguous id %q (%d matches)", id, len(exact))
+        }
+        if len(prefix) == 1 {
+                return prefix[0], nil
+        }
+        if len(prefix) > 1 {
+                return "", fmt.Errorf("session: ambiguous id prefix %q (%d matches)", id, len(prefix))
+        }
+        return "", fmt.Errorf("session: id %q not found in %s", id, dir)
 }
 
 func sessionIDFromFilename(name string) (string, bool) {
-	base := strings.TrimSuffix(name, ".jsonl")
-	i := strings.IndexByte(base, '_')
-	if i < 0 || i+1 >= len(base) {
-		return "", false
-	}
-	return base[i+1:], true
+        base := strings.TrimSuffix(name, ".jsonl")
+        i := strings.IndexByte(base, '_')
+        if i < 0 || i+1 >= len(base) {
+                return "", false
+        }
+        return base[i+1:], true
 }
 
-// OpenSession loads a JSONL session file and returns a Manager ready to append.
+// OpenSession loads a session and returns a Manager ready to append.
+// Resolution is vault-first (Bet 08): when a process-wide vault holds the
+// session id parsed from the path's basename, rows win — the JSONL file
+// (if any) is a stale pre-migration shadow. Otherwise the file loads as
+// before. This keeps every WithResumePath caller working unchanged.
 func OpenSession(path string) (*Manager, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
+        if v := DefaultVault(); v != nil {
+                if sid, ok := sessionIDFromFilename(filepath.Base(path)); ok {
+                        if has, err := v.HasSession(sid); err == nil && has {
+                                return openVaultSession(v, sid)
+                        }
+                }
+        }
+        f, err := os.Open(path)
+        if err != nil {
+                return nil, err
+        }
+        defer f.Close()
 
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+        sc := bufio.NewScanner(f)
+        sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 
-	var (
-		entries         []MessageEntry
-		byIDs           = make(map[string]MessageEntry, 64)
-		header          *SessionHeader
-		leafID          *string
-		hasAssistantMsg bool
-		lineNo          int
-	)
+        var (
+                entries         []MessageEntry
+                byIDs           = make(map[string]MessageEntry, 64)
+                header          *SessionHeader
+                leafID          *string
+                hasAssistantMsg bool
+                lineNo          int
+        )
 
-	for sc.Scan() {
-		lineNo++
-		raw := sc.Bytes()
-		if strings.TrimSpace(string(raw)) == "" {
-			continue
-		}
-		entry, err := decodeEntryLine(raw, lineNo)
-		if err != nil {
-			return nil, err
-		}
-		switch e := entry.(type) {
-		case SessionHeader:
-			if header != nil {
-				return nil, fmt.Errorf("session: duplicate header at %s:%d", path, lineNo)
-			}
-			h := e
-			header = &h
-			entries = append(entries, h)
-		default:
-			if header == nil {
-				return nil, fmt.Errorf("session: first entry must be session header at %s:%d", path, lineNo)
-			}
-			id := entry.GetID()
-			byIDs[id] = entry
-			entries = append(entries, entry)
-			leafID = &id
-			if msg, ok := entry.(SessionMessageEntry); ok && msg.Message.Role == llm.RoleAssistant {
-				hasAssistantMsg = true
-			}
-		}
-	}
-	if err := sc.Err(); err != nil {
-		return nil, fmt.Errorf("session: read %s: %w", path, err)
-	}
-	if header == nil {
-		return nil, fmt.Errorf("session: missing header in %s", path)
-	}
+        for sc.Scan() {
+                lineNo++
+                raw := sc.Bytes()
+                if strings.TrimSpace(string(raw)) == "" {
+                        continue
+                }
+                entry, err := decodeEntryLine(raw, lineNo)
+                if err != nil {
+                        return nil, err
+                }
+                switch e := entry.(type) {
+                case SessionHeader:
+                        if header != nil {
+                                return nil, fmt.Errorf("session: duplicate header at %s:%d", path, lineNo)
+                        }
+                        h := e
+                        header = &h
+                        entries = append(entries, h)
+                default:
+                        if header == nil {
+                                return nil, fmt.Errorf("session: first entry must be session header at %s:%d", path, lineNo)
+                        }
+                        id := entry.GetID()
+                        byIDs[id] = entry
+                        entries = append(entries, entry)
+                        leafID = &id
+                        if msg, ok := entry.(SessionMessageEntry); ok && msg.Message.Role == llm.RoleAssistant {
+                                hasAssistantMsg = true
+                        }
+                }
+        }
+        if err := sc.Err(); err != nil {
+                return nil, fmt.Errorf("session: read %s: %w", path, err)
+        }
+        if header == nil {
+                return nil, fmt.Errorf("session: missing header in %s", path)
+        }
 
-	parent := header.ParentSession
-	return &Manager{
-		cwd:         header.Cwd,
-		entries:     entries,
-		byIDs:       byIDs,
-		sessionFile: path,
-		leafID:      leafID,
-		shouldFlush: true,
-		flushed:     true,
-		sessionID:   header.ID,
-		config: ManagerConfig{
-			sessionDir:  filepath.Dir(path),
-			shouldFlush: true,
-			parentID:    parent,
-		},
-		hasAssistantMsg: hasAssistantMsg,
-	}, nil
+        parent := header.ParentSession
+        return &Manager{
+                cwd:         header.Cwd,
+                entries:     entries,
+                byIDs:       byIDs,
+                sessionFile: path,
+                leafID:      leafID,
+                shouldFlush: true,
+                flushed:     true,
+                sessionID:   header.ID,
+                config: ManagerConfig{
+                        sessionDir:  filepath.Dir(path),
+                        shouldFlush: true,
+                        parentID:    parent,
+                },
+                hasAssistantMsg: hasAssistantMsg,
+        }, nil
 }
 
 func decodeEntryLine(raw []byte, lineNo int) (MessageEntry, error) {
-	var probe struct {
-		Type string `json:"type"`
-	}
-	if err := json.Unmarshal(raw, &probe); err != nil {
-		return nil, fmt.Errorf("session: line %d: %w", lineNo, err)
-	}
-	switch probe.Type {
-	case EntrySession, "session":
-		var h SessionHeader
-		if err := json.Unmarshal(raw, &h); err != nil {
-			return nil, fmt.Errorf("session: line %d header: %w", lineNo, err)
-		}
-		h.Type = EntrySession
-		return h, nil
-	case EntryMessage:
-		var m SessionMessageEntry
-		if err := json.Unmarshal(raw, &m); err != nil {
-			return nil, fmt.Errorf("session: line %d message: %w", lineNo, err)
-		}
-		return m, nil
-	case EntryCompaction:
-		var c CompactionEntry
-		if err := json.Unmarshal(raw, &c); err != nil {
-			return nil, fmt.Errorf("session: line %d compaction: %w", lineNo, err)
-		}
-		return c, nil
-	default:
-		return nil, fmt.Errorf("session: line %d: unknown type %q", lineNo, probe.Type)
-	}
+        var probe struct {
+                Type string `json:"type"`
+        }
+        if err := json.Unmarshal(raw, &probe); err != nil {
+                return nil, fmt.Errorf("session: line %d: %w", lineNo, err)
+        }
+        switch probe.Type {
+        case EntrySession, "session":
+                var h SessionHeader
+                if err := json.Unmarshal(raw, &h); err != nil {
+                        return nil, fmt.Errorf("session: line %d header: %w", lineNo, err)
+                }
+                h.Type = EntrySession
+                return h, nil
+        case EntryMessage:
+                var m SessionMessageEntry
+                if err := json.Unmarshal(raw, &m); err != nil {
+                        return nil, fmt.Errorf("session: line %d message: %w", lineNo, err)
+                }
+                return m, nil
+        case EntryCompaction:
+                var c CompactionEntry
+                if err := json.Unmarshal(raw, &c); err != nil {
+                        return nil, fmt.Errorf("session: line %d compaction: %w", lineNo, err)
+                }
+                return c, nil
+        default:
+                return nil, fmt.Errorf("session: line %d: unknown type %q", lineNo, probe.Type)
+        }
 }
 
 // ID returns the session identifier from the header.
 func (sm *Manager) ID() string {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	return sm.sessionID
+        sm.mu.Lock()
+        defer sm.mu.Unlock()
+        return sm.sessionID
 }
 
 // File returns the JSONL path, or empty when not persisting.
 func (sm *Manager) File() string {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	return sm.sessionFile
+        sm.mu.Lock()
+        defer sm.mu.Unlock()
+        return sm.sessionFile
 }
 
 // Cwd returns the session working directory recorded in the header.
 func (sm *Manager) Cwd() string {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	return sm.cwd
+        sm.mu.Lock()
+        defer sm.mu.Unlock()
+        return sm.cwd
 }
 
 // LeafID returns the current leaf entry id, or empty if none.
 func (sm *Manager) LeafID() string {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	if sm.leafID == nil {
-		return ""
-	}
-	return *sm.leafID
+        sm.mu.Lock()
+        defer sm.mu.Unlock()
+        if sm.leafID == nil {
+                return ""
+        }
+        return *sm.leafID
 }

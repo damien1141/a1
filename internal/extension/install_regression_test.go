@@ -66,7 +66,7 @@ func TestUpdateExplicitRefPersists(t *testing.T) {
 				Source: SourceRelease, ReleaseTag: "v2.0.0",
 			}, "old")
 			rel, assets := releaseWithAsset(t, tc.tag, "greet", map[string]string{
-				"phi.yaml": "name: greet\nexec: ./greet\n", "greet": "new",
+				"a1.yaml": "name: greet\nexec: ./greet\n", "greet": "new",
 			})
 			var out bytes.Buffer
 			opts := UpdateOptions{
@@ -101,7 +101,7 @@ func TestUpdateRemoveUseActualPath(t *testing.T) {
 			managedPlugin(t, dir, InstallMeta{
 				Spec: Spec{Owner: "bob", Repo: "other"}, Source: SourceGit,
 			}, "other plugin")
-			require.NoError(t, os.WriteFile(filepath.Join(dir, "greet", "phi.yaml"),
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "greet", "a1.yaml"),
 				[]byte("name: other\nexec: ./greet\n"), 0o644))
 			require.NoError(t, Update(t.Context(), UpdateOptions{
 				Dir: dir, ID: id, Git: "git",
@@ -111,7 +111,7 @@ func TestUpdateRemoveUseActualPath(t *testing.T) {
 				RunGit: func(_ context.Context, _ string, args ...string) error {
 					dest := args[len(args)-1]
 					require.NoError(t, os.MkdirAll(dest, 0o755))
-					require.NoError(t, os.WriteFile(filepath.Join(dest, "phi.yaml"),
+					require.NoError(t, os.WriteFile(filepath.Join(dest, "a1.yaml"),
 						[]byte("name: greet\nexec: ./greet\n"), 0o644))
 					return os.WriteFile(filepath.Join(dest, "greet"), []byte("new"), 0o755)
 				},

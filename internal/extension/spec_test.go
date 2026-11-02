@@ -91,7 +91,7 @@ func TestInstallClonesWhenReleaseUnavailable(t *testing.T) {
 			require.NoError(t, os.MkdirAll(dest, 0o755))
 			require.NoError(
 				t,
-				os.WriteFile(filepath.Join(dest, "phi.yaml"), []byte("name: greet\nexec: ./greet\n"), 0o644),
+				os.WriteFile(filepath.Join(dest, "a1.yaml"), []byte("name: greet\nexec: ./greet\n"), 0o644),
 			)
 			return os.WriteFile(filepath.Join(dest, "greet"), []byte("#!/bin/true\n"), 0o755)
 		},
@@ -122,7 +122,7 @@ func TestInstallFromReleaseArchive(t *testing.T) {
 	assetName := fmt.Sprintf("greet_1.2.3_%s_%s.tar.gz", runtime.GOOS, runtime.GOARCH)
 	archivePath := filepath.Join(t.TempDir(), assetName)
 	require.NoError(t, writePluginTarGz(archivePath, map[string]string{
-		"phi.yaml": "name: greet\nexec: ./greet\n",
+		"a1.yaml": "name: greet\nexec: ./greet\n",
 		"greet":    "#!/bin/true\n",
 	}))
 	sum := mustSHA256(t, archivePath)
@@ -185,7 +185,7 @@ func TestInstallRejectsMissingEntry(t *testing.T) {
 		},
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "phi.yaml")
+	assert.Contains(t, err.Error(), "a1.yaml")
 	_, err = os.Stat(filepath.Join(dir, "empty"))
 	assert.True(t, os.IsNotExist(err), "failed install should clean up dest")
 }

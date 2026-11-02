@@ -9,6 +9,7 @@ import (
 
 	"github.com/damien1141/a1/internal/graph"
 	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/session"
 	"github.com/damien1141/a1/internal/tools/tooldef"
 )
 
@@ -83,7 +84,8 @@ func runTestImpact(ctx context.Context, input json.RawMessage) (tooldef.Result, 
 		return tooldef.Result{}, fmt.Errorf("resolve root: %w", err)
 	}
 
-	g, err := graph.OpenGraph(ctx, absRoot)
+	// Vault-backed mtime cache: nil vault db degrades to the plain walk.
+	g, err := graph.OpenGraphCached(ctx, absRoot, session.DefaultVault().DB(), in.Rescan)
 	if err != nil {
 		return tooldef.Result{}, fmt.Errorf("build graph: %w", err)
 	}

@@ -9,7 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Manifest describes a PXB extension subprocess (phi.yaml beside the binary).
+// Manifest describes a PXB extension subprocess (a1.yaml beside the binary).
 type Manifest struct {
 	Name        string   `yaml:"name"                  json:"name"`
 	Version     string   `yaml:"version,omitempty"     json:"version,omitempty"`
@@ -24,9 +24,9 @@ func (m Manifest) IsEnabled() bool {
 	return m.Enabled == nil || *m.Enabled
 }
 
-// ReadManifest loads phi.yaml or phi.yml from dir.
+// ReadManifest loads a1.yaml or a1.yml from dir.
 func ReadManifest(dir string) (Manifest, error) {
-	for _, name := range []string{"phi.yaml", "phi.yml"} {
+	for _, name := range []string{"a1.yaml", "a1.yml"} {
 		path := filepath.Join(dir, name)
 		b, err := os.ReadFile(path)
 		if err != nil {

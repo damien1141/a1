@@ -1,0 +1,41 @@
+<!--
+  Fixture: DuckDuckGo Lite captcha challenge page. Returned when DDG
+  detects unusual traffic patterns (server IPs, high request rates, etc.).
+  The parser must detect this and return a clear error so the user knows
+  to retry later or switch network (e.g., proxy, residential IP).
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>DuckDuckGo</title>
+</head>
+<body>
+  <center id="lite_wrapper">
+    <a class="header-url" href="/lite/">
+      <span class="header">DuckDuckGo</span>
+    </a>
+
+    <iframe name="ifr" width="0" height="0" border="0" class="hidden"></iframe>
+    <form id="challenge-form" action="//duckduckgo.com/anomaly.js" method="POST">
+      <div class="anomaly-modal__mask">
+        <div class="anomaly-modal__modal is-ie" data-testid="anomaly-modal">
+          <div class="anomaly-modal__title">Unfortunately, bots use DuckDuckGo too.</div>
+          <div class="anomaly-modal__description">Please complete the following challenge to confirm this search was made by a human.</div>
+          <div class="anomaly-modal__instructions">Select all squares containing a duck:</div>
+          <div class="anomaly-modal__puzzle-margins">
+            <div class="anomaly-modal__puzzle">
+              <div class="anomaly-modal__box" data-index="0">
+                <label for="image-check_test1">
+                  <input type="checkbox" class="anomaly-modal__check" name="image-check_test1" id="image-check_test1">
+                  <img class="anomaly-modal__image" alt=" " src="../assets/anomaly/images/challenge/test1.jpg">
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </form>
+  </center>
+</body>
+</html>

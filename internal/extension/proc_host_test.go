@@ -83,7 +83,7 @@ func TestHostFirstCommandConfirmCollision(t *testing.T) {
 }
 
 func TestHostProcessHelper(_ *testing.T) {
-	mode := os.Getenv("PHI_HOST_TEST_CHILD")
+	mode := os.Getenv("A1_HOST_TEST_CHILD")
 	if mode == "" {
 		return
 	}
@@ -104,7 +104,7 @@ func TestHostProcessHelper(_ *testing.T) {
 func hostTestProc(t *testing.T, mode string) (*Proc, <-chan struct{}) {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestHostProcessHelper$")
-	cmd.Env = append(os.Environ(), "PHI_HOST_TEST_CHILD="+mode)
+	cmd.Env = append(os.Environ(), "A1_HOST_TEST_CHILD="+mode)
 	stdin, err := cmd.StdinPipe()
 	require.NoError(t, err)
 	stdout, err := cmd.StdoutPipe()

@@ -19,19 +19,16 @@ import (
 
 const toolName = "ask_user"
 
-var description = `Ask the user a multiple-choice question during execution.
+var description = `Ask the user one multiple-choice question mid-turn; the answer comes
+back as the tool result. For genuine forks only: an ambiguous
+requirement, an approach choice, a preference only the user knows. Not
+a confirmation dialog, not a question a tool can answer - if the choice
+is obvious, make it yourself.
 
-Use it to resolve a genuine fork in the work — an ambiguous requirement, a
-choice between approaches, a preference only the user knows. It is not a
-confirmation dialog: do not use it to ask whether to proceed, and do not use it
-to re-litigate a decision you already made.
-
-Rules:
-- Ask at most one question per call; ask only when the answer changes what you do next.
-- Rank your preferred option first and append " (Recommended)" to its label.
-- Each option needs a description that says what choosing it means.
-- The user can always type a free-form answer instead, so a question blocks
-  nothing — but a question with no usable option is a question you should answer yourself.`
+Put your preferred option first and append " (Recommended)" to its
+label; give every option a one-line description. 2-4 options, one
+question per call. The user may answer free-form, or dismiss the
+question - then continue with your best judgment, not re-asking.`
 
 // QuestionTool returns the ask_user tool definition.
 func QuestionTool() tooldef.Tool {
@@ -44,7 +41,7 @@ func QuestionTool() tooldef.Tool {
 				Properties: llm.Object{
 					"header": llm.Object{
 						"type":        "string",
-						"description": "Short label for the question, 12 characters or fewer.",
+						"description": "Question label, max 12 chars.",
 					},
 					"question": llm.Object{
 						"type":        "string",
@@ -52,17 +49,17 @@ func QuestionTool() tooldef.Tool {
 					},
 					"options": llm.Object{
 						"type":        "array",
-						"description": "The choices, in preference order. 2 to 4 options.",
+						"description": "The choices, best first. 2 to 4.",
 						"items": llm.Object{
 							"type": "object",
 							"properties": llm.Object{
 								"label": llm.Object{
 									"type":        "string",
-									"description": "Short label for this choice. Append \" (Recommended)\" to the one you advise.",
+									"description": "Short choice label.",
 								},
 								"description": llm.Object{
 									"type":        "string",
-									"description": "What choosing this option means.",
+									"description": "What this choice means.",
 								},
 							},
 							"required": []string{"label"},
@@ -70,7 +67,7 @@ func QuestionTool() tooldef.Tool {
 					},
 					"multi_select": llm.Object{
 						"type":        "boolean",
-						"description": "True when more than one option may be selected.",
+						"description": "Allow selecting more than one.",
 					},
 				},
 				Required: []string{"question", "options"},

@@ -254,3 +254,65 @@ func processForTest(sse string) []llm.StreamEvent {
 	})
 	return events
 }
+
+func TestBuildRequestToolResultWithImages(t *testing.T) {
+	cfg := llm.ModelConfig{Name: "claude-sonnet-4-20250514", APIKey: "k", BaseURL: "https://api.anthropic.com"}
+	req := BuildRequest(cfg, "", []llm.Message{
+		{Role: llm.RoleUser, Content: "look"},
+		{
+			Role: llm.RoleAssistant,
+			ToolCalls: []llm.ToolCall{
+				{ID: "call_01", Function: llm.Function{Name: "browser_read", Arguments: `{"mode":"screenshot"}`}},
+			},
+		},
+		{
+			Role:       llm.RoleTool,
+			ToolCallID: "call_01",
+			Content:    "Screenshot saved to /tmp/a1-screenshot-x.png",
+			Images:     []llm.Image{{Data: "aGVsbG8=", MimeType: "image/png"}},
+		},
+	}, nil)
+
+	require.Len(t, req.Messages, 3)
+	results, ok := req.Messages[2].Content.([]anthropicContentBlock)
+	require.True(t, ok, "expected tool_result blocks, got %T", req.Messages[2].Content)
+	require.Len(t, results, 1)
+	require.Equal(t, "tool_result", results[0].Type)
+
+	inner, ok := results[0].Content.([]anthropicContentBlock)
+	require.True(t, ok, "image-bearing tool_result content must be a block array, got %T", results[0].Content)
+	require.Len(t, inner, 2)
+	assert.Equal(t, "text", inner[0].Type)
+	assert.Contains(t, inner[0].Text, "Screenshot saved to")
+	assert.Equal(t, "image", inner[1].Type)
+	require.NotNil(t, inner[1].Source)
+	assert.Equal(t, "base64", inner[1].Source.Type)
+	assert.Equal(t, "image/png", inner[1].Source.MediaType)
+	assert.Equal(t, "aGVsbG8=", inner[1].Source.Data)
+
+	body, err := json.Marshal(req)
+	require.NoError(t, err)
+	sbody := string(body)
+	assert.Contains(t, sbody, `"tool_result"`)
+	assert.Contains(t, sbody, `"type":"image"`)
+}
+
+func TestBuildRequestToolResultWithoutImagesStaysString(t *testing.T) {
+	cfg := llm.ModelConfig{Name: "claude-sonnet-4-20250514", APIKey: "k", BaseURL: "https://api.anthropic.com"}
+	req := BuildRequest(cfg, "", []llm.Message{
+		{
+			Role: llm.RoleAssistant,
+			ToolCalls: []llm.ToolCall{
+				{ID: "call_01", Function: llm.Function{Name: "read", Arguments: `{}`}},
+			},
+		},
+		{Role: llm.RoleTool, ToolCallID: "call_01", Content: "plain"},
+	}, nil)
+	require.Len(t, req.Messages, 2, "assistant tool_use + merged tool_result user message")
+	results, ok := req.Messages[1].Content.([]anthropicContentBlock)
+	require.True(t, ok)
+	require.Len(t, results, 1)
+	str, ok := results[0].Content.(string)
+	require.True(t, ok, "plain tool results keep their string content, got %T", results[0].Content)
+	assert.Equal(t, "plain", str)
+}

@@ -23,6 +23,7 @@ type Builtin struct {
 	Sessions *SessionCommands
 	Branches *BranchCommands
 	Ext      *ExtCommands
+	Compact  *CompactCommands
 }
 
 // NewBuiltinRegistry constructs the registry and every builtin domain handler.
@@ -70,6 +71,14 @@ func NewBuiltinRegistry(
 		Bus:  bus,
 		Ctrl: ctrl,
 	}
+	personaCmd := &PersonaCommands{
+		Ctrl: ctrl,
+		Bus:  bus,
+	}
+	toolBudget := &ToolBudgetCommands{
+		Ctrl: ctrl,
+		Bus:  bus,
+	}
 	contextCmd := &ContextCommands{
 		Bus: bus,
 		Snap: func() session.Snapshot {
@@ -91,6 +100,10 @@ func NewBuiltinRegistry(
 			return ctrl.ToolSchemaBytes()
 		},
 	}
+	compactCmd := &CompactCommands{
+		Bus:  bus,
+		Ctrl: ctrl,
+	}
 
 	sessions.Register(r)
 	branches.Register(r)
@@ -103,9 +116,12 @@ func NewBuiltinRegistry(
 	snapshot.Register(r)
 	permission.Register(r)
 	config.Register(r)
+	personaCmd.Register(r)
+	toolBudget.Register(r)
 	contextCmd.Register(r)
+	compactCmd.Register(r)
 
-	return &Builtin{Registry: r, Sessions: sessions, Branches: branches, Ext: ext}
+	return &Builtin{Registry: r, Sessions: sessions, Branches: branches, Ext: ext, Compact: compactCmd}
 }
 
 // Bind attaches late UI collaborators (Submitter, pickers, stream guard).
@@ -132,5 +148,8 @@ func (b *Builtin) Bind(
 		b.Branches.OpenOverlay = openBranchPicker
 		b.Branches.Dir = cwd
 		b.Branches.StreamActive = streamActive
+	}
+	if b.Compact != nil {
+		b.Compact.StreamActive = streamActive
 	}
 }

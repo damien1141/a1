@@ -1,21 +1,22 @@
 package agent
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"sync/atomic"
-	"testing"
+        "context"
+        "encoding/json"
+        "fmt"
+        "net/http"
+        "net/http/httptest"
+        "strings"
+        "sync/atomic"
+        "testing"
 
-	"github.com/stretchr/testify/require"
+        "github.com/stretchr/testify/require"
 
-	"github.com/damien1141/a1/internal/llm"
-	"github.com/damien1141/a1/internal/permission"
-	"github.com/damien1141/a1/internal/session"
-	"github.com/damien1141/a1/internal/tools"
+        "github.com/damien1141/a1/internal/llm"
+        "github.com/damien1141/a1/internal/permission"
+        "github.com/damien1141/a1/internal/session"
+        "github.com/damien1141/a1/internal/session/compaction"
+        "github.com/damien1141/a1/internal/tools"
 )
 
 // compactionSeed is one seeded turn's content, about 12k estimated tokens (4
@@ -25,431 +26,464 @@ var compactionSeed = strings.Repeat("x", 12000*4)
 
 // sseToolCallChunk encodes one SSE data line carrying a full tool-call delta.
 func sseToolCallChunk(id, name, args string) string {
-	payload, err := json.Marshal(map[string]any{
-		"choices": []any{map[string]any{
-			"delta": map[string]any{
-				"role":    "assistant",
-				"content": "",
-				"tool_calls": []any{map[string]any{
-					"index":    0,
-					"id":       id,
-					"type":     "function",
-					"function": map[string]any{"name": name, "arguments": args},
-				}},
-			},
-		}},
-	})
-	if err != nil {
-		panic(err)
-	}
-	return "data: " + string(payload) + "\n\n"
+        payload, err := json.Marshal(map[string]any{
+                "choices": []any{map[string]any{
+                        "delta": map[string]any{
+                                "role":    "assistant",
+                                "content": "",
+                                "tool_calls": []any{map[string]any{
+                                        "index":    0,
+                                        "id":       id,
+                                        "type":     "function",
+                                        "function": map[string]any{"name": name, "arguments": args},
+                                }},
+                        },
+                }},
+        })
+        if err != nil {
+                panic(err)
+        }
+        return "data: " + string(payload) + "\n\n"
 }
 
 func sseTextChunk(text string) string {
-	payload, err := json.Marshal(map[string]any{
-		"choices": []any{map[string]any{
-			"delta": map[string]any{
-				"role":    "assistant",
-				"content": text,
-			},
-		}},
-	})
-	if err != nil {
-		panic(err)
-	}
-	return "data: " + string(payload) + "\n\n"
+        payload, err := json.Marshal(map[string]any{
+                "choices": []any{map[string]any{
+                        "delta": map[string]any{
+                                "role":    "assistant",
+                                "content": text,
+                        },
+                }},
+        })
+        if err != nil {
+                panic(err)
+        }
+        return "data: " + string(payload) + "\n\n"
 }
 
 // fakeToolSequenceServer returns tool calls for finalAfter tool requests, then
 // returns a final text response. A negative finalAfter means tool calls forever.
+// Only /chat/completions requests are scripted and counted: the engine's
+// context-window probe (GET /props) hits the same server and must not shift
+// the sequence.
 func fakeToolSequenceServer(finalAfter int) (*httptest.Server, *atomic.Int32) {
-	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		request := requests.Add(1)
-		if finalAfter < 0 || int(request) <= finalAfter {
-			_, _ = fmt.Fprint(w, sseToolCallChunk(fmt.Sprintf("call_%d", request), "count", `{}`))
-		} else {
-			_, _ = fmt.Fprint(w, sseTextChunk("done"))
-		}
-		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
-	}))
-	return server, &requests
+        var requests atomic.Int32
+        server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                if r.URL.Path != "/chat/completions" {
+                        http.NotFound(w, r)
+                        return
+                }
+                w.Header().Set("Content-Type", "text/event-stream")
+                request := requests.Add(1)
+                if finalAfter < 0 || int(request) <= finalAfter {
+                        _, _ = fmt.Fprint(w, sseToolCallChunk(fmt.Sprintf("call_%d", request), "count", `{}`))
+                } else {
+                        _, _ = fmt.Fprint(w, sseTextChunk("done"))
+                }
+                _, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+        }))
+        return server, &requests
 }
 
 func countingTool(runs *atomic.Int32) tools.Tool {
-	return tools.Tool{
-		Definition: llm.ToolDefinition{
-			Name:        "count",
-			Description: "count tool executions",
-			Params:      &llm.FunctionParameters{Type: "object"},
-		},
-		Run: func(context.Context, json.RawMessage) (tools.Result, error) {
-			runs.Add(1)
-			return tools.Result{Content: "ok"}, nil
-		},
-	}
+        return tools.Tool{
+                Definition: llm.ToolDefinition{
+                        Name:        "count",
+                        Description: "count tool executions",
+                        Params:      &llm.FunctionParameters{Type: "object"},
+                },
+                Run: func(context.Context, json.RawMessage) (tools.Result, error) {
+                        runs.Add(1)
+                        return tools.Result{Content: "ok"}, nil
+                },
+        }
 }
 
 func newRoundTestEngine(t *testing.T, serverURL string, runs *atomic.Int32, maxRounds int) *Engine {
-	t.Helper()
-	sess, err := NewSession(WithCwd(t.TempDir()))
-	require.NoError(t, err)
-	engine, err := NewEngine(
-		llm.ModelConfig{Name: "fake", BaseURL: serverURL, APIKey: "x"},
-		sess,
-		WithGate(permission.AllowAll{}),
-		WithTools([]tools.Tool{countingTool(runs)}),
-		WithMaxRounds(maxRounds),
-	)
-	require.NoError(t, err)
-	return engine
+        t.Helper()
+        sess, err := NewSession(WithCwd(t.TempDir()))
+        require.NoError(t, err)
+        engine, err := NewEngine(
+                llm.ModelConfig{Name: "fake", BaseURL: serverURL, APIKey: "x"},
+                sess,
+                WithGate(permission.AllowAll{}),
+                WithTools([]tools.Tool{countingTool(runs)}),
+                WithMaxRounds(maxRounds),
+        )
+        require.NoError(t, err)
+        return engine
 }
 
 func TestLoopMaxRoundsAllowsFinalAnswerAfterLastToolRound(t *testing.T) {
-	server, requests := fakeToolSequenceServer(2)
-	defer server.Close()
+        server, requests := fakeToolSequenceServer(2)
+        defer server.Close()
 
-	var runs atomic.Int32
-	engine := newRoundTestEngine(t, server.URL, &runs, 2)
+        var runs atomic.Int32
+        engine := newRoundTestEngine(t, server.URL, &runs, 2)
 
-	var lastErr error
-	var finalText string
-	for ev, err := range engine.Loop(t.Context(), "go", LoopOpts{}) {
-		if err != nil {
-			lastErr = err
-			break
-		}
-		if update, ok := ev.(session.AssistantMessageUpdate); ok && update.Message.State == session.StateComplete {
-			finalText = update.Message.FlatText()
-		}
-	}
-	require.NoError(t, lastErr)
-	require.Equal(t, int32(2), runs.Load())
-	require.Equal(t, int32(3), requests.Load())
-	require.Equal(t, "done", finalText)
+        var lastErr error
+        var finalText string
+        for ev, err := range engine.Loop(t.Context(), "go", LoopOpts{}) {
+                if err != nil {
+                        lastErr = err
+                        break
+                }
+                if update, ok := ev.(session.AssistantMessageUpdate); ok && update.Message.State == session.StateComplete {
+                        finalText = update.Message.FlatText()
+                }
+        }
+        require.NoError(t, lastErr)
+        require.Equal(t, int32(2), runs.Load())
+        require.Equal(t, int32(3), requests.Load())
+        require.Equal(t, "done", finalText)
 }
 
 func TestLoopMaxRoundsDoesNotExecuteExtraToolRound(t *testing.T) {
-	server, requests := fakeToolSequenceServer(-1)
-	defer server.Close()
+        server, requests := fakeToolSequenceServer(-1)
+        defer server.Close()
 
-	var runs atomic.Int32
-	engine := newRoundTestEngine(t, server.URL, &runs, 2)
+        var runs atomic.Int32
+        engine := newRoundTestEngine(t, server.URL, &runs, 2)
 
-	var lastErr error
-	for ev, err := range engine.Loop(t.Context(), "go", LoopOpts{}) {
-		_ = ev
-		if err != nil {
-			lastErr = err
-			break
-		}
-	}
-	require.Error(t, lastErr, "loop should stop when the model requests a third tool round")
-	require.ErrorIs(t, lastErr, ErrMaxRounds)
-	require.Equal(t, int32(2), runs.Load())
-	require.Equal(t, int32(3), requests.Load())
+        var lastErr error
+        for ev, err := range engine.Loop(t.Context(), "go", LoopOpts{}) {
+                _ = ev
+                if err != nil {
+                        lastErr = err
+                        break
+                }
+        }
+        require.Error(t, lastErr, "loop should stop when the model requests a third tool round")
+        require.ErrorIs(t, lastErr, ErrMaxRounds)
+        require.Equal(t, int32(2), runs.Load())
+        require.Equal(t, int32(3), requests.Load())
 
-	assistantToolRounds := 0
-	for _, msg := range engine.session.BuildContext() {
-		if msg.Role == llm.RoleAssistant && len(msg.ToolCalls) > 0 {
-			assistantToolRounds++
-		}
-	}
-	require.Equal(t, 2, assistantToolRounds)
+        assistantToolRounds := 0
+        for _, msg := range engine.session.BuildContext() {
+                if msg.Role == llm.RoleAssistant && len(msg.ToolCalls) > 0 {
+                        assistantToolRounds++
+                }
+        }
+        require.Equal(t, 2, assistantToolRounds)
 }
 
 func TestLoopContinueAskGrantsAnotherBudget(t *testing.T) {
-	server, _ := fakeToolSequenceServer(-1)
-	defer server.Close()
+        server, _ := fakeToolSequenceServer(-1)
+        defer server.Close()
 
-	var asks atomic.Int32
-	sess, err := NewSession(WithCwd(t.TempDir()))
-	require.NoError(t, err)
-	engine, err := NewEngine(
-		llm.ModelConfig{Name: "fake", BaseURL: server.URL, APIKey: "x"},
-		sess,
-		WithGate(permission.AllowAll{}),
-		WithMaxRounds(1),
-		WithContinueAsk(func(context.Context, int) (bool, error) {
-			// Approve once so the loop can start a second budget window, then stop.
-			return asks.Add(1) == 1, nil
-		}),
-	)
-	require.NoError(t, err)
+        var asks atomic.Int32
+        sess, err := NewSession(WithCwd(t.TempDir()))
+        require.NoError(t, err)
+        engine, err := NewEngine(
+                llm.ModelConfig{Name: "fake", BaseURL: server.URL, APIKey: "x"},
+                sess,
+                WithGate(permission.AllowAll{}),
+                WithMaxRounds(1),
+                WithContinueAsk(func(context.Context, int) (bool, error) {
+                        // Approve once so the loop can start a second budget window, then stop.
+                        return asks.Add(1) == 1, nil
+                }),
+        )
+        require.NoError(t, err)
 
-	var lastErr error
-	for ev, err := range engine.Loop(t.Context(), "go", LoopOpts{}) {
-		_ = ev
-		if err != nil {
-			lastErr = err
-			break
-		}
-	}
-	require.Error(t, lastErr)
-	require.ErrorIs(t, lastErr, ErrMaxRounds)
-	require.Equal(t, int32(2), asks.Load(), "should ask once per exhausted budget")
+        var lastErr error
+        for ev, err := range engine.Loop(t.Context(), "go", LoopOpts{}) {
+                _ = ev
+                if err != nil {
+                        lastErr = err
+                        break
+                }
+        }
+        require.Error(t, lastErr)
+        require.ErrorIs(t, lastErr, ErrMaxRounds)
+        require.Equal(t, int32(2), asks.Load(), "should ask once per exhausted budget")
 }
 
 func TestLoopContinueAskDeclineReturnsErrMaxRounds(t *testing.T) {
-	server, _ := fakeToolSequenceServer(-1)
-	defer server.Close()
+        server, _ := fakeToolSequenceServer(-1)
+        defer server.Close()
 
-	sess, err := NewSession(WithCwd(t.TempDir()))
-	require.NoError(t, err)
-	engine, err := NewEngine(
-		llm.ModelConfig{Name: "fake", BaseURL: server.URL, APIKey: "x"},
-		sess,
-		WithGate(permission.AllowAll{}),
-		WithMaxRounds(1),
-		WithContinueAsk(func(context.Context, int) (bool, error) {
-			return false, nil
-		}),
-	)
-	require.NoError(t, err)
+        sess, err := NewSession(WithCwd(t.TempDir()))
+        require.NoError(t, err)
+        engine, err := NewEngine(
+                llm.ModelConfig{Name: "fake", BaseURL: server.URL, APIKey: "x"},
+                sess,
+                WithGate(permission.AllowAll{}),
+                WithMaxRounds(1),
+                WithContinueAsk(func(context.Context, int) (bool, error) {
+                        return false, nil
+                }),
+        )
+        require.NoError(t, err)
 
-	var lastErr error
-	for ev, err := range engine.Loop(t.Context(), "go", LoopOpts{}) {
-		_ = ev
-		if err != nil {
-			lastErr = err
-			break
-		}
-	}
-	require.ErrorIs(t, lastErr, ErrMaxRounds)
+        var lastErr error
+        for ev, err := range engine.Loop(t.Context(), "go", LoopOpts{}) {
+                _ = ev
+                if err != nil {
+                        lastErr = err
+                        break
+                }
+        }
+        require.ErrorIs(t, lastErr, ErrMaxRounds)
 }
 
 // overflowThenOKServer fails the first streaming chat with a context overflow,
 // serves a non-stream compact summary, then streams a final text reply.
 func overflowThenOKServer(streamHits *atomic.Int32) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body map[string]any
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		if stream, _ := body["stream"].(bool); stream {
-			n := streamHits.Add(1)
-			if n == 1 {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusBadRequest)
-				_, _ = w.Write([]byte(`{"error":{"message":"prompt is too long: 210000 > 200000 tokens"}}`))
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			_, _ = fmt.Fprint(w, sseTextChunk("recovered"))
-			_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
-			return
-		}
-		// Compaction Compact() is non-streaming chat.
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"choices": []any{map[string]any{
-				"message": map[string]any{"role": "assistant", "content": "prior work summarized"},
-			}},
-		})
-	}))
+        return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                var body map[string]any
+                _ = json.NewDecoder(r.Body).Decode(&body)
+                if stream, _ := body["stream"].(bool); stream {
+                        n := streamHits.Add(1)
+                        if n == 1 {
+                                w.Header().Set("Content-Type", "application/json")
+                                w.WriteHeader(http.StatusBadRequest)
+                                _, _ = w.Write([]byte(`{"error":{"message":"prompt is too long: 210000 > 200000 tokens"}}`))
+                                return
+                        }
+                        w.Header().Set("Content-Type", "text/event-stream")
+                        _, _ = fmt.Fprint(w, sseTextChunk("recovered"))
+                        _, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+                        return
+                }
+                // Compaction Compact() is non-streaming chat.
+                w.Header().Set("Content-Type", "application/json")
+                _ = json.NewEncoder(w).Encode(map[string]any{
+                        "choices": []any{map[string]any{
+                                "message": map[string]any{"role": "assistant", "content": "prior work summarized"},
+                        }},
+                })
+        }))
 }
 
 func TestLoopOverflowCompactsAndRetries(t *testing.T) {
-	var streamHits atomic.Int32
-	server := overflowThenOKServer(&streamHits)
-	defer server.Close()
+        var streamHits atomic.Int32
+        server := overflowThenOKServer(&streamHits)
+        defer server.Close()
 
-	sess, err := NewSession(WithCwd(t.TempDir()))
-	require.NoError(t, err)
-	// Seed a history larger than force-compact's budget (default
-	// keepRecentTokens is 20k). The cut weighs message size, not the reported
-	// usage, so the content has to be big: the last two messages alone must
-	// exceed the budget, leaving an older prefix to summarize.
-	require.NoError(t, sess.Append(
-		llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 12000}},
-		llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 24000}},
-		llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 36000}},
-		llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 50000}},
-	))
+        sess, err := NewSession(WithCwd(t.TempDir()))
+        require.NoError(t, err)
+        // Seed a history larger than force-compact's budget (default
+        // keepRecentTokens is 20k). The cut weighs message size, not the reported
+        // usage, so the content has to be big: the last two messages alone must
+        // exceed the budget, leaving an older prefix to summarize.
+        require.NoError(t, sess.Append(
+                llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 12000}},
+                llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 24000}},
+                llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 36000}},
+                llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 50000}},
+        ))
 
-	engine, err := NewEngine(
-		llm.ModelConfig{Name: "fake", BaseURL: server.URL, APIKey: "x", ContextWindow: 200_000},
-		sess,
-		WithGate(permission.AllowAll{}),
-		WithTools([]tools.Tool{}),
-	)
-	require.NoError(t, err)
+        engine, err := NewEngine(
+                llm.ModelConfig{Name: "fake", BaseURL: server.URL, APIKey: "x", ContextWindow: 200_000},
+                sess,
+                WithGate(permission.AllowAll{}),
+                WithTools([]tools.Tool{}),
+        )
+        require.NoError(t, err)
 
-	var lastErr error
-	var finalText string
-	var sawCompact bool
-	for ev, err := range engine.Loop(t.Context(), "continue", LoopOpts{}) {
-		if err != nil {
-			lastErr = err
-			break
-		}
-		switch e := ev.(type) {
-		case session.CompactionStarted:
-			sawCompact = true
-		case session.AssistantMessageUpdate:
-			if e.Message.State == session.StateComplete {
-				finalText = e.Message.FlatText()
-			}
-		}
-	}
-	require.NoError(t, lastErr)
-	require.True(t, sawCompact, "expected overflow path to emit CompactionStarted")
-	require.Equal(t, int32(2), streamHits.Load(), "overflow then one retry stream")
-	require.Equal(t, "recovered", finalText)
+        var lastErr error
+        var finalText string
+        var sawCompact bool
+        for ev, err := range engine.Loop(t.Context(), "continue", LoopOpts{}) {
+                if err != nil {
+                        lastErr = err
+                        break
+                }
+                switch e := ev.(type) {
+                case session.CompactionStarted:
+                        sawCompact = true
+                case session.AssistantMessageUpdate:
+                        if e.Message.State == session.StateComplete {
+                                finalText = e.Message.FlatText()
+                        }
+                }
+        }
+        require.NoError(t, lastErr)
+        require.True(t, sawCompact, "expected overflow path to emit CompactionStarted")
+        require.Equal(t, int32(2), streamHits.Load(), "overflow then one retry stream")
+        require.Equal(t, "recovered", finalText)
 }
 
-func TestLoopOverflowFailsClosedAfterOneRetry(t *testing.T) {
-	var streamHits atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body map[string]any
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		if stream, _ := body["stream"].(bool); stream {
-			streamHits.Add(1)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = w.Write([]byte(`{"error":{"message":"prompt is too long: 210000 > 200000 tokens"}}`))
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"choices": []any{map[string]any{
-				"message": map[string]any{"role": "assistant", "content": "summary"},
-			}},
-		})
-	}))
-	defer server.Close()
+// TestLoopOverflowFailsClosedWhenRecoveryCannotShrink pins the fail-closed
+// path: with an always-overflow server, the first recovery compacts, the
+// retry overflows again, and the second forced compact finds nothing new to
+// summarize (the session already ends with a compaction entry) — so the
+// original error surfaces instead of looping.
+func TestLoopOverflowFailsClosedWhenRecoveryCannotShrink(t *testing.T) {
+        var streamHits atomic.Int32
+        server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                var body map[string]any
+                _ = json.NewDecoder(r.Body).Decode(&body)
+                if stream, _ := body["stream"].(bool); stream {
+                        streamHits.Add(1)
+                        w.Header().Set("Content-Type", "application/json")
+                        w.WriteHeader(http.StatusBadRequest)
+                        _, _ = w.Write([]byte(`{"error":{"message":"prompt is too long: 210000 > 200000 tokens"}}`))
+                        return
+                }
+                w.Header().Set("Content-Type", "application/json")
+                _ = json.NewEncoder(w).Encode(map[string]any{
+                        "choices": []any{map[string]any{
+                                "message": map[string]any{"role": "assistant", "content": "summary"},
+                        }},
+                })
+        }))
+        defer server.Close()
 
-	sess, err := NewSession(WithCwd(t.TempDir()))
-	require.NoError(t, err)
-	require.NoError(t, sess.Append(
-		llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 12000}},
-		llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 24000}},
-		llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 36000}},
-		llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 50000}},
-	))
+        sess, err := NewSession(WithCwd(t.TempDir()))
+        require.NoError(t, err)
+        require.NoError(t, sess.Append(
+                llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 12000}},
+                llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 24000}},
+                llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 36000}},
+                llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 50000}},
+        ))
 
-	engine, err := NewEngine(
-		llm.ModelConfig{Name: "fake", BaseURL: server.URL, APIKey: "x", ContextWindow: 200_000},
-		sess,
-		WithGate(permission.AllowAll{}),
-		WithTools([]tools.Tool{}),
-	)
-	require.NoError(t, err)
+        engine, err := NewEngine(
+                llm.ModelConfig{Name: "fake", BaseURL: server.URL, APIKey: "x", ContextWindow: 200_000},
+                sess,
+                WithGate(permission.AllowAll{}),
+                WithTools([]tools.Tool{}),
+        )
+        require.NoError(t, err)
 
-	var lastErr error
-	for ev, err := range engine.Loop(t.Context(), "continue", LoopOpts{}) {
-		_ = ev
-		if err != nil {
-			lastErr = err
-			break
-		}
-	}
-	require.Error(t, lastErr)
-	require.True(t, llm.IsContextOverflow(lastErr))
-	require.Equal(t, int32(2), streamHits.Load(), "one recovery attempt then fail")
+        var lastErr error
+        for ev, err := range engine.Loop(t.Context(), "continue", LoopOpts{}) {
+                _ = ev
+                if err != nil {
+                        lastErr = err
+                        break
+                }
+        }
+        require.Error(t, lastErr)
+        require.True(t, llm.IsContextOverflow(lastErr))
+        require.Equal(t, int32(2), streamHits.Load(), "one recovery attempt then fail")
 }
 
 // A summary that stopped at the output cap is incomplete. It must not become
 // the session checkpoint: the loop surfaces the original overflow and the
 // history stays where it was.
 func TestLoopOverflowRejectsCappedSummary(t *testing.T) {
-	var streamHits atomic.Int32
-	var compactMaxTokens float64
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body map[string]any
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		if stream, _ := body["stream"].(bool); stream {
-			streamHits.Add(1)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = w.Write([]byte(`{"error":{"message":"prompt is too long: 210000 > 200000 tokens"}}`))
-			return
-		}
-		compactMaxTokens, _ = body["max_tokens"].(float64)
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"choices": []any{map[string]any{
-				"message":       map[string]any{"role": "assistant", "content": "truncated summary"},
-				"finish_reason": "length",
-			}},
-		})
-	}))
-	defer server.Close()
+        var streamHits atomic.Int32
+        var compactMaxTokens float64
+        server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                var body map[string]any
+                _ = json.NewDecoder(r.Body).Decode(&body)
+                if stream, _ := body["stream"].(bool); stream {
+                        streamHits.Add(1)
+                        w.Header().Set("Content-Type", "application/json")
+                        w.WriteHeader(http.StatusBadRequest)
+                        _, _ = w.Write([]byte(`{"error":{"message":"prompt is too long: 210000 > 200000 tokens"}}`))
+                        return
+                }
+                compactMaxTokens, _ = body["max_tokens"].(float64)
+                w.Header().Set("Content-Type", "application/json")
+                _ = json.NewEncoder(w).Encode(map[string]any{
+                        "choices": []any{map[string]any{
+                                "message":       map[string]any{"role": "assistant", "content": "truncated summary"},
+                                "finish_reason": "length",
+                        }},
+                })
+        }))
+        defer server.Close()
 
-	sess, err := NewSession(WithCwd(t.TempDir()))
-	require.NoError(t, err)
-	require.NoError(t, sess.Append(
-		llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 12000}},
-		llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 24000}},
-		llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 36000}},
-		llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 50000}},
-	))
+        sess, err := NewSession(WithCwd(t.TempDir()))
+        require.NoError(t, err)
+        // Five seed messages (u, a, u, a, u), each ~12K estimated tokens = 60K
+        // total. With the window-aware K for a 200K window (K = 30000), the cut
+        // accumulates backward and lands on the 3rd message (a user message,
+        // index 2) — a turn boundary, so summarizeHistory is used (single LLM
+        // call, cap = reverseTokens * 0.8). With four messages the cut would
+        // land mid-turn, routing through summarizeMidTurnCut which fires two
+        // parallel calls and makes the cap assertion racy.
+        require.NoError(t, sess.Append(
+                llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 12000}},
+                llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 24000}},
+                llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 36000}},
+                llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 50000}},
+                llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 62000}},
+        ))
 
-	engine, err := NewEngine(
-		llm.ModelConfig{Name: "fake", BaseURL: server.URL, APIKey: "x", ContextWindow: 200_000},
-		sess,
-		WithGate(permission.AllowAll{}),
-		WithTools([]tools.Tool{}),
-	)
-	require.NoError(t, err)
+        engine, err := NewEngine(
+                llm.ModelConfig{Name: "fake", BaseURL: server.URL, APIKey: "x", ContextWindow: 200_000},
+                sess,
+                WithGate(permission.AllowAll{}),
+                WithTools([]tools.Tool{}),
+        )
+        require.NoError(t, err)
 
-	var lastErr error
-	var sawFailure bool
-	for ev, err := range engine.Loop(t.Context(), "continue", LoopOpts{}) {
-		if err != nil {
-			lastErr = err
-			break
-		}
-		if e, ok := ev.(session.CompactionComplete); ok && e.Failed {
-			sawFailure = true
-		}
-	}
+        var lastErr error
+        var sawFailure bool
+        for ev, err := range engine.Loop(t.Context(), "continue", LoopOpts{}) {
+                if err != nil {
+                        lastErr = err
+                        break
+                }
+                if e, ok := ev.(session.CompactionComplete); ok && e.Failed {
+                        sawFailure = true
+                }
+        }
 
-	require.True(t, sawFailure, "a capped summary must report a failed compaction")
-	require.Error(t, lastErr)
-	require.True(t, llm.IsContextOverflow(lastErr), "the original overflow surfaces unchanged")
-	require.Equal(t, int32(1), streamHits.Load(), "no retry on a failed compact")
-	// Default reserveTokens is 16384, so the history summary is capped at 0.8x.
-	require.InDelta(t, 13107, compactMaxTokens, 0.5)
-	for _, entry := range sess.PathEntries() {
-		require.NotEqual(t, session.EntryCompaction, entry.GetType(), "no checkpoint was persisted")
-	}
+        require.True(t, sawFailure, "a capped summary must report a failed compaction")
+        require.Error(t, lastErr)
+        require.True(t, llm.IsContextOverflow(lastErr), "the original overflow surfaces unchanged")
+        require.Equal(t, int32(1), streamHits.Load(), "no retry on a failed compact")
+        // The summary cap is reverseTokens * historySummaryRatio (0.8). With
+        // the window-aware settings for a 200K window, reverseTokens = 25000,
+        // so the cap is 20000. The old fixed default (16384 → 13107) was
+        // calibrated for 128K; SettingsFor scales it for the actual window.
+        // The 5-message seed lands the cut on a user message (turn boundary),
+        // so summarizeHistory is used (single LLM call) and the cap is
+        // deterministic.
+        wantCap := float64(compaction.SettingsFor(200_000).ReverseTokens()) * 0.8
+        require.InDelta(t, wantCap, compactMaxTokens, 0.5)
+        for _, entry := range sess.PathEntries() {
+                require.NotEqual(t, session.EntryCompaction, entry.GetType(), "no checkpoint was persisted")
+        }
 }
 
 func TestLoopNonOverflowErrorDoesNotCompact(t *testing.T) {
-	var streamHits atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		streamHits.Add(1)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"error":{"message":"Incorrect API key provided"}}`))
-	}))
-	defer server.Close()
+        var streamHits atomic.Int32
+        server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                // The engine's window probe (GET /props) shares this server; only
+                // count chat requests.
+                if r.URL.Path != "/chat/completions" {
+                        http.NotFound(w, r)
+                        return
+                }
+                streamHits.Add(1)
+                w.Header().Set("Content-Type", "application/json")
+                w.WriteHeader(http.StatusUnauthorized)
+                _, _ = w.Write([]byte(`{"error":{"message":"Incorrect API key provided"}}`))
+        }))
+        defer server.Close()
 
-	sess, err := NewSession(WithCwd(t.TempDir()))
-	require.NoError(t, err)
-	engine, err := NewEngine(
-		llm.ModelConfig{Name: "fake", BaseURL: server.URL, APIKey: "x"},
-		sess,
-		WithGate(permission.AllowAll{}),
-		WithTools([]tools.Tool{}),
-	)
-	require.NoError(t, err)
+        sess, err := NewSession(WithCwd(t.TempDir()))
+        require.NoError(t, err)
+        engine, err := NewEngine(
+                llm.ModelConfig{Name: "fake", BaseURL: server.URL, APIKey: "x"},
+                sess,
+                WithGate(permission.AllowAll{}),
+                WithTools([]tools.Tool{}),
+        )
+        require.NoError(t, err)
 
-	var lastErr error
-	var sawCompact bool
-	for ev, err := range engine.Loop(t.Context(), "go", LoopOpts{}) {
-		if err != nil {
-			lastErr = err
-			break
-		}
-		if _, ok := ev.(session.CompactionStarted); ok {
-			sawCompact = true
-		}
-	}
-	require.Error(t, lastErr)
-	require.False(t, llm.IsContextOverflow(lastErr))
-	require.False(t, sawCompact)
-	require.Equal(t, int32(1), streamHits.Load())
+        var lastErr error
+        var sawCompact bool
+        for ev, err := range engine.Loop(t.Context(), "go", LoopOpts{}) {
+                if err != nil {
+                        lastErr = err
+                        break
+                }
+                if _, ok := ev.(session.CompactionStarted); ok {
+                        sawCompact = true
+                }
+        }
+        require.Error(t, lastErr)
+        require.False(t, llm.IsContextOverflow(lastErr))
+        require.False(t, sawCompact)
+        require.Equal(t, int32(1), streamHits.Load())
 }
 
 // TestRunCompact_ForceCompactsWhenHistoryExists pins the overflow-recovery
@@ -459,38 +493,38 @@ func TestLoopNonOverflowErrorDoesNotCompact(t *testing.T) {
 // single overflow retry is burned on a second overflow and recovery never
 // happens.
 func TestRunCompact_ForceCompactsWhenHistoryExists(t *testing.T) {
-	server := overflowThenOKServer(&atomic.Int32{})
-	defer server.Close()
+        server := overflowThenOKServer(&atomic.Int32{})
+        defer server.Close()
 
-	sess, err := NewSession(WithCwd(t.TempDir()))
-	require.NoError(t, err)
-	require.NoError(t, sess.Append(
-		llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 12000}},
-		llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 24000}},
-		llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 36000}},
-		llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 50000}},
-	))
+        sess, err := NewSession(WithCwd(t.TempDir()))
+        require.NoError(t, err)
+        require.NoError(t, sess.Append(
+                llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 12000}},
+                llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 24000}},
+                llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 36000}},
+                llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 50000}},
+        ))
 
-	engine, err := NewEngine(
-		llm.ModelConfig{Name: "fake", BaseURL: server.URL, APIKey: "x", ContextWindow: 200_000},
-		sess,
-		WithGate(permission.AllowAll{}),
-		WithTools([]tools.Tool{}),
-	)
-	require.NoError(t, err)
+        engine, err := NewEngine(
+                llm.ModelConfig{Name: "fake", BaseURL: server.URL, APIKey: "x", ContextWindow: 200_000},
+                sess,
+                WithGate(permission.AllowAll{}),
+                WithTools([]tools.Tool{}),
+        )
+        require.NoError(t, err)
 
-	var sawStart, sawComplete bool
-	did, err := engine.runCompact(t.Context(), func(ev session.Event, _ error) bool {
-		switch ev.(type) {
-		case session.CompactionStarted:
-			sawStart = true
-		case session.CompactionComplete:
-			sawComplete = true
-		}
-		return true
-	}, 0, true)
-	require.NoError(t, err)
-	require.True(t, did, "force compaction must run when there is history to summarize")
-	require.True(t, sawStart, "must emit CompactionStarted")
-	require.True(t, sawComplete, "must emit CompactionComplete")
+        var sawStart, sawComplete bool
+        did, err := engine.runCompact(t.Context(), func(ev session.Event, _ error) bool {
+                switch ev.(type) {
+                case session.CompactionStarted:
+                        sawStart = true
+                case session.CompactionComplete:
+                        sawComplete = true
+                }
+                return true
+        }, 0, true, 0)
+        require.NoError(t, err)
+        require.True(t, did, "force compaction must run when there is history to summarize")
+        require.True(t, sawStart, "must emit CompactionStarted")
+        require.True(t, sawComplete, "must emit CompactionComplete")
 }

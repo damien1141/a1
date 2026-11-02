@@ -140,6 +140,18 @@ type Policy struct {
 	// RequiredEffects are effect tokens that must appear in EffectLog before
 	// admission is granted. Empty = no effect check.
 	RequiredEffects []string
+
+	// Sandbox enables OS-level bash containment: "auto" (default; on when
+	// the host supports it), "on" (require support, silently degrading to
+	// off when absent), or "off". When enforcing, sandboxed bash writes are
+	// confined to the workspace plus well-known caches, network follows
+	// SandboxNetwork, and checkBash auto-allows commands the containment
+	// already answers for — the deny list still fires first.
+	Sandbox string
+	// SandboxNetwork keeps network egress allowed in sandboxed bash.
+	// "" or "deny" (default) contains egress — containment first;
+	// "allow" is the opt-out for builds that fetch dependencies.
+	SandboxNetwork string
 }
 
 // DefaultPolicy returns the interactive defaults from task-002.

@@ -19,7 +19,7 @@ var (
 	mcpCommand = cli.Command{
 		Name: "mcp",
 		Desc: "manage MCP servers (list, add, remove, call, doctor)",
-		Long: `Set PHI_MCP=off to disable MCP meta-tools in the agent.
+		Long: `Set A1_MCP=off to disable MCP meta-tools in the agent.
 See doc/mcp.md.`,
 	}
 
@@ -152,7 +152,7 @@ func mcpCall(args []string) error {
 		return err
 	}
 	if pool == nil {
-		return errors.New("MCP disabled (PHI_MCP=off)")
+		return errors.New("MCP disabled (A1_MCP=off)")
 	}
 	defer func() { _ = pool.Close() }()
 
@@ -168,7 +168,7 @@ func mcpCall(args []string) error {
 
 func mcpDoctor() error {
 	if mcp.Disabled() {
-		fmt.Println("PHI_MCP=off — MCP disabled")
+		fmt.Println("A1_MCP=off — MCP disabled")
 		return nil
 	}
 	pool, err := mcp.LoadPool(project.GetDefaultProject().MCPConfigFile())

@@ -10,6 +10,863 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **JEV is configurable from the config web server — TypeSafe API or a
+  local Ollama model.** A new `jev:` section in config.yaml (and a real
+  editor panel replacing the stale "JEV placeholder", which actually
+  edited `judge:` — that panel is now titled Judge and points at the
+  code tool's judge mode) selects the decision-model backend used by the
+  two wired call sites (fetch classify, evidence verdict):
+  - **`provider: api`** — the hosted TypeSafe System One endpoint
+    (`api_key` / `base_url` / `model`, each falling back to the
+    TYPESAFE_* environment variables; `model` defaults to `jev-latest`).
+  - **`provider: ollama`** — a local Ollama chat model interrogated with
+    the same noul/choice/score questions under a strict JSON contract:
+    `format: "json"` constrained decoding, temperature 0, thinking off,
+    num_predict capped at 512, and the same validation spine as the
+    TypeSafe wire (every asked question answered, the choice drawn from
+    the question's alternatives, the score inside the rubric range and
+    whole, confidence required and in 0..1). Any miss is an error and the
+    call site falls back to its deterministic path — a bad local model
+    can never do worse than no JEV. Base URL falls back to OLLAMA_HOST
+    and then `http://127.0.0.1:11434`; the model tag is required
+    (pulling a local model is never a default).
+  - **Resolution is live.** `project.loadConfig` pushes the section to
+    `jev.Configure` on every load, and the asker the call sites hold
+    resolves its backend per decision — so the web GUI's save → reload →
+    next-turn flow switches providers without a restart (the fetch
+    classifier rebuilds per search anyway). No `jev:` section keeps the
+    env-only TYPESAFE_API_KEY behavior byte-for-byte; nothing configured
+    means JEV stays off everywhere.
+  - **Provider-aware timeouts.** The hosted API keeps the tuned 3s/4s
+    call-site ceilings; the Ollama provider raises them to 20s (a local
+    model can take seconds); `jev.timeout_sec` overrides both directions
+    so fast hardware can lower the ceiling too.
+  - **Editor panel.** Provider select (Off / TypeSafe API / Ollama) with
+    conditional fields, a password-type API key field, positive-integer
+    timeout validation, and en + zh i18n. Save-time validation rejects a
+    typo'd provider with a clear message; the runtime resolver stays
+    lenient (unknown provider = off, debuglog note) so a hand-edited
+    config.yaml never bricks the harness.
+  - New surface in `internal/llm/jev`: `Asker` (the backend-agnostic
+    seam both call sites' duplicated `jevAsker` interfaces now alias),
+    `Settings` + `Configure`/`CurrentSettings`, `Configured`,
+    `NewConfiguredAsker`, `TimeoutHint`/`EffectiveTimeout`,
+    `NewOllamaClient`/`OllamaConfig`, `ErrNotConfigured`.
+
+- **JEV wired into exactly two places — fetch classify and evidence
+  admission — with fallbacks everywhere.** The TypeSafe System One client
+  (`internal/llm/jev`) existed complete and tested but nothing imported
+  it; `cmd/jev` is still an empty stub by user decision (only these two
+  homes). Both wirings share one discipline: **nil without
+  TYPESAFE_API_KEY** (byte-for-byte pre-JEV behavior), hard per-call
+  timeouts (3s classify / 4s verdict), confidence floors, and
+  debuglog-traced decisions.
+  - **`fetch` Phase 0 engine routing.** When configured, the decision
+    model picks the search engine with one Choice question (11 criteria:
+    the ten domain engines plus the merged web engine; BetterWright is
+    deliberately not a choice — it is an emergency path). The pick gets
+    first dibs but no veto: an empty result or engine error falls through
+    to the untouched predicate order, and every failure mode of the call
+    itself (no key, timeout, unknown choice) means the predicates run
+    exactly as they always did. Observable via debuglog ("jev routed X
+    to Y").
+  - **Evidence admission for the unclassified tail.** The deterministic
+    classifiers cover the major runners; `make check`, `just verify`,
+    `./ci.sh` and friends recorded nothing — invisible to the verdict
+    gate, forever NO EVIDENCE in contracts. When a completed bash command
+    produces no deterministic records, the advisor asks one Score
+    question (0 = not a check, 1 = failed, 2 = unclear, 3 = likely
+    passed, 4 = clearly passed); a confident (≥ 0.6) 1 fails and 3/4
+    passes, admitted as a `jev:<command-slug>` ledger record that
+    ratchets like any other (a JEV pass protects; a later fail
+    regresses). 0/2/any-doubt records nothing. A cheap pre-filter keeps
+    `cat`/`ls`/`git status` from paying the round-trip, the advisor is
+    never consulted when a deterministic classifier already spoke, and
+    fail details carry the first error line plus `[jev verdict,
+    confidence N.NN]` provenance. `jev:` ids are ValidCheckID-legal, so
+    contracts can declare them as done-criteria.
+
+### Fixed
+
+- **Auto-compaction robustness on small windows (the 64K "sometimes
+  works or doesn't" pass).** Five structural weaknesses, each capable of
+  intermittent compaction failure:
+  - **Kept-zone ceiling (INV5).** A giant message (big paste, huge tool
+    result) landing inside the kept window survived every compaction —
+    the post-compaction context still overflowed, overflow recovery
+    found nothing new to shrink, and the turn died on streak exhaustion.
+    `SettingsFor` now derives `maxKeptTokens = window − 1.8×T` (clamped
+    ≥ keepRecent; INV5: ceiling + summary cap ≤ the safety-valve
+    threshold) and the cut moves to NEWER boundaries until the kept zone
+    fits, dropping the giant into the summarized zone where the
+    serialization truncates and the summary compresses. A huge entry
+    after every cut point (the very tail) is documented as
+    cut-unreachable — the recovery window halving takes over.
+  - **Summarizer input cap.** The summary call sent the full serialized
+    conversation, so under overflow recovery the compaction call itself
+    could overflow the same window and the turn died with the original
+    error anyway — the classic "marginal fit" flake. CompactionPreparation
+    now carries ContextWindow and `SerializeConversationCapped` bounds
+    the input to window − output-cap − 1/8 overhead: below the cap
+    byte-identical to before; over it the OLDEST entries drop behind a
+    marked omission (the newest stays — it abuts the kept zone the
+    summary must remain continuous with).
+  - **Safety valve no longer blind when the provider reports no usage.**
+    With `msg.Usage.ContextTokens() == 0` the hard-overflow guard never
+    fired and only the bytes/4 growth gate remained — which underestimates
+    code and CJK, so a 64K session could walk straight into a hard
+    overflow with compaction never having fired. The estimate now stands
+    in for the safety check when usage is zero (documented ruler caveat:
+    it can fire late, but late beats never).
+  - **Ollama-style overflow errors recognized.** `IsContextOverflow` and
+    `ParseContextLimit` now match ollama's "input length (N) exceeds
+    context length (M)" (and the context-size/limit variants), so
+    overflow recovery actually triggers and learns the real window
+    instead of the turn dying cold.
+  - **Compaction serialized.** The loop's post-turn auto path and a
+    surface's ForceCompact (web /compact, TUI :compact) run on different
+    goroutines; two preparations against the same leaf could append two
+    compaction entries. `runCompact` now holds `compactMu` for its
+    duration.
+
+- **Tooling pass: five new search engines and a merged web fallback in
+  `fetch`.** General queries no longer see DuckDuckGo Lite alone: the
+  router gained keyless JSON domain engines — MDN (web-platform docs),
+  npm and crates.io (package registries), Hacker News and Reddit
+  (community threads) — and the general fallback became a merged engine
+  that runs DDG Lite + Hacker News + Reddit in parallel and interleaves
+  results 2:1:1, so one search surfaces web links AND practitioner
+  discussions (the sources sidebar gains hacker-news/reddit hosts
+  without losing web coverage). Ordering is deliberate: MDN before the
+  broad programming predicates, registries before GitHub, and
+  Reddit/HN before Stack Exchange (its predicate matches any query that
+  names a language; "what do people think of bun" must reach the
+  forums). The merged engine propagates its primary's error — a
+  captcha-walled DDG still hands off to the BetterWright browser
+  fallback — and fetches page bodies once, on the merged survivors
+  only. Reddit refuses datacenter IPs; the error is swallowed and the
+  merge proceeds (works on residential). `classify` tests extended;
+  general queries now classify as `web`.
+
+- **`search` tool overhaul: glob, literal, context, listing mode, and
+  honest ripgrep errors.** The grep+ls fusion tool gained the knobs
+  that were missing: `pattern` as an alias for `query` (grep/find
+  habit), `glob` filtering every plane (rg's full glob syntax for the
+  text plane), `literal:true` for plain-text queries, `context=N`
+  rendering surrounding lines with a `·` marker while matches keep
+  `|`, and an empty query + explicit path now LISTS that directory
+  (dirs first, size + relative mtime per entry, truncation notice) —
+  search is the one-stop discovery call. ripgrep failures surface
+  properly: an invalid regex used to silently render as "no results";
+  the stderr now comes back with a "pass literal:true" hint. Hits
+  without text matches show size + mtime, ranking adds a
+  basename-match boost plus a shallower-path tiebreak, the header
+  reports "N of T files" when trimmed, and the zero-hit response
+  suggests concrete next steps.
+
+- **`make betterwright-install`.** A standalone target that installs
+  the BetterWright CLI at the pinned version (`BETTERWRIGHT_VERSION ?=
+  2.9.0`, in sync with internal/toolmanager's `BunTools` pin) and runs
+  the explicit `betterwright setup` browser download (~150 MiB — kept
+  out of `make install` on purpose). Bun-guarded with a clear error
+  when bun is missing, and hints to open a new shell when the freshly
+  installed binary isn't on PATH yet. `internal/bw`'s not-installed
+  error now points at the target. Also repaired the checked-in
+  Makefile's space-indented recipes (GNU make "missing separator") —
+  the whole file is tab-indented again, so every target parses.
+
+- **Web transcript density: tool-call clusters and a capped source row.**
+  Second live-jank pass; both user-reported with screenshots:
+  - **Same-tool runs collapse into cluster rows.** A research turn that
+    hammered `fetch` fifteen times across five say-nothing rounds used
+    to render a wall of full-width bordered rows. Consecutive PURE-TOOL
+    assistant rounds (no text, no reasoning — the heads-down fetch/grep
+    phase) now merge into one visual group, and consecutive same-name
+    runs — within that group or inside a text bubble's tool list —
+    collapse into a single `fetch ×15` header: status icon (spinner
+    while any run is live, error wins over done), a seal-tinted ×count
+    badge, the newest call's detail as a live ticker while the run
+    streams, and a chevron that expands a numbered, sunken list of the
+    individual calls. The live status line ("searching arxiv…") renders
+    under a still-streaming merged group, and a turn that ends on a
+    tool-only round (budget trip, verdict stop) keeps its end-of-turn
+    source row and regenerate affordance.
+  - **Source pills cap at ten behind a "+N" circle that opens a sources
+    sidebar.** A 103-source turn rendered 103 identical chips — a wall
+    of `arxiv.org` with cyclically repeating rank badges. The
+    end-of-turn row now shows the first ten pills and folds the rest
+    behind a dashed `+N` badge that opens a right-hand sidebar
+    (Qwen-style): every source as a card with rank badge, favicon,
+    host, the search-result title, and the DDG snippet as the
+    description — the whole card is the external link — scrollable
+    under a sticky header. Escape, backdrop click, and the header X
+    close it; the panel resets on session switch; reduced-motion
+    collapses the entrance cascades. Pure-render change
+    (`web/src/components/ChatArea.tsx` + `styles.css`), no protocol or
+    server changes. Verified against a synthetic heavy turn (15+1
+    fetches across six rounds, 96 sources) in light + dark themes and
+    a 400px viewport.
+
+- **Web GUI polish wave: branches, pills, titles, and the config revamp.**
+  The browser chat surface gains the conversation-shaping affordances:
+  - **Regenerate** (`POST /api/regenerate`) re-rolls the last assistant
+    turn: `Manager.SetLeaf` moves the session cursor to the target user
+    message's parent — an append-only cursor move, the abandoned response
+    chain survives as an off-path branch — and the normal Loop append
+    replays the prompt as a fresh sibling. 409s while a turn streams.
+  - **Edit user message → branch** (`POST /api/edit`): any past user
+    message can be rewritten; the turn re-runs from the edited text as if
+    it had been said then. The client identifies the target by its index
+    among user rows (stable across live + replayed transcripts).
+  - **Delete session** (`DELETE /api/session`, guarded): removes the vault
+    rows (FK cascade) and the jsonl file including pre-migration shadows,
+    unpins, evicts the live engine, 404s unknown ids, and refuses (409)
+    sessions with a turn in flight. The sidebar asks for an inline
+    two-step confirm.
+  - **Source pills, end-to-end and durable.** `SessionMessageEntry` gained
+    a persisted `sources` field: the engine stashes each search-run's
+    ranked Sources by tool_use id and appends tool results through the new
+    `AppendToolResult`, so a reloaded session re-renders its pills
+    (`ReplaySnapshot` restores them). The browser aggregates all of a
+    turn's searches into ONE pill row at the end of the turn, latest
+    search first, deduped by URL, rank-badged favicon chips with a
+    staggered entrance.
+  - **Smart session names.** After a session's first completed exchange
+    the server asks the memory-ops model (`Engine.OpsClient` — the
+    persona's dedicated MemoryModel, falling back to the main one) for a
+    2–6 word title, stored in `titles.json` beside the session data (both
+    backings, no vault migration) and overlaid on the sidebar/topbar.
+    Opt-out: `web.auto_name_sessions: false` (new `web:` config section,
+    default on); one attempt per session per server run.
+  - **MCP server registry over HTTP** (`GET/PUT/DELETE /api/mcp`): the
+    same `~/.a1/mcp.json` (+ project override) the `a1 mcp` CLI manages,
+    for the config editor. Writes touch the user file only; project-
+    defined servers are listed read-only with a pointer at the repo file.
+  - **Config editor revamp** (`/settings`): "Judge" renamed **JEV** with a
+    plain note that it currently does nothing; the embedding model moved
+    to its own one-place **Embeddings** panel (semantic search keeps only
+    the toggle — YAML keys unchanged); a **Web GUI** panel; a full
+    **Personas** section (list/create/edit/delete/activate, memory-ops
+    model picker — replacing the TUI's create-default-persona stub, which
+    is removed); graceful degradation under standalone `a1 config` where
+    the chat-only APIs are absent.
+  - **Markdown/LaTeX upgrades in chat**: KaTeX for `$…$` / `$$…$$` with
+    raw-text fallback, code blocks with a language header + copy button
+    (delegated click wiring), themed task-list checkboxes, external links
+    open in new tabs with noopener, copy buttons on every message bubble,
+    and reduced-motion collapses for all new animation.
+- **`Manager.SetLeaf` / `AppendToolResult`** (internal/session): the
+  branch primitive (cursor move, append-only — nothing is deleted) and
+  the tool-result append that carries UI metadata (Sources) the
+  model-facing `llm.Message` has no field for. `Session.AllEntries`
+  exposes the full leaf-to-root branch for transcript rendering.
+
+### Fixed
+
+- **Tool-call clusters: whitespace rounds join the merge, every call gets
+  the dropdown.** User's live screenshot of the fetch barrage ("great
+  direction, just off execution"): each round rendered its own `fetch ×N`
+  dropdown with its own usage line and an orphaned copy button under an
+  empty bubble, because several models emit whitespace-only text
+  alongside tool_use blocks and the pure-tool merge tested raw
+  truthiness — " \n" counted as content. "Said nothing" is now judged
+  after trimming text and reasoning, so the barrage merges into ONE
+  dropdown with the newest call's detail as the preview and ONE summed
+  usage readout above it (tok/s is per-round and dropped). Singles
+  render as the dropdown too — no ×1 badge — and mixed-name groups
+  summarize per-name (`fetch ×2 · read ×2`) with the name kept on every
+  expanded row; expanded details wrap instead of truncating. Also fixed
+  the merged group's message-index bookkeeping
+  (`last = start + toolCount - 1` broke the moment a round carried two
+  parallel calls, mis-keying the end-of-turn sources and regenerate
+  lookups). Pure-render (`web/src/components/ChatArea.tsx` + a
+  styles.css comment); browser-verified on a synthetic transcript
+  mirroring the live screenshot, light + dark.
+
+- **Web settings panel: the memory toggle renders its real state.** First
+  find of the live jank hunt. `GET /api/settings` returned the RAW global
+  memory knob in its state block, but the toggle writes the active persona
+  when it carries an explicit `memory_enabled` (any persona-editor save
+  pins one), and the footer badge + SSE state report the persona-folded
+  EFFECTIVE value. So a flip on a persona-owned setting wrote the persona,
+  turned the badge on, and the panel's re-fetch read the still-off global
+  knob — the toggle rendered OFF while memory ran ON. The catalog's state
+  block now carries `effectiveMemoryEnabled` (the same resolver
+  `stateView` uses), so the panel, the footer, and the engine can never
+  disagree about memory.
+
+- **Persona-settings passes no longer revert live engines to their
+  boot-time model and mode.** Found in the same screenshot: the footer said
+  `llama.cpp` while the settings panel had `dots-3-note-preview` picked.
+  Flipping the web memory toggle routes through `applyPersonaToEngines →
+  SetPersona → applyPersonaSettings`, whose "persona without an override
+  restores the base" branch compares against `baseModelCfg` /
+  `basePermissionMode` captured at construction — and surface-driven model
+  or mode changes never moved those bases, so the pass silently reverted
+  the engine to whatever it booted with. `SetModelWithHooks` now re-bases
+  `baseModelCfg` (every caller is a surface intent; the persona path sets
+  `modelCfg` directly), and `handleSetMode` (direct pick and cycle)
+  re-bases every live engine's `basePermissionMode` via the new
+  `updateEngineBaseModes`. Override-free personas now restore the user's
+  last surface choice, not the engine's birthday.
+
+- **Toggle knobs are visible in dark mode.** The switch knobs sat at
+  `paper-card` (a dark brown) on the near-black `paper-sunk`/`hairline`
+  OFF tracks — the OFF state read as an empty pill. Knobs now flip to
+  `ink-light` in dark mode on the settings toggles and both persona-editor
+  switches; the ON state keeps the on-seal convention (dark knob on the
+  light-mode mid-tone seal, dark on the dark-mode light seal). The Tailwind
+  config gains `darkMode: ['selector', '[data-theme="dark"]']` keyed off
+  the same attribute `theme.ts` already drives.
+
+- **Sandbox enforcement restored: Landlock arg order, gate-fold contracts,
+  deterministic tests.** Four fixes, one theme — the sandbox must earn its
+  authority instead of assuming it:
+  - `landlock_add_rule` was invoked with `LANDLOCK_RULE_PATH_BENEATH` in
+    the ruleset-fd slot (a 3-arg `Syscall` against a 4-arg syscall): the
+    kernel read fd 1, every rule add failed EBADFD, and sandboxed starts
+    died with "file descriptor in bad state". Now a `Syscall6` call with
+    the correct (fd, type, attr, flags) order — sandboxed bash actually
+    enforces on Linux again.
+  - The permission gate's containment fold (sandboxed ⇒ Ask-eligible bash
+    becomes Allow) no longer fires for headless-strict sessions or when
+    `BashDefault=Deny`. Headless-strict's contract is Ask≡Deny — an
+    unattended run must not discover an approval authority in the sandbox
+    — and an explicit operator default beats containment. Readonly was
+    already excluded for the same reason.
+  - The permission package's tests default the host-probe seam to
+    "unsupported" (`TestMain`), so gate expectations stay deterministic on
+    Landlock-capable dev machines instead of silently flipping to
+    sandbox-folded Allows. Containment tests opt in via
+    `withSandboxSupport` as before.
+  - `TestStartSandboxedContainsWritesOutsideRW` builds a hand-made narrow
+    profile instead of `Compile(ws, …)`: Compile grants RW on
+    `os.TempDir()`, and the test's "outside" probe (a sibling
+    `t.TempDir()`) lived inside the RW set — the write succeeded and the
+    containment assertion was vacuous. The narrow profile puts the probe
+    genuinely outside.
+
+- **`make build` self-heals stale web deps.** `web-install` no longer
+  skips when `web/node_modules` exists — it always runs the
+  package-manager install (a no-op sync against a satisfied lockfile,
+  well under a second with bun). The skip silently broke `web-build`
+  with "Rollup failed to resolve import" whenever the tree was refreshed
+  from elsewhere and package.json had gained a dependency (katex being
+  the first case) that the local node_modules predated.
+
+- **Vault-backed sessions show text in the sidebar, not hex hashes.**
+  `session.ListSessions` filled `Preview` only on the file-scan path; the
+  vault branch (Bet 08) built rows without one — and `vault.SessionPath`
+  is a synthetic identity path, so there was no file to scan either. The
+  label now comes from the stored entry lines themselves (`vaultPreview`:
+  newest-first scan of the vault's raw JSONL rows with an early exit, so
+  cost tracks the conversation tail, not its length). File-backed
+  sessions keep the existing scan.
+
+- **Smart session naming survives its own failures.** The one-attempt
+  marker was persisted to `titles.json`, so a single failed call (nil
+  ops client, one provider 429) permanently suppressed naming for that
+  session — across restarts — for a cosmetic label. Worse, the marker
+  was written but never read, so failures actually retried every turn.
+  The marker is now in-memory per server run and actually consulted (old
+  files' `attempted` keys are ignored and self-clean on the next write);
+  a missing `MemoryModel` is treated as a config gap, not an attempt,
+  and no longer burns the session's one try.
+
+- **Web transcript survives compaction.** `/api/transcript/messages` now
+  renders the full branch (`AllEntries`) instead of the compaction-cut
+  context path: messages above a compaction marker stay scrollable in the
+  browser; only the model's context stops at the cut.
+- **Editor saves can no longer wipe `checks:` / `schedules:`.** ConfigDoc
+  declares both sections and the save handler carries the file's existing
+  values over when the payload omits them — the same protection
+  `tools.max_tool_calls` already had. An explicit empty array clears them.
+- **Settings overlay mode buttons now refresh.** Switching the permission
+  mode in the in-app Settings panel reloads the catalog like every other
+  section, instead of leaving the previous mode highlighted until reopen.
+- **`web.auto_name_sessions` config plumbing** (project/config): new
+  `web:` section parsed and round-tripped through the config editor.
+
+- **Bet 01: the Clock — durable daemon + scheduler.** `a1 serve` runs the
+  harness as a headless daemon: the full web API behind bearer-token auth
+  (`Authorization: Bearer` or `?token=` for EventSource; constant-time
+  compare; non-loopback binds refuse to start without a token),
+  headless-strict by default so unattended prompts deny instead of hanging
+  (`--no-strict` opts back into a remote-GUI posture). The durable job
+  state machine replaces fail-on-restart: leftover non-terminal jobs park
+  as `pending` (attempt bumped) instead of being marked failed, `Resume`
+  re-runs them through the runner with the job's own prior session —
+  rebuilt from the session store, evidence receipts replaying through the
+  same ledger scope — and the daemon auto-resumes every pending job at
+  boot, so overnight work survives the process. Job metas now mirror into
+  a vault `jobs` table (lazy DDL, the memstore-namespace pattern) for
+  cross-process queries; the one-shot vault migration imports pre-vault
+  job dirs. The `schedule` tool (one facade with a create/list/cancel
+  action enum — the always-on tool count stays put) plus a `schedules:`
+  config grammar (cron / fixed_rate / one_time, exactly one trigger per
+  entry, malformed triggers fail loud) let the model and the user declare
+  durable wake-ups; fires spawn jobs through the fleet's manager —
+  backpressure and timeouts reused, prompts entering through the same
+  `EmitUserInput` path as any user turn — and scheduled jobs default to
+  role=worker (headless-strict) so an unattended wake-up never stalls on
+  an approval. Schedules persist as vault rows; config-declared ones are
+  synced at boot and win id conflicts. Cron is a hand-rolled 5-field
+  parser (names, ranges, steps, lists; vixie dom/dow OR rule) — no new
+  dependency.
+
+- **Bet 07: the Mirror — eval harness + cost telemetry.** `a1 eval` joins
+  the two files a1 already writes: stored session trees and evidence
+  receipts become per-session metrics (rounds-to-green, rollback rate,
+  stall rate, token spend by model, compaction count) with a `--json`
+  machine mode, and `a1 eval replay` re-runs a stored session's original
+  prompt under mutated configs (tool subsets, round caps) then scores the
+  new session for before/after. `a1 eval golden` runs the pinned ~20-task
+  golden set (go/rust/python fixtures) against the configured model and
+  records results in a vault `eval_runs` table — no model configured →
+  clear notice, exit 0, so CI without secrets stays green; a nightly
+  `golden.yml` workflow and `make eval-golden` drive it. Telemetry
+  persists to SQLite: per-tool latency and error rows flow live from the
+  executor (a buffered single-writer sink), turn token totals materialize
+  from the durable session entries, and a `/stats` dashboard page plus
+  `GET /api/telemetry` expose both. Skill routing became a bandit:
+  reading a skill records a pick, eval materialization records outcomes,
+  and the `list_skills` catalog reorders by Laplace-smoothed win rate —
+  skills that keep correlating with failed turns sink to the bottom,
+  annotated, instead of being silently invisible.
+
+- **Incremental indexes (deferred from Bet 06).** The code graph no longer
+  rebuilds per query: `OpenGraphCached` keys parsed imports by
+  (mtime, size) in a vault `graph_files` table, parses only new/changed
+  files, deletes vanished ones, and the previously-dead `rescan` input on
+  `search`/`graph`/`batch`/`testimpact` now force-rebuilds. The semantic
+  index leaves the global `~/.a1/semantic_index.json` (rewritten whole on
+  every upsert, shared across projects, stale by default) for a
+  project-scoped SQLite store: incremental per-file re-embedding keyed by
+  mtime+size+model, and hybrid retrieval — dense cosine over normalized
+  BLOBs fused with an FTS5 keyword leg via reciprocal-rank fusion — all
+  inside the existing database, no new dependencies.
+
+- **Bet 04: the Fleet — orchestration with a shared finish line.**
+  Sub-agent spawns no longer fail when the concurrency slots are full:
+  they join a bounded FIFO wait queue (`StatusQueued`) and start as
+  slots drain — ownership-transfer retirement keeps FIFO order
+  race-free, and only a full queue returns `ErrBusy` (queue overflow
+  also cleans up its orphaned job dir). Worker children above depth 1
+  can nest (default ceiling 3 generations, tighter nested concurrency,
+  `RecoverIgnore` so only the top manager owns restart recovery) while
+  explore/review keep the no-nesting default; every generation gets
+  cheaper confinement step budgets (20/14/10 for workers, clamped).
+  Task contracts: every `contract` declaration also enters a
+  session-scoped task contract that survives per-turn resets and is
+  forwarded to spawns — worker children are held to the parent's
+  finish line by the zero-rank stop, explore/review only arm the
+  watches. Structured handoff: children write `handoff.json` (files
+  read/modified, current evidence check states) beside `result.md`,
+  and `agent_wait` merges it into the parent's context as data.
+  Warm worker pool: `agent_spawn warm_from_job` resumes a finished
+  worker's session so it skips repo re-reading (file copy, or direct
+  vault resume post-Bet-08; warmth is never a hard requirement).
+
+- **Bet 08: the Vault — one durable store.** `~/.a1/a1.db` (package
+  `internal/vault`, modernc SQLite, WAL, foreign_keys on) replaces the
+  two-and-a-half persistence systems: personas are rows (the JSON
+  registry is gone), persona memory banks are rows, per-persona
+  semantic stores are namespaced table families (`mem_p_<id>_*`), the
+  shared engine bank is `mem_shared_*`, evidence receipts are rows
+  keyed by the project scope, and session trees are rows keyed
+  `(session, seq, parent)` with byte-faithful payloads — replay is the
+  old OpenSession walk minus the file IO, and `bench_test.go` still
+  gates context building. Vault sessions report the same
+  `<dir>/<ts>_<id>.jsonl` identity path, so evidence scope, resume,
+  listings, and screenshot baselines are unchanged; resolution is
+  vault-first with the legacy files as degraded fallback (a vault that
+  fails to boot logs and the process keeps running on the file
+  layout). One-shot migration imports personas.json, bank JSONLs
+  (both locations), per-persona semantic SQLite files, the shared
+  memories.db, per-project evidence.jsonl, and every session JSONL on
+  first open — idempotent by key, stamped in `vault_meta`. Deletability
+  end-to-end: deleting a persona cascades registry row, bank rows, and
+  semantic family in one transaction (plus the avatar dir); deleting a
+  session cascades its entries; the legacy-bank adoption shim is
+  bypassed in vault mode. Decision written down in
+  `doc/project-layout.md`.
+
+- **Bet 06: the Diary — episodic memory and the wired-in loops.**
+  `cool_passes` finally increments: a 24h background decay pass cools
+  unrehearsed memories, driving the σ·salience·γ^coolPasses term that
+  was dead code. Session valence is computed at every turn's end from
+  outcomes (-0.2 per protected regression, +0.3 per certified
+  contract) and reaches both the inlet's and the outlet's retrieval
+  cues — selectBundle's §3.5 mood-congruency override is reachable.
+  `memfsck` runs at session start (once per engine, over
+  `<cwd>/memory`, silent no-op without it) as its doc always said.
+  The episodic store lands as vault rows: every compaction summary —
+  which already embeds the evidence record — becomes a project-scoped
+  episode, and the memory inlet injects the most recent ones as a
+  "last time this happened" block. Per-persona memory-ops model:
+  `MemoryModel` on the persona (web editor + `SetMemoryModel` API)
+  routes consolidation traffic to a dedicated client while the
+  user-facing assistant stays on `Model`. SOUL wiring: a fenced
+  ```soul block in a persona's system prompt parses into
+  `memstore.Params` at store open (d/tau/sigma/k/gamma/beta/lambda/
+  w_kwd/mu/m/vec_top/fts_top/diversity/tref; golden-pinned parse) —
+  a nostalgic persona forgets slowly, an eager one recalls more, and
+  an absent block keeps every existing persona byte-identical.
+
+- **Bet 03: OS-level sandbox for bash — containment substitutes for
+  approval.** `internal/sandbox` compiles the APPA policy into
+  enforcement: read+execute everywhere, writes confined to the workspace
+  plus well-known caches (go/npm/cargo/bun, temp, selected ~/.a1
+  subdirs), sensitive deny prefixes never widened, network egress denied
+  by default (`permissions.sandbox_network: allow` opts out). Backends:
+  Landlock on Linux (pure syscalls via the existing x/sys dependency —
+  applied on a locked OS thread immediately before fork/exec; the child
+  inherits the ruleset and the harness stays unrestricted) and
+  sandbox-exec seatbelt profiles on macOS. Config: `permissions.sandbox:
+  auto|on|off` (default auto — on when the host supports it). When
+  enforcing, `checkBash` auto-allows Ask-eligible commands (the deny list
+  still fires first; readonly sessions keep asking — their contract is
+  writes-nothing), so autopilot stops being scary and "yolo with walls"
+  is a real mode. Foreground and background bash both ride the sandbox;
+  the user's own `!cmd` stays untouched. Sandboxed runs that hit
+  "Permission denied" get a hint explaining the wall.
+
+- **XLSX / PPTX / CSV in `document` (Bet 03 quick win).** The format
+  switch grows three outputs over the same markdown content: xlsx (one
+  row per heading/paragraph/bullet; pipe tables become grid rows), pptx
+  (title slide plus one slide per section), and csv (tables as rows,
+  prose as one row per line). gooxml — already the DOCX dependency —
+  covers the first two, so no new module.
+
+- **Bet 09: the browser is now a BetterWright daemon, not an embedded
+  engine.** `internal/tools/browsertool` keeps its whole tool surface
+  (open/navigate/search/click/type/screenshot/content/close/profile/proxy
+  plus the atomic trio) and the user-opened gate, but the playwright-go
+  engine underneath is gone — `playwright-go` left go.mod, keeping the
+  direct-dependency count lean; BetterWright is an optional external
+  runtime, not a Go dependency. The daemon keeps tabs and page state alive
+  between calls, profiles keep their cookies on disk after close (the
+  "logins stop evaporating" fix), bot challenges surface as handoff events
+  routed through the permission ask flow, and `internal/bw` is the shared
+  thin CLI client (`betterwright run --session a1 -c "<js>"`, JSON
+  envelope). PDF rendering (`document` tool) rides the same daemon. a1's
+  browser profiles map onto BetterWright profiles (own identity, own
+  cookie jar, own daemon); the default profile maps to the shared one.
+  Acquisition is first-class in `internal/toolmanager` (BunTools:
+  version-pinned `bun install -g betterwright@2.9.0`; `betterwright setup`
+  stays an explicit step). In-browser search uses Mojeek — BetterWright
+  deliberately blocks automation of the Google/Bing/DuckDuckGo search UIs
+  on its managed browser.
+
+- **Search fallback rides on the daemon.** The fetch tool's search router
+  now has real fallback ordering: domain engines (Frankfurter, GitHub,
+  Stack Exchange, arxiv, Wikipedia) via Matches(), then DDG Lite (cheap
+  HTTP), then the BetterWright browser engine (registered only when the
+  CLI resolves) — so a captcha-killed scraper falls through to a real
+  browser session instead of failing. `WithCatchAllEngine` is the
+  documented injection point for custom final fallbacks.
+
+- **Multimodal tool results: the model can see its own browser (Bet 02).**
+  `tooldef.Result` gains `Images []llm.Image`; the executor forwards them on
+  the tool message when the active model has `image_enabled` (rebound on
+  every model switch) and strips them otherwise, so blind models keep the
+  path-only text. `browser_read` mode=screenshot now attaches the capture
+  itself — downscaled and re-encoded to stay under ~1 MiB / 1600px wide
+  (`internal/util/image.FitForModel`, box-filtered halving with a 320px
+  floor so the image never becomes an unusable blur). Anthropic tool_result
+  blocks carry text+image content arrays natively; other providers ignore
+  tool-message images and keep the text. Tools consult
+  `tooldef.ImageEnabledFrom(ctx)` to skip image work for blind models.
+
+- **Evidence kind `screenshot:<name>` — screenshot-diff as a machine-checked
+  contract id.** Declare it in a contract, then capture with
+  `browser_read` mode=screenshot `name:<same>`: the first observation stores
+  the capture as a baseline (decodability-checked — garbage never seeds a
+  baseline), later captures diff against it (≤1% of pixels may differ by
+  more than 16/255 per channel; size changes fail outright). Baselines live
+  beside the session's `evidence.jsonl` under `screenshots/`, so receipts
+  and artifacts share one lifecycle. The add-only ratchet, regression notes,
+  and the turn-end zero-rank gate all apply unchanged.
+
+- **Human handoff → APPA ask bridge.** `tooldef.Result` gains `Handoff`
+  (reason + URL); the executor routes it through the permission ask flow —
+  the same gate that asks before a risky bash command asks before a human
+  takes the wheel. Approval and denial (with feedback) both become
+  model-facing notes on the tool result.
+
+- **`git` tool: governed git/gh operations instead of raw bash.** One
+  facade, twelve modes (status/diff/log/show/branch/add/restore/commit/
+  push/pull/pr/issue) executed as strict argv — never a shell string. APPA
+  gating makes "no commit without explicit request" enforceable instead of
+  doctrinal: read modes (status/diff/log/show/branch list/pr+issue list/view)
+  map to ActionRead (no prompt), add/restore/branch-create map to ActionWrite
+  with paths (workspace-checked), and commit/push/pull/pr-create/issue-
+  create map to the bash class — Ask by default in interactive mode, Deny
+  under readonly, and an unknown mode fails safe to Ask. Commit messages
+  never render into the bash-pattern Command field, so prose can't trip the
+  deny list. `gh` modes return an install-hint error when the binary is
+  missing. Output is capped (64 KiB head-keep — git orders newest-first).
+
+- **Read elision: identical re-reads of unchanged files collapse to a note
+  (compaction-aware).** The executor now intercepts `read` results: when the
+  exact same read (same resolved path, same mtime, same offset/limit) was
+  already served AND the tool message carrying that content still rides in
+  the live context, the model receives a short "unchanged" note instead of
+  the content — with the escape hatch taught in the note
+  (`{"refresh": true}` forces the content; new `refresh` param on `read`).
+  The liveness check walks the post-compaction session path, so a folded-
+  away read always re-serves full content — the failure mode of the naive
+  (path, mtime) cache (a note pointing at content the model no longer has)
+  is impossible by construction. Elided reads keep the original message as
+  the liveness anchor, so chains of elisions stay honest through compaction.
+
+- **Three orphaned analysis tools surfaced as `code` modes.** `errortool`,
+  `stacktool`, and `errpattern` were tested but unreachable from the agent;
+  they are now `code` modes `error` (match error text against known patterns
+  for a fix), `stack` (parse a pasted trace into file:line frames with
+  source context), and `errpattern` (scan Go source for error-handling
+  anti-patterns). All three are read-only, so the existing `code` permission
+  classification covers them unchanged. The `code` description was rewritten
+  around a failure-diagnosis block that differentiates the four overlapping
+  diagnosis modes (error/errtrans/stack/runtime) with a steering rule.
+
+- **Polyglot evidence classifier + watched checks + config-defined checks
+  (Bet 05).** `classify` now recognizes js-test (npm/pnpm/yarn/bun test,
+  vitest/jest direct and npx/bunx forms, TAP detail lines), playwright-test,
+  mypy (incl. `python -m` / `uv run`), ruff check, eslint, cargo clippy, and
+  dotnet test, with the build/vet attribution doctrine extended to suite
+  segments (a failing `go build && npm test` records nothing — ambiguous
+  compound failures attribute nothing). Contract-declared watches add three
+  check-id families: `exit:<code>:<command>` (any command's real exit code,
+  parsed from bashtool's exit-status marker), `http:<status>:<url>`
+  (observed from curl status lines incl. `-w '%{http_code}'`), and
+  `port:<host>:<port>` (from `nc -z`) — observation-gated so incidental
+  bash calls never grow the ledger. `config.yaml` grows a `checks:` list
+  (`{name, command, success, pattern}`) whose exact-command runs record
+  `check:<name>` evidence; wired at all three engine construction sites,
+  bad patterns fail loud at startup.
+
+- **Background bash shells + per-call stdin/env/cwd.** `bash` mode=start
+  runs detached (survives the tool call; process-tree cancel on kill), ps
+  lists, attach returns the bounded rolling tail with an optional wait
+  (the "wait for server ready" move), kill stops the tree; exited shells
+  stay listed until pruned at 20. Background modes never reach the evidence
+  ledger — a still-running suite must not read as passing. Foreground runs
+  gain `stdin` (pipe text — gpg/ssh/psql/REPL workflows without heredocs),
+  `env` (merged over the inherited environment), and `cwd` (relative to the
+  session cwd).
+
+- **Budget contracting: budgets the model declares become budgets the
+  harness holds (evidence loop Phase 5).** New `budget` tool: the model
+  declares "N more tool rounds" and the harness holds the ceiling in engine
+  state the model cannot edit — Gate 1's STOPPING RULE doctrine is now the
+  human-readable projection of a machine-held budget, the same authority
+  split as the `contract` tool. At the ceiling with work still wanted, the
+  next round runs on the turn's one re-open and a `[budget]` note lands
+  with the spend state; declaration-only rounds (budget/contract) never
+  fire, so extending is always available and always visible in the
+  transcript; a further work round without a fresh declaration stops the
+  turn with a spend report — pending calls rejected (never executed past
+  the declared budget), the contract residual surfaced so an out-of-budget
+  stop is never mistaken for a certified one. Turns that never declare are
+  untouched (chat-safe, pinned by test); budgets reset per prompt.
+  `WithBudgetContracts(false)` / `SetBudgetContracts` keeps declarations
+  recorded but stops enforcement (default on).
+
+- **Evidence-driven recurrence: verified state survives compaction (evidence
+  loop Phase 4).** Compaction summaries now end with a harness-written
+  `<evidence-record>` block: protected checks, current regressions, never-
+  passed failures, and the turn contract's standing with its residual set.
+  After a fold the model's context carries what is *verified* rather than a
+  transcript-shaped memory of it — the record is rendered from the evidence
+  ledger by the harness (never by the summarizer, whose copy could drift),
+  re-appended fresh at every compaction, and stripped from the previous
+  summary before the update prompt sees it. Both summary templates now
+  instruct the model never to restate a test/build status section. Sessions
+  with no observed checks and no contract (plain chat) render no record at
+  all — their summaries are byte-identical to before.
+
+- **Receipt pruning: evidence.jsonl stays bounded.** The receipt file now
+  rewrites itself to the minimal replay-equivalent record set (last pass +
+  last record per check) every 512 appends, and `Load` self-heals an
+  overgrown file on session resume. The ratchet is preserved exactly: a
+  check that passed and later failed still replays as protected-and-failing
+  — its pass receipt is what keeps it protected — and harness rollback
+  receipts (`harness:candidate-rollback`) survive pruning verbatim.
+
+- **Zero-rank stop: "done" is certified, not claimed (evidence loop Phase
+  3).** New `contract` tool lets the model declare its done-criteria as
+  machine-checked check ids (`go-build`, `go-vet`, `go-test:<pkg>`,
+  `go-test:<prefix>/...`, `pytest:<nodeid>`, ...). The harness holds the
+  contract — declarations accumulate for the turn and can never be removed —
+  and when the model stops calling tools it judges every declared check
+  against the evidence ledger: failing or never-run checks inject the
+  residual set and re-open the turn (bounded extra verification rounds,
+  default 2, `WithZeroRankBudget` to tune or disable); a fully green
+  contract ends the turn with a "certified complete" note; an exhausted
+  budget stops with the residual set surfaced as NOT certified. The 5-Gate
+  prompt's DONE_CRITERIA gate is now the human-readable projection of this
+  machine contract, and Gate 4 gained the budgeted-verification doctrine
+  (targeted `testimpact` runs per change, full suite at commit points).
+
+- **Verdict gate: the loop now disposes of candidates (evidence loop Phase
+  2).** Every mutating tool batch that runs classified checks is a
+  candidate: the harness diffs the protected evidence ledger before and
+  after and, in autopilot/headless-strict, rolls a regressing candidate
+  back to the last verified baseline (a cheap git ref snapshot taken before
+  the batch; baselines advance on clean candidates, so rollback restores
+  the latest verified state and never throws away verified progress). The
+  ledger re-admits the regressed checks at their verified status, so
+  re-applying the same broken edit reads as a fresh regression. Interactive
+  family modes stay advisory — the APPA permission mode is the strictness
+  dial. An anti-thrash policy (3 consecutive non-improving verification
+  rounds by default, `WithStallLimit`) stops spinning turns with the
+  residual failure set instead of burning budget.
+
+- **Web GUI dark mode.** The whole palette moved into CSS variables with a
+  `[data-theme="dark"]` charcoal counterpart, so every panel, modal, and
+  bubble follows the theme without per-component branching. Toggle with the
+  moon/sun button in the sidebar header or the new Appearance section in
+  Settings (Light / Dark / System). The choice persists in localStorage and a
+  pre-paint boot snippet applies it before first render, so reloads never
+  flash the wrong theme. Accent buttons now draw their label from a dedicated
+  `on-seal` color to keep contrast above the WCAG floor in both themes.
+
+- **Past sessions render like live ones.** A new JSON endpoint
+  (`GET /api/transcript/messages`) hands the GUI the raw markdown source,
+  reasoning, tool runs, and per-turn token usage instead of the old rendered
+  HTML fragment, which the client scraped with `textContent` — flattening
+  markdown paragraphs into one unbroken wall and dropping everything else.
+  Replayed sessions now go through the same markdown / reasoning / tool-row
+  pipeline as live chat, compaction cuts render as quiet centered dividers,
+  and assistant turns show their `in / out / tok/s` readout. The HTML-scrape
+  loader stays as a fallback for older server binaries.
+
+- **Persona prompts are actually injected.** The "Personality" textarea was
+  stored on the persona but never reached the model — only the one-line
+  tagline summary did. The full prompt now rides into `BuildContext` as its
+  own system message (ahead of the summary), and a mid-session persona switch
+  re-injects the new profile's prompt.
+
+- **Personas can replace the default system prompt.** Each persona has a
+  "Replace default system prompt" toggle in the persona manager. When on,
+  the persona's prompt becomes THE system prompt — a1's built-in behavioral
+  template, project context, and skills/MCP catalogs are dropped so the
+  persona truly owns the agent's voice instead of riding alongside the
+  default. Runtime context (clock, weather, persona memories) still flows
+  as separate system messages. Switching personas (or editing the active
+  one's toggle/prompt) rebinds live engines immediately — no new-chat wait.
+  The toggle is off by default; an override persona with an empty prompt
+  keeps the built-in prompt so a blank toggle can never lobotomize the agent.
+  The web UI marks override personas with a "system override" badge and warns
+  that built-in discipline (tool routing, coding standards) is gone while
+  the override is active.
+
+### Fixed
+
+- **memstore read-your-write race (the parallel-test flake root cause).**
+  `doWrite` acknowledged the caller from inside the write function before
+  `tx.Commit()` ran, so a reader on another pool connection could miss a
+  just-acked write (WAL readers cannot see uncommitted rows). Insert-then-
+  retrieve could intermittently come back empty under CPU contention —
+  exactly the nondeterministic TestDedupeMerge / TestRehearsalRevival /
+  TestLoopMemoryInletInjectsIntoModelRequest failures that passed with
+  `-p 1`. Writes now ack only after Commit; fire-and-forget rehearsal ticks
+  keep their nil-result behavior.
+
+- **Tests no longer write to the real `~/.a1`.** The agent package's tests
+  opened memory banks through the global project singleton in the user's
+  real home (measured: 40 leaked JSONL files per run); a TestMain HOME pin
+  makes the whole package hermetic. Seven webserver tests required a
+  models-configured `~/.a1/config.yaml` and failed on any fresh machine —
+  they now run against a fixture config in a temp home (no skips). Two more
+  same-pattern leaks fixed in `session/memory` and `project` tests (one of
+  which wrote a stub config into the developer's real `~/.a1/config.yaml`).
+
+- **Fresh web engines adopt the active persona's settings.** A brand-new
+  engine built while a persona with overrides was already active (switched
+  to it yesterday, opened a new chat today) came up on the global model,
+  window, and permission mode — only memory was compensated at build time.
+  `liveFor` now applies the active persona to a freshly built engine via
+  the same `SetPersona` path a manual switch takes, ordered after the
+  server lock releases (the permission-mode setter re-enters the lock when
+  it installs the new gate on live engines). The new session runs the
+  persona's model, window, mode, and memory surface from its very first
+  turn.
+
+- **The memory toggle now follows the persona.** The persona's
+  `memory_enabled` is the single effective gate: an explicit persona
+  setting wins over the surface's global toggle in BOTH directions (opting
+  in turns memory on while the knob is off; opting out turns it off while
+  the knob is on), a persona without an opinion inherits the knob, and
+  "off" silences the automatic injection/consolidation AND the
+  remember/recall tools together. Switching personas rebinds every live
+  web engine's memory bank against the effective state, the footer chip
+  reads the same value the engines gate on, and the TUI palette toggle now
+  writes the persona when the persona owns the setting — and rebinds the
+  live engine either way (it previously only moved a flag nothing read
+  back, so flipping it mid-session changed nothing).
+
+- **Memory consolidation now runs on every completed turn, not just the
+  no-tool-call wrap-up.** Turns that ended through the verdict gate's stall
+  stop, an executor stop, the tool-call budget trip, or a declared-budget
+  terminal stop never reached the consolidation pipeline — the outlet only
+  lived on one terminal path. Every completed-turn terminal now
+  consolidates; turns aborted by errors, cancellation, or a declined
+  continue-ask still do not (no exchange worth keeping). The inlet's
+  injected block is framed in the third person ("memories about the user")
+  — some models read a generic or second-person header as things they
+  themselves said and attributed injected facts to their own past turns.
+
+- **Persona switches re-apply the model's context window in both
+  directions.** Switching to a persona with a model override re-seeds the
+  runtime window to that model's configured window (the footer's
+  denominator and the compaction triggers follow the new provider
+  immediately); switching back to the default persona restores the base
+  model's window instead of leaking the last persona's forward. Proven at
+  the webserver level: the state payload's `contextWindow` equals the
+  persona model's configured window right after the switch.
+
+- **Persona switches now actually apply the persona's permission mode.**
+  The `permission_mode` override is stored and round-trips through the
+  editor, but the mode never flipped when the persona was switched — the
+  engine never called the surface's mode setter, and a persona without an
+  override (or the default persona) never restored the mode the surface ran
+  before. The override now applies on every switch and the pre-persona mode
+  is restored on the way back; the rebuilt gate is installed on every live
+  engine, so a `readonly` persona denies writes from the very next tool
+  call, behaviorally, on both the server's gate and each engine's own.
+
+- **Persona memories were saved to a file the UI never read.** The agent's
+  write path opened the persona bank under the personas directory while the
+  web manager counted and listed a bank under the shared session-memory
+  directory — two different files, so everything a persona remembered
+  landed somewhere the manager never looked and the count stayed at zero.
+  The bank location is now owned by the persona store itself
+  (`<personas root>/memory/persona:<id>.jsonl`) and every reader and writer
+  resolves it through that one path; banks stranded at the old location by
+  earlier builds are adopted into the canonical dir on first open.
+
+- **Persona memory counts.** The executor logs every successful tool run into
+  the memory bank, and the persona manager counted all of it — "N memories"
+  that was mostly bash invocations. Successful tool runs are now typed as
+  traces and excluded from the count, the bank preview, and the context
+  injections (they were also crowding real decisions out of the ten-slot
+  memory window); legacy banks' tool-shaped `context` entries are recognized
+  by their `name(args) => result` marker. The `remember` tool additionally
+  mirrors its fact into the (persona-scoped) bank, so remembered facts now
+  appear — and count — where the persona manager reads. Delete handles keep
+  pointing at raw bank indices so "forget" on the filtered view still drops
+  the right line.
+
+- **Command palette auto-scroll.** The scroll-into-view effect indexed the
+  list's per-group wrapper divs with the flattened command index, so arrowing
+  down targeted whole group blocks and the viewport could jump to the bottom
+  of the palette. Rows are tagged with their index and looked up explicitly
+  now; the view also follows filter changes back to the top.
+
+### Added
+
 - **Tool rows can start expanded — and do by default.** A new
   `ui.auto_expand_tool_output` config key (editable in the web config editor
   under "Terminal UI") opens every tool row by default, so file diffs and
@@ -234,6 +1091,24 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **Identity hygiene: the fork's old name stops leaking.** The model env
+  overrides are `A1_*` (`A1_MODEL`, `A1_API_KEY`, `A1_BASE_URL`,
+  `A1_SKILL_PATH`, `A1_THINK_LEVEL`, `A1_THINK_ENABLED`), with the
+  pre-rename `PHI_*` names kept as a one-cycle fallback that warns on
+  stderr when it is the one actually consumed — a hard switch would
+  silently ignore exported vars in users' shells and CI. `a1 update`
+  downloaded assets stamped `phi_<ver>_<os>_<arch>` while GoReleaser
+  publishes `a1_…`, so every self-update 404'd; the prefix is fixed and
+  pinned by test. Both readme headers carry `# A1 v2.0.1` again (matching
+  `version.go`, per the release procedure), the `[Unreleased]` compare
+  link points at this repo, the Rust SDK README's dependency URL is
+  `damien1141/a1`, the Go extension example calls `a1.New` (it imported
+  the `a1` package but called `phi.New`), the extension SDK's
+  queue-full error prefix reads `a1:`, and the doc/script comments that
+  still said "phi" now say "a1". The released-changelog history and the
+  `pli`/`xui` dependency imports are untouched — the first is frozen by
+  policy, the second are dependencies, not fork debt.
+
 - **Rate limits no longer end the turn after two seconds of waiting.** The HTTP
   retry policy treated a `429` like a transient `5xx` gateway blip: three
   attempts with delays of 0s / 1s / 2s, then the error surfaced to the user. A
@@ -253,8 +1128,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   them `a1_<ver>_<os>_<arch>.tar.gz`. Every download 404'd, and the checksum
   check then aborted. Asset names, repo default, install destinations, PATH
   hints, and log/temp file names now all match the released artifacts. Env
-  overrides are renamed to `A1_REPO` / `A1_VERSION` / `A1_INSTALL_DIR`;
-  `PHI_MODEL` / `PHI_API_KEY` keep their names (the config loader reads those).
+  overrides are renamed to `A1_REPO` / `A1_VERSION` / `A1_INSTALL_DIR`.
+  (The model env vars carry `A1_*` names now too — see the identity-hygiene
+  entry below; at the time of this fix the loader still read `PHI_*`.)
 
 - **`a1 update` checked the wrong repository.** `internal/util/update` compared
   the running version against `pulseaiclub/phi`'s latest release, so a fork user
@@ -266,10 +1142,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   track `version.go`, and the release procedure in `AGENTS.md` states that
   `version.go` is the source of truth.
 
-- **README claimed model env vars are named `A1_*`.** They are not: the config
-  loader reads `PHI_MODEL`, `PHI_API_KEY`, `PHI_BASE_URL`, `PHI_THINK_LEVEL`,
-  and `PHI_SKILL_PATH`. The readme now lists the real names, alongside the two
-  that do use the `A1_` prefix (`A1_DEBUG_FILE`, `A1_BROWSER_HEADLESS`).
+- **README claimed model env vars are named `A1_*`.** At the time the
+  config loader read the pre-rename `PHI_MODEL`, `PHI_API_KEY`,
+  `PHI_BASE_URL`, `PHI_THINK_LEVEL`, and `PHI_SKILL_PATH`, so the readme
+  was corrected to list those. The identity-hygiene pass has since renamed
+  the loader to the `A1_*` names with `PHI_*` kept as a one-cycle
+  deprecation fallback — the readme's original claim is true again.
 
 ### Added
 
@@ -1090,7 +1968,7 @@ Earlier releases are available from GitHub tags only.
 
 <!-- Released section ended -->
 
-[Unreleased]: https://github.com/pulseaiclub/phi/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/damien1141/a1/compare/v1.5.0...HEAD
 [1.2.1]: https://github.com/pulseaiclub/phi/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/pulseaiclub/phi/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/pulseaiclub/phi/releases/tag/v1.1.0

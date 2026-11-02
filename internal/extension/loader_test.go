@@ -18,7 +18,7 @@ func TestDiscoverManifest(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "hello")
 	require.NoError(t, os.MkdirAll(dir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "phi.yaml"), []byte("name: hello\nexec: ./hello\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a1.yaml"), []byte("name: hello\nexec: ./hello\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "hello"), []byte("#!/bin/true\n"), 0o755))
 
 	found, warns, err := extension.Discover(root, "")
@@ -32,7 +32,7 @@ func TestDiscoverFollowsSymlinkDir(t *testing.T) {
 	root := t.TempDir()
 	real := filepath.Join(root, "real-hello")
 	require.NoError(t, os.MkdirAll(real, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(real, "phi.yaml"), []byte("name: hello\nexec: ./hello\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(real, "a1.yaml"), []byte("name: hello\nexec: ./hello\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(real, "hello"), []byte("#!/bin/true\n"), 0o755))
 
 	extRoot := filepath.Join(root, "extensions")
@@ -51,7 +51,7 @@ func TestExtensionsDisabled(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "hello")
 	require.NoError(t, os.MkdirAll(dir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "phi.yaml"), []byte("name: hello\nexec: ./x\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a1.yaml"), []byte("name: hello\nexec: ./x\n"), 0o644))
 	found, _, err := extension.Discover(root, "")
 	require.NoError(t, err)
 	assert.Empty(t, found)
@@ -67,11 +67,11 @@ import (
 	"strings"
 
 	"github.com/damien1141/a1/ext/go"
-	"github.com/damien1141/a1/ext/go/phi"
+	"github.com/damien1141/a1/ext/go/a1"
 )
 
 func main() {
-	m := phi.New("guard", "0.0.1")
+	m := a1.New("guard", "0.0.1")
 	m.OnToolCall(func(ev ext.ToolCallEvent) *ext.ToolCallResult {
 		if ev.ToolName != "bash" {
 			return nil
@@ -115,11 +115,11 @@ import (
 	"encoding/json"
 
 	"github.com/damien1141/a1/ext/go"
-	"github.com/damien1141/a1/ext/go/phi"
+	"github.com/damien1141/a1/ext/go/a1"
 )
 
 func main() {
-	m := phi.New("greet", "0.0.1")
+	m := a1.New("greet", "0.0.1")
 	m.RegisterTool(ext.Tool{
 		Name:        "greet",
 		Description: "Greet someone",
@@ -175,11 +175,11 @@ import (
 	"encoding/json"
 
 	"github.com/damien1141/a1/ext/go"
-	"github.com/damien1141/a1/ext/go/phi"
+	"github.com/damien1141/a1/ext/go/a1"
 )
 
 func main() {
-	m := phi.New("slow", "0.0.1")
+	m := a1.New("slow", "0.0.1")
 	m.RegisterTool(ext.Tool{
 		Name:        "slow",
 		Description: "Takes a while",
@@ -213,11 +213,11 @@ import (
 	"encoding/json"
 
 	"github.com/damien1141/a1/ext/go"
-	"github.com/damien1141/a1/ext/go/phi"
+	"github.com/damien1141/a1/ext/go/a1"
 )
 
 func main() {
-	m := phi.New("detail", "0.0.1")
+	m := a1.New("detail", "0.0.1")
 	m.RegisterTool(ext.Tool{
 		Name:        "ping",
 		Description: "Ping",
@@ -256,11 +256,11 @@ import (
 	"encoding/json"
 
 	"github.com/damien1141/a1/ext/go"
-	"github.com/damien1141/a1/ext/go/phi"
+	"github.com/damien1141/a1/ext/go/a1"
 )
 
 func main() {
-	m := phi.New("readable", "0.0.1")
+	m := a1.New("readable", "0.0.1")
 	m.RegisterTool(ext.Tool{
 		Name:        "read",
 		Description: "Read a file",
@@ -290,11 +290,11 @@ func TestRegisterCommandNeedsArgsPropagates(t *testing.T) {
 
 import (
 	"github.com/damien1141/a1/ext/go"
-	"github.com/damien1141/a1/ext/go/phi"
+	"github.com/damien1141/a1/ext/go/a1"
 )
 
 func main() {
-	m := phi.New("plan", "0.0.1")
+	m := a1.New("plan", "0.0.1")
 	m.RegisterCommand("plan", ext.Command{
 		Description: "Enter/exit plan mode — /plan on|off|status",
 		NeedsArgs:   true,

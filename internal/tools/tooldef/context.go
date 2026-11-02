@@ -11,6 +11,8 @@ type cwdKey struct{}
 
 type questionKey struct{}
 
+type imageEnabledKey struct{}
+
 // WithToolCallID attaches the active tool_use id to ctx for UI correlation.
 func WithToolCallID(ctx context.Context, id string) context.Context {
 	if id == "" {
@@ -93,4 +95,26 @@ func QuestionFuncFrom(ctx context.Context) QuestionFunc {
 	}
 	fn, _ := ctx.Value(questionKey{}).(QuestionFunc)
 	return fn
+}
+
+// WithImageEnabled tells tools whether the active model can see images. The
+// executor attaches it next to WithCwd so a tool producing an optional image
+// (og:image previews, screenshot blocks) can skip the encode work entirely
+// for blind models instead of paying for bytes the provider would drop.
+func WithImageEnabled(ctx context.Context, enabled bool) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, imageEnabledKey{}, enabled)
+}
+
+// ImageEnabledFrom reports whether the active model can see images. False
+// (the default on a bare context) means tools should not spend effort
+// attaching image blocks — the text result stands alone.
+func ImageEnabledFrom(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	v, _ := ctx.Value(imageEnabledKey{}).(bool)
+	return v
 }

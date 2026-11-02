@@ -86,7 +86,7 @@ Provider-agnostic knobs on each model (and session UI):
 | --------- | ------- |
 | `think_enabled` | bool; enable reasoning payload |
 | `think_level` | `off` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` \| `max` |
-| `PHI_THINK_LEVEL` | env override on the default model (`off` disables) |
+| `A1_THINK_LEVEL` | env override on the default model (`off` disables) |
 
 How that maps on the wire depends on the provider / preset interceptor
 (OpenAI `reasoning_effort`, Anthropic thinking budget, Gemini budget or level).
@@ -97,6 +97,36 @@ models:
     api_key: ...
     think_level: medium
 ```
+
+## Context window resolution
+
+Context folding (compaction) scales to the model's real window. At runtime the
+engine resolves the window in this order:
+
+1. `context_window:` on the config entry (explicit wins).
+2. The built-in preset for the name (see table above).
+3. A **local probe** — llama.cpp `GET /props` (`n_ctx`) or ollama
+   `POST /api/show` (`*.context_length`) — for loopback / private base URLs.
+4. The **assumed fallback, 32K**, when nothing above yields a value. Folding
+   must run even on unknown windows; before this fallback existed, window 0
+   disabled both compaction triggers entirely.
+5. **Learned**: a provider overflow error that states the limit
+   (`maximum context length is 65536 tokens`, …) overrides everything — the
+   provider measured it.
+
+Mid-turn overflows force a compaction and retry (up to 3 consecutive
+recoveries per turn; the streak resets after any successful round). A
+numberless overflow halves the retry window for that turn so the retry fits
+windows smaller than anything configured. The math — invariants, the
+operating-point table for 16K–1M, and the worked 64K llama.cpp example — is
+in [doc/context-folding-math.md](context-folding-math.md), and is asserted by
+`internal/session/compaction/setting_test.go` so the doc, code, and tests
+cannot drift apart.
+
+For a local llama.cpp run at `-c 65536`, no config is needed: the probe picks
+the window up and folding runs at K=9830 / T=8192 / G=19660 / floor=29491
+from the first turn. For remote models without a preset, set
+`context_window:` explicitly to skip the 32K assumption.
 
 ## Related
 

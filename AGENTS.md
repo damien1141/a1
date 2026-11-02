@@ -1,4 +1,4 @@
-# Phi
+# A1
 
 Lean, high-performance Go terminal coding-agent harness. Layout: [doc/project-layout.md](doc/project-layout.md). Humans: [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -11,9 +11,9 @@ Lean, high-performance Go terminal coding-agent harness. Layout: [doc/project-la
 ## Constraints
 
 - **Tool loop is ExtensionPre → Gate/Ask → Run → ExtensionPost.** Don't bypass the permission gate when changing the executor. Don't put MCP server tool schemas on the model — only `mcp_list` / `mcp_inspect` / `mcp_call`.
-- **Extensions are PXB subprocesses** (`phi.yaml` + native binary under `~/.a1/extensions` / `.a1/extensions`). Wire: `ext/go/pxb`. Author SDK: Go `ext/go/phi` (module `github.com/damien1141/a1/ext/go`). Host: `internal/extension`. See [doc/extensions.md](doc/extensions.md).
+- **Extensions are PXB subprocesses** (`a1.yaml` + native binary under `~/.a1/extensions` / `.a1/extensions`). Wire: `ext/go/pxb`. Author SDK: Go `ext/go/a1` (module `github.com/damien1141/a1/ext/go`). Host: `internal/extension`. See [doc/extensions.md](doc/extensions.md).
 - **`edit` stays a `str_replace`-style tool.** Don't replace it with a whole-file rewrite; match on `old_str` / `new_str` and require a unique match.
-- **Sub-agent transcripts stay under `~/.a1/jobs/<id>/`.** Parent context gets the wait/task summary only. Child engines have no `agent_*` tools (no nesting). Default child role is explore (no write/edit; bash allowed except hard denies).
+- **Sub-agent transcripts stay under `~/.a1/jobs/<id>/`.** Parent context gets the wait/task summary plus the structured handoff (`handoff.json`: files touched, check states). Child engines have no `agent_*` tools except worker children below the fleet depth ceiling (Bet 04), which get a nested manager with cheaper per-depth step budgets; explore/review keep the no-nesting default. Default child role is explore (no write/edit; bash allowed except hard denies).
 - **UI split:** `internal/components` render; `internal/tui` wires the shell. Non-shell pieces live under `internal/tui/controller` (Engine/Bus/Msg), `internal/tui/transcript` (Mapper); version in `internal/version`. Keep widgets dumb.
 - **TUI assembly:** `cmd` constructs `controller.Bus` / `controller.Controller` / App and passes them into `editor.NewEditor(...)`, which builds the commands registry (`commands.NewBuiltinRegistry`). Do not hide `GetDefaultProject` inside `tui` constructors; do not return half-initialized Controllers (`engineErr` zombies). Prefer constructor parameters over `XxxDeps` bags.
 - **Stay lean and fast.** Direct module deps are few on purpose. Don't add a dependency without a clear need. Prefer changes that keep startup, idle RSS, and rebuild time small.

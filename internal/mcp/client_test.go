@@ -21,7 +21,7 @@ func TestConfigLoadSave(t *testing.T) {
 	}
 	require.NoError(t, mcp.AddServer("demo", cfg))
 
-	servers, err := mcp.Load(filepath.Join(t.TempDir(), ".phi", "mcp.json"))
+	servers, err := mcp.Load(filepath.Join(t.TempDir(), ".a1", "mcp.json"))
 	require.NoError(t, err)
 	require.Contains(t, servers, "demo", "expected demo server")
 	require.Equal(t, []string{"npx"}, servers["demo"].Command, "command mismatch")
@@ -49,9 +49,9 @@ func TestCompactAndSlim(t *testing.T) {
 }
 
 func TestDisabled(t *testing.T) {
-	t.Setenv("PHI_MCP", "off")
+	t.Setenv("A1_MCP", "off")
 	require.True(t, mcp.Disabled(), "expected disabled")
-	pool, err := mcp.LoadPool(filepath.Join(t.TempDir(), ".phi", "mcp.json"))
+	pool, err := mcp.LoadPool(filepath.Join(t.TempDir(), ".a1", "mcp.json"))
 	require.NoError(t, err)
 	require.Nil(t, pool, "expected nil pool")
 }

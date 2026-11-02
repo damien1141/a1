@@ -123,3 +123,23 @@ func computeFileLists(fileOps *FileOperation) ([]string, []string) {
 
 	return readFiles, modifiedFiles
 }
+
+// ExtractFileLists summarizes the read/modified file paths from a session's
+// entries: assistant tool calls (read/write/edit) plus the cumulative seeds
+// carried by prior compaction details. Exported for the sub-agent structured
+// handoff (Bet 04); compaction itself uses the same machinery via
+// extractFileOperations.
+func ExtractFileLists(entries []session.MessageEntry) (read, modified []string) {
+	fileOps := &FileOperation{}
+	for _, e := range entries {
+		switch ent := e.(type) {
+		case session.CompactionEntry:
+			d := ent.Compaction.Details
+			fileOps.read = append(fileOps.read, d.ReadFiles...)
+			fileOps.written = append(fileOps.written, d.ModifiedFiles...)
+		case session.SessionMessageEntry:
+			fileOps.extractMessageContent(ent.Message)
+		}
+	}
+	return computeFileLists(fileOps)
+}

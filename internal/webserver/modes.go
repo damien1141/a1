@@ -157,3 +157,23 @@ func (s *Server) applyToEngines(gate permission.Gate) {
 		e.SetPermission(gate, s.ask)
 	}
 }
+
+// updateEngineBaseModes re-bases every live engine's restore mode. Called
+// only from surface-driven mode changes (handleSetMode's direct pick and
+// cycle); the persona override path applies its mode through the setter
+// WITHOUT touching the base, so switching back to an override-free persona
+// lands on the user's last surface choice instead of the mode the engine
+// happened to boot with.
+func (s *Server) updateEngineBaseModes(mode permission.Mode) {
+	s.mu.Lock()
+	engines := make([]*agent.Engine, 0, len(s.engines))
+	for _, le := range s.engines {
+		if le.engine != nil {
+			engines = append(engines, le.engine)
+		}
+	}
+	s.mu.Unlock()
+	for _, e := range engines {
+		e.SetBasePermissionMode(mode)
+	}
+}

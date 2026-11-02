@@ -29,9 +29,7 @@ func OpenGraph(ctx context.Context, root string) (*Graph, error) {
 			return nil
 		}
 		if d.IsDir() {
-			name := d.Name()
-			if name == "vendor" || name == ".git" || name == "node_modules" || name == "target" || name == "dist" ||
-				name == "build" {
+			if skipDirName(d.Name()) {
 				return fs.SkipDir
 			}
 			return nil
@@ -61,6 +59,14 @@ func OpenGraph(ctx context.Context, root string) (*Graph, error) {
 		return nil, err
 	}
 	return g, nil
+}
+
+// parseablePath reports whether rel maps to a tree-sitter grammar. It
+// mirrors parseImports's detection so the cache walk (cache.go) can decide
+// which files need rows without reading them first.
+func parseablePath(rel string) bool {
+	entry := grammars.DetectLanguage(rel)
+	return entry != nil && entry.Language() != nil
 }
 
 func parseImports(path, rel string) ([]string, bool) {

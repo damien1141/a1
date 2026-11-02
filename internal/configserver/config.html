@@ -4,27 +4,51 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>A1 config</title>
+<link rel="icon" type="image/svg+xml" href="/dodecahedron.svg">
 <style>
+  /* ============================================================
+     a1 settings — the chat UI's design language, applied end to end.
+     Tokens mirror web/src/styles.css + tailwind.config.cjs (paper / seal /
+     cinnabar / moss / hairline, HarmonyOS Sans + EB Garamond + JetBrains Mono).
+     Every value is a token or a tint derived from one. The old page mixed a
+     light palette with hardcoded dark-theme remnants — dark hover slabs,
+     old blue/green focus rings, light-on-dark save text; all purged.
+     ============================================================ */
   :root {
-    color-scheme: dark;
-    --bg: #0F0F11;
-    --surface: #1a1a1d;
-    --surface-strong: #212125;
-    --surface-muted: #151517;
-    --border: #2a2a2d;
-    --border-strong: #3a3a3d;
-    --text: #ccd0d9;
-    --text-muted: #8a8f9c;
-    --text-subtle: #6a6a75;
-    --accent: #8AB4F8;
-    --accent-dim: #8AB4F899;
-    --blue: #8AB4F8;
-    --blue-strong: #6a9cf8;
-    --green: #589979;
-    --green-3: #19502a;
-    --amber: #e5c07b;
-    --red: #F85E4D;
-    --red-3: #9C474C;
+    color-scheme: light;
+    /* Surfaces — paper, paper-card (lifted), paper-sunk (recessed). */
+    --bg: #F5EFE4;
+    --surface: #FBF7EE;
+    --surface-strong: #FFFFFF;
+    --surface-muted: #EFE8DB;
+    /* Lines. */
+    --border: #D8CFBE;
+    --border-strong: #B8AE99;
+    /* Text. */
+    --text: #2A2622;
+    --text-muted: #4A433C;
+    --text-subtle: #6B6158;
+    /* Brand accents. */
+    --accent: #537D96;          /* seal */
+    --accent-strong: #3F6179;   /* seal-hover */
+    --accent-light: rgba(83, 125, 150, 0.08);
+    --accent-halo: rgba(83, 125, 150, 0.16);
+    --blue: #537D96;            /* legacy alias */
+    --blue-strong: #3F6179;     /* legacy alias */
+    --green: #4A6B4A;           /* moss */
+    --green-3: #2C4A2C;
+    --moss-light: rgba(74, 107, 74, 0.10);
+    --amber: #B8860B;
+    --amber-light: rgba(184, 134, 11, 0.10);
+    --red: #8B2C1F;             /* cinnabar */
+    --red-3: #6A1F15;
+    --red-light: rgba(139, 44, 31, 0.07);
+    /* Typography mirrors the chat UI. */
+    --font-ui: 'HarmonyOS Sans', 'Noto Sans SC', 'Noto Sans', 'Segoe UI', sans-serif;
+    --font-serif: 'EB Garamond', 'Noto Serif SC', 'Songti SC', serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --shadow-card: 0 1px 2px rgba(42, 38, 34, 0.04);
+    --shadow-lift: 0 6px 18px rgba(42, 38, 34, 0.07);
   }
 
   * { box-sizing: border-box; }
@@ -33,13 +57,21 @@
 
   body {
     margin: 0;
-    padding: 0 0 96px;
+    padding: 0 0 110px;
     background: var(--bg);
     color: var(--text);
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-family: var(--font-ui);
     font-size: 14px;
     line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
   }
+
+  ::selection { background: var(--accent-light); }
+
+  *::-webkit-scrollbar { width: 4px; height: 4px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb { background: rgba(128, 128, 128, 0.2); border-radius: 2px; }
+  *::-webkit-scrollbar-thumb:hover { background: rgba(128, 128, 128, 0.4); }
 
   button, input, select, textarea { font: inherit; }
   button { cursor: pointer; }
@@ -47,8 +79,8 @@
   button[aria-busy="true"] { cursor: progress; }
 
   code {
-    color: #c6d8f2;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: var(--accent-strong);
+    font-family: var(--font-mono);
     font-size: .92em;
   }
 
@@ -58,14 +90,10 @@
     padding: 32px 0 44px;
   }
 
-  /* ---------- shared chrome with the chat UI (chat.html) ---------- */
-  /* These three blocks mirror chat.html's .icon-btn / .brand / .brand-dot so
-     the two surfaces read as one product. Keep them in sync with chat.html. */
+  /* ---------- page chrome: same shell as the chat welcome hero ---------- */
   .web-chrome {
     border-bottom: 1px solid var(--border);
-    /* Room to breathe under the back link: the chrome sits against the sticky
-       save footer, and 2px made the two read as one slab. */
-    padding-bottom: 14px;
+    padding-bottom: 22px;
   }
 
   .back-link {
@@ -74,13 +102,15 @@
     gap: 7px;
     padding: 6px 11px 6px 9px;
     border: 1px solid var(--border);
-    border-radius: 9px;
+    border-radius: 8px;
     background: var(--surface);
     color: var(--text-muted);
     font-size: 12.5px;
     text-decoration: none;
+    box-shadow: var(--shadow-card);
     transition: border-color .14s ease, color .14s ease;
   }
+
   .back-link:hover {
     border-color: var(--accent);
     color: var(--accent);
@@ -93,17 +123,197 @@
     align-items: center;
     padding: 6px 11px;
     border: 1px solid var(--border);
-    border-radius: 9px;
+    border-radius: 8px;
     background: var(--surface);
     color: var(--text-muted);
     font-size: 12.5px;
+    box-shadow: var(--shadow-card);
+    transition: border-color .14s ease, color .14s ease;
   }
+
   .lang-toggle:hover {
     border-color: var(--accent);
     color: var(--accent);
   }
 
-  .page-header { padding-bottom: 16px; }
+  .page-header { padding-bottom: 0; }
+
+  /* The display header — serif, with the Dodec wireframe mark, exactly the
+     voice of the chat welcome hero ("What should we work on today?"). */
+  .brand-line {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 18px;
+    color: var(--text-subtle);
+    font-family: var(--font-serif);
+    font-size: 30px;
+    line-height: 1.15;
+  }
+
+  .brand-mark { flex: 0 0 auto; display: block; }
+
+  .brand {
+    color: var(--text);
+    font-size: 30px;
+    font-weight: 500;
+    letter-spacing: .01em;
+  }
+
+  .brand-divider { color: var(--text-subtle); opacity: .55; }
+
+  h1, h2, h3, p { margin: 0; }
+
+  h1 {
+    margin-top: 12px;
+    font-family: var(--font-serif);
+    font-size: 24px;
+    font-weight: 500;
+    line-height: 1.25;
+  }
+
+  h2 {
+    margin-top: 3px;
+    font-family: var(--font-serif);
+    font-size: 23px;
+    font-weight: 500;
+    line-height: 1.25;
+  }
+
+  h3 {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-size: 16px;
+    font-weight: 650;
+    line-height: 1.3;
+  }
+
+  .lede,
+  .section-help,
+  .panel-help,
+  .field-help,
+  .toggle-help {
+    color: var(--text-muted);
+  }
+
+  .lede {
+    max-width: 720px;
+    margin-top: 8px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .path-strip {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+    margin-top: 14px;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface-muted);
+    font-size: 12px;
+  }
+
+  .path-label {
+    flex: 0 0 auto;
+    color: var(--text-subtle);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+
+  #path {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
+
+  /* ---------- buttons ---------- */
+  .button {
+    min-height: 32px;
+    border: 1px solid var(--border-strong);
+    border-radius: 7px;
+    padding: 6px 13px;
+    background: var(--surface-strong);
+    color: var(--text);
+    font-size: 12.5px;
+    font-weight: 550;
+    line-height: 1.2;
+    transition: border-color .14s ease, background-color .14s ease, color .14s ease;
+  }
+
+  .button:not(:disabled):hover {
+    border-color: var(--accent);
+    background: var(--accent-light);
+    color: var(--accent-strong);
+  }
+
+  .button:focus-visible,
+  .secret-toggle:focus-visible,
+  .lang-toggle:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* The single filled control on the page: seal, like the chat's accent. */
+  .button.primary,
+  #save.primary {
+    border-color: var(--accent-strong);
+    background: var(--accent-strong);
+    color: #F7F4EC;
+  }
+
+  .button.primary:not(:disabled):hover,
+  #save.primary:not(:disabled):hover {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: #FFFFFF;
+  }
+
+  .button.secondary { background: transparent; }
+
+  .button.tertiary {
+    min-height: 30px;
+    border-color: transparent;
+    padding: 4px 7px;
+    background: transparent;
+    color: var(--accent-strong);
+  }
+
+  .button.tertiary:not(:disabled):hover {
+    border-color: transparent;
+    background: var(--accent-light);
+    color: var(--accent-strong);
+  }
+
+  .button.danger {
+    border-color: transparent;
+    background: transparent;
+    color: var(--text-muted);
+  }
+
+  .button.danger:not(:disabled):hover {
+    border-color: var(--red);
+    background: var(--red-light);
+    color: var(--red);
+  }
+
+  .button.small { min-height: 34px; padding: 7px 11px; font-size: 13px; }
+
+  /* ---------- sections ---------- */
+  main { border-top: none; }
+
+  .section { padding: 30px 0; border-bottom: 1px solid var(--border); }
+  .section:first-of-type { border-top: none; padding-top: 0; }
+  main > .section:first-child { padding-top: 26px; }
+
+  .section-help { margin-top: 7px; font-size: 13px; }
 
   .section-head,
   .panel-head,
@@ -113,6 +323,25 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 20px;
+  }
+
+  .section-title-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .section-count {
+    flex: 0 0 auto;
+    padding: 4px 9px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface-muted);
+    color: var(--text-muted);
+    font-size: 11.5px;
+    font-weight: 600;
+    white-space: nowrap;
   }
 
   .dirty-state {
@@ -135,171 +364,10 @@
 
   .dirty-state.pending { color: var(--amber); }
   .dirty-state.pending::before { background: var(--amber); }
-  .dirty-state.saving { color: var(--blue); }
-  .dirty-state.saving::before { background: var(--blue); }
+  .dirty-state.saving { color: var(--accent-strong); }
+  .dirty-state.saving::before { background: var(--accent); }
 
-  .brand-line {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    color: var(--text-muted);
-    font-size: 12px;
-  }
-
-  .brand {
-    color: var(--text);
-    font-size: 14px;
-    font-weight: 700;
-  }
-
-  .brand-divider { color: var(--text-subtle); }
-
-  h1, h2, h3, p { margin: 0; }
-
-  h1 {
-    margin-top: 12px;
-    font-size: 22px;
-    line-height: 1.25;
-    letter-spacing: 0;
-  }
-
-  h2 {
-    margin-top: 3px;
-    font-size: 20px;
-    line-height: 1.25;
-    letter-spacing: 0;
-  }
-
-  h3 {
-    min-width: 0;
-    overflow-wrap: anywhere;
-    font-size: 16px;
-    line-height: 1.3;
-    letter-spacing: 0;
-  }
-
-  .lede,
-  .section-help,
-  .panel-help,
-  .field-help,
-  .toggle-help {
-    color: var(--text-muted);
-  }
-
-  .lede {
-    max-width: 720px;
-    margin-top: 4px;
-    font-size: 13px;
-    line-height: 1.45;
-  }
-
-  .path-strip {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    min-width: 0;
-    margin-top: 12px;
-    padding: 7px 10px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--surface-muted);
-    font-size: 12px;
-  }
-
-  .path-label {
-    flex: 0 0 auto;
-    color: var(--text-subtle);
-    font-size: 11px;
-    font-weight: 600;
-  }
-
-  #path {
-    min-width: 0;
-    overflow-wrap: anywhere;
-    color: var(--text-muted);
-  }
-
-  .button {
-    min-height: 32px;
-    border: 1px solid var(--border-strong);
-    border-radius: 8px;
-    padding: 6px 13px;
-    background: var(--surface-strong);
-    color: var(--text);
-    font-size: 12.5px;
-    font-weight: 550;
-    line-height: 1.2;
-  }
-
-  /* Hover tints toward --accent, matching chat.html's .btn:hover. */
-  .button:not(:disabled):hover { border-color: var(--accent); background: #26262b; color: var(--accent); }
-
-  .button:focus-visible,
-  .secret-toggle:focus-visible {
-    outline: 2px solid var(--blue);
-    outline-offset: 2px;
-  }
-
-  .button.primary,
-  #save {
-    border-color: var(--green-3);
-    background: var(--green-3);
-    color: #e6f2ea;
-  }
-  .button.primary:not(:disabled):hover,
-  #save:not(:disabled):hover { border-color: var(--green); background: var(--green); color: #e6f2ea; }
-
-  /* Secondary actions recede to the page background, so the green Save button
-     is the only filled control in the footer. */
-  .button.secondary { background: transparent; }
-
-  .button.tertiary {
-    min-height: 30px;
-    border-color: transparent;
-    padding: 4px 7px;
-    background: transparent;
-    color: var(--blue);
-  }
-
-  .button.tertiary:not(:disabled):hover {
-    border-color: transparent;
-    background: rgba(138, 180, 248, .1);
-  }
-
-  .button.danger {
-    border-color: transparent;
-    background: transparent;
-    color: var(--text-muted);
-  }
-
-  .button.danger:not(:disabled):hover { border-color: #5a2a35; background: #1a1215; color: var(--red); }
-  .button.small { min-height: 34px; padding: 7px 11px; font-size: 13px; }
-
-  main { border-top: 1px solid var(--border); }
-
-  .section { padding: 30px 0; border-bottom: 1px solid var(--border); }
-  .section:first-of-type { border-top: none; padding-top: 0; }
-
-  .section-help { margin-top: 7px; font-size: 13px; }
-
-  .section-title-row {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 10px;
-  }
-
-  .section-count {
-    flex: 0 0 auto;
-    padding: 5px 9px;
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    color: var(--text-muted);
-    font-size: 12px;
-    font-weight: 600;
-    white-space: nowrap;
-  }
-
+  /* ---------- model cards ---------- */
   .model-list {
     display: grid;
     gap: 14px;
@@ -312,11 +380,13 @@
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--surface);
+    box-shadow: var(--shadow-card);
   }
 
   .model-card.is-default {
-    border-color: #3a5a4a;
-    box-shadow: 0 0 0 1px rgba(88, 153, 121, .08);
+    border-color: var(--accent);
+    background: linear-gradient(0deg, var(--accent-light), var(--accent-light)), var(--surface);
+    box-shadow: 0 0 0 1px var(--accent-light), var(--shadow-card);
   }
 
   .model-card-head { align-items: flex-start; }
@@ -337,9 +407,10 @@
 
   .model-badge {
     padding: 3px 7px;
-    border: 1px solid #3a5a4a;
+    border: 1px solid var(--green);
     border-radius: 4px;
-    color: var(--green);
+    background: var(--moss-light);
+    color: var(--green-3);
     font-size: 11px;
     font-weight: 700;
   }
@@ -362,7 +433,7 @@
     min-height: 34px;
     padding: 6px 10px;
     border: 1px solid var(--border-strong);
-    border-radius: 5px;
+    border-radius: 6px;
     color: var(--text-muted);
     font-size: 12px;
     font-weight: 600;
@@ -372,8 +443,8 @@
   .default-control[hidden] { display: none; }
 
   .model-card.is-default .default-control {
-    border-color: #3a5a4a;
-    color: var(--green);
+    border-color: var(--accent);
+    color: var(--accent-strong);
   }
 
   input[type="radio"],
@@ -381,10 +452,10 @@
     width: 16px;
     height: 16px;
     margin: 0;
-    accent-color: var(--blue-strong);
+    accent-color: var(--accent-strong);
   }
 
-  .model-card.is-default input[type="radio"] { accent-color: var(--green); }
+  .model-card.is-default input[type="radio"] { accent-color: var(--accent-strong); }
 
   .model-fields {
     display: grid;
@@ -395,6 +466,7 @@
     border-top: 1px solid var(--border);
   }
 
+  /* ---------- fields ---------- */
   .field { min-width: 0; }
 
   .field-name, .field-base { grid-column: 1 / -1; }
@@ -438,6 +510,7 @@
     min-height: 18px;
     margin-top: 2px;
     font-size: 12px;
+    line-height: 1.45;
   }
 
   input[type="text"],
@@ -454,26 +527,28 @@
     background: var(--surface-muted);
     color: var(--text);
     font-size: 13px;
+    transition: border-color .14s ease, background-color .14s ease, box-shadow .14s ease;
   }
 
   input[type="text"],
   input[type="number"],
   input[type="password"],
   select {
-    height: 40px;
+    height: 38px;
     padding: 8px 10px;
   }
 
   input:focus, select:focus, textarea:focus {
-    border-color: var(--blue);
-    box-shadow: 0 0 0 2px rgba(138, 180, 248, .14);
+    border-color: var(--accent);
+    background: var(--surface-strong);
+    box-shadow: 0 0 0 2px var(--accent-halo);
   }
 
   input[aria-invalid="true"],
   select[aria-invalid="true"],
   textarea[aria-invalid="true"] {
     border-color: var(--red);
-    box-shadow: 0 0 0 2px rgba(248, 93, 77, .12);
+    box-shadow: 0 0 0 2px var(--red-light);
   }
 
   textarea {
@@ -483,7 +558,7 @@
     line-height: 1.45;
   }
 
-  input::placeholder, textarea::placeholder { color: #637183; }
+  input::placeholder, textarea::placeholder { color: #978D7E; }
 
   .input-shell {
     display: flex;
@@ -510,12 +585,12 @@
     font-weight: 600;
   }
 
-  .secret-toggle:hover { color: var(--text); background: #1e1e28; }
+  .secret-toggle:hover { color: var(--accent-strong); background: var(--accent-light); }
 
   .empty-models {
     padding: 26px;
     border: 1px dashed var(--border-strong);
-    border-radius: 6px;
+    border-radius: 8px;
     color: var(--text-muted);
     text-align: center;
   }
@@ -552,9 +627,10 @@
   }
 
   .model-fetch-status.error { color: var(--red); }
-  .model-fetch-status.success { color: var(--green); }
-  .model-fetch-status.loading { color: var(--blue); }
+  .model-fetch-status.success { color: var(--green-3); }
+  .model-fetch-status.loading { color: var(--accent-strong); }
 
+  /* ---------- panels ---------- */
   .settings-layout {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
@@ -568,17 +644,68 @@
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--surface);
+    box-shadow: var(--shadow-card);
     display: flex;
     flex-direction: column;
   }
 
   .panel-head { align-items: baseline; gap: 12px; margin-bottom: 16px; }
 
-  .panel-title { font-size: 16px; font-weight: 700; }
+  .panel-title { font-size: 16px; font-weight: 650; }
 
   .panel-help { margin-top: 4px; font-size: 12px; }
 
   .panel-body { margin-top: 0; }
+
+  /* Wide panels (persona + MCP managers) span the full settings grid row. */
+  .settings-layout > .panel.panel-span { grid-column: 1 / -1; }
+
+  /* ---------- persona + MCP managers ---------- */
+  .persona-list, .mcp-list { display: grid; gap: 10px; margin-bottom: 14px; }
+
+  .persona-row, .mcp-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+  }
+
+  .persona-row.active { border-color: var(--accent); }
+
+  .persona-id { font-size: 13px; font-weight: 650; color: var(--text); }
+
+  .persona-meta {
+    flex: 1 1 220px;
+    min-width: 0;
+    font-size: 12px;
+    color: var(--muted, var(--text-3));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .persona-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+
+  .persona-editor {
+    margin-bottom: 14px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-sunk, rgba(0,0,0,0.02));
+  }
+
+  .persona-editor-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+
+  .mcp-hint { font-size: 12px; color: var(--muted, var(--text-3)); line-height: 1.6; }
+
+  .mcp-hint-inline { font-size: 11px; color: var(--muted, var(--text-3)); font-style: italic; }
+
+  .button.tertiary.danger { color: var(--red); }
+  .button.tertiary.danger:not(:disabled):hover { background: rgba(139, 44, 31, 0.08); }
 
   .settings-fields {
     display: grid;
@@ -617,8 +744,8 @@
     font-size: 12px;
   }
 
-  .toggle-row.danger .toggle-title { color: var(--amber); }
-  .toggle-row.danger input { accent-color: var(--amber); }
+  .toggle-row.danger .toggle-title { color: var(--red); }
+  .toggle-row.danger input { accent-color: var(--red); }
 
   .mode-hint {
     margin-top: 7px;
@@ -626,6 +753,7 @@
     font-size: 12px;
   }
 
+  /* ---------- tool rules ---------- */
   .rules-section { padding: 30px 0; border-bottom: 1px solid var(--border); }
 
   .rules-grid {
@@ -641,6 +769,7 @@
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--surface);
+    box-shadow: var(--shadow-card);
     margin: 0;
   }
 
@@ -663,7 +792,7 @@
     display: block;
     color: var(--text);
     font-size: 14px;
-    font-weight: 700;
+    font-weight: 650;
   }
 
   .rule-help { margin-top: 2px; color: var(--text-muted); font-size: 12px; }
@@ -681,6 +810,7 @@
 
   .rule-body .field-wide { grid-column: 1 / -1; }
 
+  /* ---------- save footer: the chat composer's frosted shell ---------- */
   .save-footer {
     position: fixed;
     z-index: 20;
@@ -688,9 +818,10 @@
     bottom: 0;
     left: 0;
     border-top: 1px solid var(--border);
-    /* Same frosted surface as chat.html's composer so the bar reads as part
-       of the same shell rather than a foreign overlay. */
-    background: var(--bg);
+    background: rgba(245, 239, 228, 0.92);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 -6px 18px rgba(42, 38, 34, 0.05);
   }
 
   .footer-inner {
@@ -721,73 +852,21 @@
     white-space: pre-wrap;
   }
 
-  .status.success { color: var(--green); }
+  .status.success { color: var(--green-3); }
   .status.warning { color: var(--amber); }
   .status.error { color: var(--red); }
-  .status.loading { color: var(--blue); }
+  .status.loading { color: var(--accent-strong); }
 
   .backup-note { color: var(--text-subtle); font-size: 12px; text-align: right; }
 
   .footer-actions .button { min-width: 112px; }
 
-  @media (max-width: 900px) {
-    .model-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .field-name, .field-base, .field-key { grid-column: 1 / -1; }
-  }
-
-  @media (max-width: 720px) {
-    body { padding-bottom: 120px; }
-    .page-shell { width: min(100% - 24px, 620px); padding-top: 20px; }
-    .section-head, .panel-head, .model-card-head, .footer-inner { flex-direction: column; }
-    .section-head > .button { width: 100%; }
-    .dirty-state { align-self: flex-start; }
-    h1 { margin-top: 10px; font-size: 20px; }
-    .path-strip { align-items: flex-start; flex-direction: column; gap: 3px; }
-    .section { padding: 24px 0; }
-    .rules-section { padding: 24px 0; }
-    .model-card { padding: 17px; }
-    .model-card-actions { width: 100%; justify-content: flex-end; }
-    .default-control { flex: 1 1 auto; }
-    .model-fields, .settings-fields, .rules-grid, .rule-body { grid-template-columns: minmax(0, 1fr); }
-    .field-name, .field-api, .field-base, .field-key, .field-think, .field-context, .field-image, .settings-fields .field-full, .rule-body .field-wide { grid-column: auto; }
-    .settings-layout { grid-template-columns: minmax(0, 1fr); padding: 24px 0; }
-    .footer-inner { width: min(100% - 24px, 620px); min-height: 136px; align-items: stretch; gap: 8px; }
-    .save-summary { flex-direction: column; align-items: flex-start; gap: 4px; }
-    .save-summary .status { border-left: 0; padding-left: 0; white-space: normal; overflow-wrap: anywhere; }
-    .footer-actions { justify-content: space-between; }
-    .footer-actions .button { flex: 1 0 112px; }
-    .backup-note { display: none; }
-  }
-
+  /* ---------- stats ---------- */
   .header-top {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-  }
-
-  .lang-toggle {
-    flex: 0 0 auto;
-    min-height: 28px;
-    border: 1px solid var(--border-strong);
-    border-radius: 6px;
-    padding: 3px 9px;
-    background: transparent;
-    color: var(--text-muted);
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: .02em;
-  }
-
-  .lang-toggle:not(:disabled):hover {
-    border-color: var(--blue);
-    color: var(--text);
-    background: #1e1e28;
-  }
-
-  .lang-toggle:focus-visible {
-    outline: 2px solid var(--blue);
-    outline-offset: 2px;
   }
 
   .stats-section {
@@ -807,13 +886,15 @@
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--surface);
+    box-shadow: var(--shadow-card);
   }
 
   .stat-value {
     color: var(--text);
-    font-size: 22px;
-    font-weight: 700;
-    line-height: 1.2;
+    font-family: var(--font-serif);
+    font-size: 26px;
+    font-weight: 500;
+    line-height: 1.15;
   }
 
   .stat-label {
@@ -823,9 +904,7 @@
     font-weight: 600;
   }
 
-  .tool-usage {
-    margin-top: 22px;
-  }
+  .tool-usage { margin-top: 22px; }
 
   .tool-usage-head {
     display: flex;
@@ -834,10 +913,7 @@
     gap: 12px;
   }
 
-  .tool-usage-title {
-    font-size: 16px;
-    font-weight: 700;
-  }
+  .tool-usage-title { font-size: 16px; font-weight: 650; }
 
   .tool-usage-help {
     margin-top: 4px;
@@ -860,6 +936,7 @@
     border: 1px solid var(--border);
     border-radius: 6px;
     background: var(--surface);
+    box-shadow: var(--shadow-card);
   }
 
   .tool-name {
@@ -885,7 +962,7 @@
   }
 
   .tool-metric-error .tool-metric-value { color: var(--red); }
-  .tool-metric-ok .tool-metric-value { color: var(--green); }
+  .tool-metric-ok .tool-metric-value { color: var(--green-3); }
 
   .stats-empty {
     margin-top: 14px;
@@ -893,11 +970,42 @@
     font-size: 13px;
   }
 
+  /* ---------- responsive ---------- */
+  @media (max-width: 900px) {
+    .model-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .field-name, .field-base, .field-key { grid-column: 1 / -1; }
+  }
+
+  @media (max-width: 720px) {
+    body { padding-bottom: 120px; }
+    .page-shell { width: min(100% - 24px, 620px); padding-top: 20px; }
+    .section-head, .panel-head, .model-card-head, .footer-inner { flex-direction: column; }
+    .section-head > .button { width: 100%; }
+    .dirty-state { align-self: flex-start; }
+    h1 { margin-top: 10px; font-size: 20px; }
+    .brand-line, .brand { font-size: 25px; }
+    .path-strip { align-items: flex-start; flex-direction: column; gap: 3px; }
+    .section { padding: 24px 0; }
+    .rules-section { padding: 24px 0; }
+    .model-card { padding: 17px; }
+    .model-card-actions { width: 100%; justify-content: flex-end; }
+    .default-control { flex: 1 1 auto; }
+    .model-fields, .settings-fields, .rules-grid, .rule-body { grid-template-columns: minmax(0, 1fr); }
+    .field-name, .field-api, .field-base, .field-key, .field-think, .field-context, .field-image, .settings-fields .field-full, .rule-body .field-wide { grid-column: auto; }
+    .settings-layout { grid-template-columns: minmax(0, 1fr); padding: 24px 0; }
+    .footer-inner { width: min(100% - 24px, 620px); min-height: 136px; align-items: stretch; gap: 8px; }
+    .save-summary { flex-direction: column; align-items: flex-start; gap: 4px; }
+    .save-summary .status { border-left: 0; padding-left: 0; white-space: normal; overflow-wrap: anywhere; }
+    .footer-actions { justify-content: space-between; }
+    .footer-actions .button { flex: 1 0 112px; }
+    .backup-note { display: none; }
+  }
+
   @media (max-width: 720px) {
     .stats-grid { grid-template-columns: minmax(0, 1fr); }
     .tool-row { grid-template-columns: minmax(0, 1fr) repeat(3, minmax(0, 1fr)); gap: 10px; }
   }
-</style>
+  </style>
 </head>
 <body>
 <div class="page-shell">
@@ -913,6 +1021,58 @@
         <button class="lang-toggle" id="langToggle" type="button" aria-label="Switch language">中文</button>
       </div>
       <div class="brand-line">
+        <svg class="brand-mark" width="25" height="25" viewBox="-32 -32 64 64" aria-hidden="true">
+<line x1="-4.65" y1="4.27" x2="13.93" y2="-0.97" stroke="#3F6179" stroke-width="0.98" stroke-opacity="0.53" stroke-linecap="round"/>
+  <line x1="-4.65" y1="4.27" x2="-7.66" y2="19.10" stroke="#3F6179" stroke-width="1.06" stroke-opacity="0.56" stroke-linecap="round"/>
+  <line x1="-4.65" y1="4.27" x2="-15.45" y2="-9.68" stroke="#3F6179" stroke-width="1.02" stroke-opacity="0.55" stroke-linecap="round"/>
+  <line x1="-18.56" y1="13.70" x2="-7.66" y2="19.10" stroke="#3F6179" stroke-width="1.33" stroke-opacity="0.66" stroke-linecap="round"/>
+  <line x1="-18.56" y1="13.70" x2="-23.03" y2="-2.28" stroke="#3F6179" stroke-width="1.46" stroke-opacity="0.71" stroke-linecap="round"/>
+  <line x1="-18.56" y1="13.70" x2="-10.54" y2="13.84" stroke="#537D96" stroke-width="1.68" stroke-opacity="0.80" stroke-linecap="round"/>
+  <line x1="-4.14" y1="-21.80" x2="-15.45" y2="-9.68" stroke="#3F6179" stroke-width="1.18" stroke-opacity="0.61" stroke-linecap="round"/>
+  <line x1="-4.14" y1="-21.80" x2="12.96" y2="-17.01" stroke="#3F6179" stroke-width="1.24" stroke-opacity="0.63" stroke-linecap="round"/>
+  <line x1="-4.14" y1="-21.80" x2="-6.47" y2="-19.97" stroke="#3F6179" stroke-width="1.49" stroke-opacity="0.73" stroke-linecap="round"/>
+  <line x1="-16.82" y1="-9.25" x2="-23.03" y2="-2.28" stroke="#537D96" stroke-width="1.62" stroke-opacity="0.78" stroke-linecap="round"/>
+  <line x1="-16.82" y1="-9.25" x2="-6.47" y2="-19.97" stroke="#537D96" stroke-width="1.76" stroke-opacity="0.83" stroke-linecap="round"/>
+  <line x1="-16.82" y1="-9.25" x2="-9.98" y2="0.70" stroke="#537D96" stroke-width="1.95" stroke-opacity="0.90" stroke-linecap="round"/>
+  <line x1="19.71" y1="10.83" x2="13.93" y2="-0.97" stroke="#3F6179" stroke-width="1.15" stroke-opacity="0.60" stroke-linecap="round"/>
+  <line x1="19.71" y1="10.83" x2="7.12" y2="21.98" stroke="#3F6179" stroke-width="1.34" stroke-opacity="0.67" stroke-linecap="round"/>
+  <line x1="19.71" y1="10.83" x2="21.40" y2="2.12" stroke="#3F6179" stroke-width="1.48" stroke-opacity="0.72" stroke-linecap="round"/>
+  <line x1="3.48" y1="18.32" x2="7.12" y2="21.98" stroke="#3F6179" stroke-width="1.61" stroke-opacity="0.77" stroke-linecap="round"/>
+  <line x1="3.48" y1="18.32" x2="-10.54" y2="13.84" stroke="#537D96" stroke-width="1.86" stroke-opacity="0.87" stroke-linecap="round"/>
+  <line x1="3.48" y1="18.32" x2="11.68" y2="7.32" stroke="#537D96" stroke-width="1.92" stroke-opacity="0.89" stroke-linecap="round"/>
+  <line x1="17.77" y1="-13.12" x2="12.96" y2="-17.01" stroke="#3F6179" stroke-width="1.42" stroke-opacity="0.70" stroke-linecap="round"/>
+  <line x1="17.77" y1="-13.12" x2="21.40" y2="2.12" stroke="#537D96" stroke-width="1.64" stroke-opacity="0.79" stroke-linecap="round"/>
+  <line x1="17.77" y1="-13.12" x2="6.08" y2="-15.16" stroke="#537D96" stroke-width="1.77" stroke-opacity="0.84" stroke-linecap="round"/>
+  <line x1="3.18" y1="-2.92" x2="-9.98" y2="0.70" stroke="#8B2C1F" stroke-width="2.12" stroke-opacity="0.97" stroke-linecap="round"/>
+  <line x1="3.18" y1="-2.92" x2="6.08" y2="-15.16" stroke="#8B2C1F" stroke-width="2.04" stroke-opacity="0.94" stroke-linecap="round"/>
+  <line x1="3.18" y1="-2.92" x2="11.68" y2="7.32" stroke="#8B2C1F" stroke-width="2.08" stroke-opacity="0.95" stroke-linecap="round"/>
+  <line x1="13.93" y1="-0.97" x2="12.96" y2="-17.01" stroke="#3F6179" stroke-width="1.11" stroke-opacity="0.58" stroke-linecap="round"/>
+  <line x1="-7.66" y1="19.10" x2="7.12" y2="21.98" stroke="#3F6179" stroke-width="1.29" stroke-opacity="0.65" stroke-linecap="round"/>
+  <line x1="-15.45" y1="-9.68" x2="-23.03" y2="-2.28" stroke="#3F6179" stroke-width="1.26" stroke-opacity="0.64" stroke-linecap="round"/>
+  <line x1="-10.54" y1="13.84" x2="-9.98" y2="0.70" stroke="#537D96" stroke-width="1.99" stroke-opacity="0.92" stroke-linecap="round"/>
+  <line x1="-6.47" y1="-19.97" x2="6.08" y2="-15.16" stroke="#537D96" stroke-width="1.81" stroke-opacity="0.85" stroke-linecap="round"/>
+  <line x1="21.40" y1="2.12" x2="11.68" y2="7.32" stroke="#537D96" stroke-width="1.84" stroke-opacity="0.86" stroke-linecap="round"/>
+  <circle cx="-4.65" cy="4.27" r="0.83" fill="#537D96" fill-opacity="0.32"/>
+  <circle cx="-18.56" cy="13.70" r="1.29" fill="#537D96" fill-opacity="0.61"/>
+  <circle cx="-4.14" cy="-21.80" r="1.11" fill="#537D96" fill-opacity="0.50"/>
+  <circle cx="-16.82" cy="-9.25" r="1.57" fill="#537D96" fill-opacity="0.79"/>
+  <circle cx="19.71" cy="10.83" r="1.13" fill="#537D96" fill-opacity="0.51"/>
+  <circle cx="3.48" cy="18.32" r="1.59" fill="#537D96" fill-opacity="0.80"/>
+  <circle cx="17.77" cy="-13.12" r="1.41" fill="#537D96" fill-opacity="0.69"/>
+  <circle cx="3.18" cy="-2.92" r="2.3" fill="#8B2C1F" fill-opacity="0.98"/>
+  <circle cx="13.93" cy="-0.97" r="0.90" fill="#537D96" fill-opacity="0.36"/>
+  <circle cx="-7.66" cy="19.10" r="1.03" fill="#537D96" fill-opacity="0.45"/>
+  <circle cx="-15.45" cy="-9.68" r="0.97" fill="#537D96" fill-opacity="0.41"/>
+  <circle cx="12.96" cy="-17.01" r="1.07" fill="#537D96" fill-opacity="0.47"/>
+  <circle cx="7.12" cy="21.98" r="1.22" fill="#537D96" fill-opacity="0.57"/>
+  <circle cx="-23.03" cy="-2.28" r="1.25" fill="#537D96" fill-opacity="0.59"/>
+  <circle cx="-10.54" cy="13.84" r="1.63" fill="#537D96" fill-opacity="0.83"/>
+  <circle cx="-6.47" cy="-19.97" r="1.48" fill="#537D96" fill-opacity="0.73"/>
+  <circle cx="21.40" cy="2.12" r="1.45" fill="#537D96" fill-opacity="0.71"/>
+  <circle cx="-9.98" cy="0.70" r="1.80" fill="#537D96" fill-opacity="0.94"/>
+  <circle cx="6.08" cy="-15.16" r="1.67" fill="#537D96" fill-opacity="0.85"/>
+  <circle cx="11.68" cy="7.32" r="1.73" fill="#537D96" fill-opacity="0.89"/>
+        </svg>
         <span class="brand">a1<span class="brand-dot">.</span>web</span>
         <span class="brand-divider">/</span>
         <span data-i18n="brandSettings">Settings</span>
@@ -1030,7 +1190,17 @@
             </span>
           </label>
         </div>
-        <div class="panel-body settings-fields" id="semanticFields" hidden>
+        <p class="panel-help" style="padding: 0 16px 12px">The embedding model it uses lives one panel down, in <strong>Embeddings</strong> — configured once, shared by every feature that embeds text.</p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Embeddings</div>
+            <p class="panel-help">The one place the embedding model is configured. Semantic search, memory recall, and anything else that embeds text read from here.</p>
+          </div>
+        </div>
+        <div class="panel-body settings-fields" id="semanticFields">
           <div class="field field-full">
             <label class="field-label" for="semanticOllamaBaseUrl" data-i18n="semanticOllamaBaseUrlLabel">Ollama base URL</label>
             <div class="field-help" data-i18n="semanticOllamaBaseUrlHelp">Local Ollama API endpoint used for embeddings.</div>
@@ -1047,8 +1217,8 @@
       <section class="panel">
         <div class="panel-head">
           <div>
-            <div class="panel-title" data-i18n="judgeHeading">Judge (JEV- its not fully implemented yet, this is just a placeholder)</div>
-            <p class="panel-help" data-i18n="judgeHelp">Local judgment and evaluation via Ollama.</p>
+            <div class="panel-title" data-i18n="judgeHeading">Judge</div>
+            <p class="panel-help" data-i18n="judgeHelp">The code tool's judge mode: local judgment and evaluation via Ollama.</p>
           </div>
         </div>
         <div class="panel-body settings-fields" id="judgeFields">
@@ -1061,6 +1231,56 @@
             <label class="field-label" for="judgeModel" data-i18n="judgeModelLabel">Judge model</label>
             <div class="field-help" data-i18n="judgeModelHelp">Ollama model used for local judgment/evaluation.</div>
             <input id="judgeModel" type="text" data-i18n-placeholder="judgeModelPlaceholder" placeholder="llama3.2" autocomplete="off">
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title" data-i18n="jevHeading">JEV decision model</div>
+            <p class="panel-help" data-i18n="jevHelp">The decision backend behind fetch engine routing and the evidence verdict gate — one question, one fast structured answer, never prose. Off by default; every miss falls back to the built-in heuristics.</p>
+          </div>
+        </div>
+        <div class="panel-body settings-fields" id="jevFields">
+          <div class="field field-full">
+            <label class="field-label" for="jevProvider" data-i18n="jevProviderLabel">Provider</label>
+            <div class="field-help" data-i18n="jevProviderHelp">Where decision questions are asked. Without a provider, the TYPESAFE_API_KEY environment variable still enables the hosted API.</div>
+            <select id="jevProvider">
+              <option value="" data-i18n="jevProviderOff">Off</option>
+              <option value="api" data-i18n="jevProviderApi">TypeSafe API (hosted)</option>
+              <option value="ollama" data-i18n="jevProviderOllama">Ollama (local)</option>
+            </select>
+          </div>
+          <div class="field field-full" id="jevApiKeyField">
+            <label class="field-label" for="jevApiKey" data-i18n="jevApiKeyLabel">API key</label>
+            <div class="field-help" data-i18n="jevApiKeyHelp">TypeSafe key; falls back to TYPESAFE_API_KEY when empty.</div>
+            <input id="jevApiKey" type="password" data-i18n-placeholder="jevApiKeyPlaceholder" placeholder="TypeSafe API key" autocomplete="off">
+          </div>
+          <div class="field" id="jevBaseURLField">
+            <label class="field-label" for="jevBaseURL" data-i18n="jevBaseURLLabel">Base URL</label>
+            <div class="field-help" data-i18n="jevBaseURLHelp">Optional endpoint override.</div>
+            <input id="jevBaseURL" type="text" placeholder="https://api.typesafe.ai" autocomplete="off">
+          </div>
+          <div class="field" id="jevApiModelField">
+            <label class="field-label" for="jevApiModel" data-i18n="jevApiModelLabel">Model</label>
+            <div class="field-help" data-i18n="jevApiModelHelp">Model alias; defaults to jev-latest.</div>
+            <input id="jevApiModel" type="text" placeholder="jev-latest" autocomplete="off">
+          </div>
+          <div class="field field-full" id="jevOllamaBaseURLField">
+            <label class="field-label" for="jevOllamaBaseURL" data-i18n="jevOllamaBaseURLLabel">Ollama base URL</label>
+            <div class="field-help" data-i18n="jevOllamaBaseURLHelp">Local Ollama endpoint; defaults to OLLAMA_HOST or http://127.0.0.1:11434.</div>
+            <input id="jevOllamaBaseURL" type="text" placeholder="http://127.0.0.1:11434" autocomplete="off">
+          </div>
+          <div class="field field-full" id="jevOllamaModelField">
+            <label class="field-label" for="jevOllamaModel" data-i18n="jevOllamaModelLabel">Ollama model</label>
+            <div class="field-help" data-i18n="jevOllamaModelHelp">The local model tag that answers decision questions, e.g. qwen3:4b. Required for the Ollama provider.</div>
+            <input id="jevOllamaModel" type="text" placeholder="qwen3:4b" autocomplete="off">
+          </div>
+          <div class="field field-full" id="jevTimeoutField">
+            <label class="field-label" for="jevTimeout"><span data-i18n="jevTimeoutLabel">Decision timeout</span> <span class="field-unit">seconds</span></label>
+            <div class="field-help" data-i18n="jevTimeoutHelp">Optional per-call ceiling. Empty keeps the provider defaults (3–4 s hosted, 20 s local).</div>
+            <input id="jevTimeout" type="number" min="1" step="1" inputmode="numeric" placeholder="20">
           </div>
         </div>
       </section>
@@ -1083,6 +1303,162 @@
             <div class="field-help" data-i18n="browserProxyHelp">Optional HTTP/HTTPS/SOCKS proxy for the browser, e.g. http://127.0.0.1:8885. Empty → no proxy. Takes effect on the next open after a close.</div>
             <input id="browserProxy" type="text" data-i18n-placeholder="browserProxyPlaceholder" placeholder="http://127.0.0.1:8885" />
           </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Weather forecast</div>
+            <p class="panel-help">Inject a weekly Open-Meteo forecast into the agent context. Off by default — opt in by enabling and entering your location.</p>
+          </div>
+        </div>
+        <div class="panel-body toggle-list">
+          <label class="toggle-row">
+            <input id="weatherEnabled" type="checkbox">
+            <span>
+              <span class="toggle-title">Enable weekly forecast</span>
+              <span class="toggle-help">Adds a "This week's weather forecast for &lt;name&gt;…" system message to every turn. Forecast is cached for 30 minutes.</span>
+            </span>
+          </label>
+        </div>
+        <div class="panel-body settings-fields" id="weatherFields">
+          <div class="field">
+            <label class="field-label" for="weatherLatitude">Latitude</label>
+            <div class="field-help">Decimal degrees (e.g. 64.13 for Reykjavik).</div>
+            <input id="weatherLatitude" type="number" step="0.0001" min="-90" max="90" inputmode="decimal" placeholder="64.13">
+          </div>
+          <div class="field">
+            <label class="field-label" for="weatherLongitude">Longitude</label>
+            <div class="field-help">Decimal degrees (e.g. -21.94 for Reykjavik).</div>
+            <input id="weatherLongitude" type="number" step="0.0001" min="-180" max="180" inputmode="decimal" placeholder="-21.94">
+          </div>
+          <div class="field field-full">
+            <label class="field-label" for="weatherName">Display name</label>
+            <div class="field-help">Optional. Shown in the forecast header, e.g. "Reykjavik" instead of "64.130,-21.940".</div>
+            <input id="weatherName" type="text" placeholder="e.g. Reykjavik" autocomplete="off">
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Web GUI</div>
+            <p class="panel-help">How the browser chat surface behaves.</p>
+          </div>
+        </div>
+        <div class="panel-body toggle-list">
+          <label class="toggle-row">
+            <input id="autoNameSessions" type="checkbox">
+            <span>
+              <span class="toggle-title">Smart session names</span>
+              <span class="toggle-help">After a session's first exchange, the memory-ops model writes a 2–6 word title that replaces the first-message preview in the sidebar.</span>
+            </span>
+          </label>
+        </div>
+      </section>
+
+      <section class="panel panel-span">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Personas</div>
+            <p class="panel-help">Personality profiles with their own memory banks, models, and permission modes. Everything lives under <code>~/.a1/personas/</code>; the buttons below manage it live.</p>
+          </div>
+        </div>
+        <div class="panel-body" id="personaManager">
+          <div id="personaUnavailable" class="mcp-hint" hidden>
+            The persona registry is served by the web GUI — run <code>a1 --web</code> and open this page from the chat's settings cog to manage personas here.
+          </div>
+          <div id="personaList" class="persona-list"></div>
+          <div class="persona-editor" id="personaEditor" hidden>
+            <div class="settings-fields">
+              <div class="field">
+                <label class="field-label" for="peName">Name</label>
+                <input id="peName" type="text" maxlength="40" placeholder="The Closer" autocomplete="off">
+              </div>
+              <div class="field">
+                <label class="field-label" for="peTagline">Tagline</label>
+                <input id="peTagline" type="text" maxlength="100" placeholder="One line shown under the name" autocomplete="off">
+              </div>
+              <div class="field">
+                <label class="field-label" for="peEmoji">Emoji</label>
+                <input id="peEmoji" type="text" maxlength="8" placeholder="🧭" autocomplete="off">
+              </div>
+              <div class="field">
+                <label class="field-label" for="peModel">Model</label>
+                <select id="peModel"></select>
+              </div>
+              <div class="field">
+                <label class="field-label" for="peMemoryModel">Memory ops model</label>
+                <div class="field-help">The cheap second model for background write-backs — memory consolidation and session naming. Empty = same as the main model.</div>
+                <select id="peMemoryModel"></select>
+              </div>
+              <div class="field">
+                <label class="field-label" for="pePermission">Permission mode</label>
+                <select id="pePermission">
+                  <option value="">Inherit current mode</option>
+                  <option value="interactive">Interactive</option>
+                  <option value="readonly">Read-only</option>
+                  <option value="autopilot">Autopilot</option>
+                  <option value="yolo">YOLO (dangerous)</option>
+                </select>
+              </div>
+              <div class="field field-full">
+                <label class="field-label" for="pePrompt">Personality prompt</label>
+                <textarea id="pePrompt" rows="5" maxlength="4000" placeholder="Injected into the system prompt…"></textarea>
+              </div>
+              <label class="toggle-row field-full">
+                <input id="peOverride" type="checkbox">
+                <span>
+                  <span class="toggle-title">Replace default system prompt</span>
+                  <span class="toggle-help">On: this prompt replaces a1's built-in instructions entirely.</span>
+                </span>
+              </label>
+            </div>
+            <div class="persona-editor-actions">
+              <button class="button secondary small" id="peCancel" type="button">Cancel</button>
+              <button class="button small" id="peSave" type="button">Save persona</button>
+            </div>
+          </div>
+          <button class="button secondary small" id="peNew" type="button">+ New persona</button>
+        </div>
+      </section>
+
+      <section class="panel panel-span">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">MCP servers</div>
+            <p class="panel-help">Model Context Protocol servers whose tools the agent can call. User servers live in <code>~/.a1/mcp.json</code>; a project's checked-in <code>.a1/mcp.json</code> overrides them by name.</p>
+          </div>
+        </div>
+        <div class="panel-body" id="mcpManager">
+          <div id="mcpUnavailable" class="mcp-hint" hidden>
+            The MCP registry is served by the web GUI — run <code>a1 --web</code> and open this page from the chat's settings cog to manage servers here. The CLI's <code>a1 mcp list|add|remove</code> always works.
+          </div>
+          <div id="mcpList" class="mcp-list"></div>
+          <div class="settings-fields" id="mcpForm">
+            <div class="field">
+              <label class="field-label" for="mcpName">Name</label>
+              <input id="mcpName" type="text" placeholder="fetch" autocomplete="off">
+            </div>
+            <div class="field">
+              <label class="field-label" for="mcpTransport">Transport</label>
+              <select id="mcpTransport">
+                <option value="stdio">stdio</option>
+                <option value="http">http</option>
+              </select>
+            </div>
+            <div class="field field-full">
+              <label class="field-label" for="mcpCommand">Command <span id="mcpCommandLabel">argv (space-separated, quote as needed)</span></label>
+              <input id="mcpCommand" type="text" placeholder="uvx mcp-server-fetch" autocomplete="off">
+            </div>
+            <div class="field field-full" id="mcpUrlField" hidden>
+              <label class="field-label" for="mcpUrl">URL</label>
+              <input id="mcpUrl" type="text" placeholder="https://example.com/mcp" autocomplete="off">
+            </div>
+          </div>
+          <button class="button secondary small" id="mcpAdd" type="button">Add server</button>
         </div>
       </section>
 
@@ -1260,7 +1636,7 @@ const I18N = {
     thinkXHigh: "xhigh",
     thinkMax: "max",
     contextWindow: "Context window",
-    contextWindowHelp: "Maximum context length the model can handle.",
+    contextWindowHelp: "Maximum context length in tokens. Leave empty to auto-detect local llama.cpp / ollama servers (unknown windows fall back to 32k); set it explicitly for remote models.",
     imageEnabled: "Image enabled",
     imageEnabledHelp: "Allow attaching images to messages for this model.",
     contextPlaceholder: "e.g. 200000",
@@ -1305,13 +1681,33 @@ const I18N = {
     semanticEmbeddingModelHelp: "Ollama model that produces embeddings.",
     semanticEmbeddingModelPlaceholder: "e.g. nomic-embed-text",
     judgeHeading: "Judge",
-    judgeHelp: "Local judgment and evaluation via Ollama.",
+    judgeHelp: "The code tool's judge mode: local judgment and evaluation via Ollama.",
     judgeOllamaBaseUrlLabel: "Ollama base URL",
     judgeOllamaBaseUrlHelp: "Local Ollama API endpoint used for judgment.",
     judgeOllamaBaseUrlPlaceholder: "http://localhost:11434",
     judgeModelLabel: "Judge model",
     judgeModelHelp: "Ollama model used for local judgment/evaluation.",
     judgeModelPlaceholder: "llama3.2",
+    jevHeading: "JEV decision model",
+    jevHelp: "The decision backend behind fetch engine routing and the evidence verdict gate — one question, one fast structured answer, never prose. Off by default; every miss falls back to the built-in heuristics.",
+    jevProviderLabel: "Provider",
+    jevProviderHelp: "Where decision questions are asked. Without a provider, the TYPESAFE_API_KEY environment variable still enables the hosted API.",
+    jevProviderOff: "Off",
+    jevProviderApi: "TypeSafe API (hosted)",
+    jevProviderOllama: "Ollama (local)",
+    jevApiKeyLabel: "API key",
+    jevApiKeyHelp: "TypeSafe key; falls back to TYPESAFE_API_KEY when empty.",
+    jevApiKeyPlaceholder: "TypeSafe API key",
+    jevBaseURLLabel: "Base URL",
+    jevBaseURLHelp: "Optional endpoint override.",
+    jevApiModelLabel: "Model",
+    jevApiModelHelp: "Model alias; defaults to jev-latest.",
+    jevOllamaBaseURLLabel: "Ollama base URL",
+    jevOllamaBaseURLHelp: "Local Ollama endpoint; defaults to OLLAMA_HOST or http://127.0.0.1:11434.",
+    jevOllamaModelLabel: "Ollama model",
+    jevOllamaModelHelp: "The local model tag that answers decision questions, e.g. qwen3:4b. Required for the Ollama provider.",
+    jevTimeoutLabel: "Decision timeout",
+    jevTimeoutHelp: "Optional per-call ceiling. Empty keeps the provider defaults (3–4 s hosted, 20 s local).",
     browserHeading: "Browser",
     browserHelp: "Browser profiles available to the agent.",
     browserProfilesLabel: "Profiles",
@@ -1432,7 +1828,7 @@ const I18N = {
     thinkXHigh: "xhigh",
     thinkMax: "max",
     contextWindow: "上下文窗口",
-    contextWindowHelp: "模型可处理的最大上下文长度。",
+    contextWindowHelp: "最大上下文长度（tokens）。留空时自动探测本地 llama.cpp / ollama 服务（探测不到按 32k 处理）；远程模型建议显式设置。",
     imageEnabled: "图片支持",
     imageEnabledHelp: "允许为该模型附加图片消息。",
     contextPlaceholder: "例如 200000",
@@ -1477,13 +1873,33 @@ const I18N = {
     semanticEmbeddingModelHelp: "用于生成嵌入的 Ollama 模型。",
     semanticEmbeddingModelPlaceholder: "例如 nomic-embed-text",
     judgeHeading: "Judge",
-    judgeHelp: "基于 Ollama 的本地判断与评估。",
+    judgeHelp: "code 工具的 judge 模式：基于 Ollama 的本地判断/评估。",
     judgeOllamaBaseUrlLabel: "Ollama 地址",
     judgeOllamaBaseUrlHelp: "用于本地判断的 Ollama API endpoint。",
     judgeOllamaBaseUrlPlaceholder: "http://localhost:11434",
     judgeModelLabel: "判断模型",
     judgeModelHelp: "用于本地判断/评估的 Ollama 模型。",
     judgeModelPlaceholder: "llama3.2",
+    jevHeading: "JEV 决策模型",
+    jevHelp: "fetch 引擎路由与证据裁决门背后的决策后端——一个问题，一个快速结构化答案，从不生成正文。默认关闭；任何未命中都回退到内置启发式。",
+    jevProviderLabel: "提供方",
+    jevProviderHelp: "决策问题的去向。未选择时，TYPESAFE_API_KEY 环境变量仍可启用托管 API。",
+    jevProviderOff: "关闭",
+    jevProviderApi: "TypeSafe API（托管）",
+    jevProviderOllama: "Ollama（本地）",
+    jevApiKeyLabel: "API 密钥",
+    jevApiKeyHelp: "TypeSafe 密钥；为空时回退到 TYPESAFE_API_KEY。",
+    jevApiKeyPlaceholder: "TypeSafe API 密钥",
+    jevBaseURLLabel: "Base URL",
+    jevBaseURLHelp: "可选的端点覆盖。",
+    jevApiModelLabel: "模型",
+    jevApiModelHelp: "模型别名；默认为 jev-latest。",
+    jevOllamaBaseURLLabel: "Ollama 地址",
+    jevOllamaBaseURLHelp: "本地 Ollama 端点；默认为 OLLAMA_HOST 或 http://127.0.0.1:11434。",
+    jevOllamaModelLabel: "Ollama 模型",
+    jevOllamaModelHelp: "回答决策问题的本地模型标签，例如 qwen3:4b。Ollama 提供方必填。",
+    jevTimeoutLabel: "决策超时",
+    jevTimeoutHelp: "可选的单次调用上限。留空保持各提供方默认（托管 3–4 秒，本地 20 秒）。",
     browserHeading: "Browser",
     browserHelp: "可供 agent 使用的浏览器配置文件。",
     browserProfilesLabel: "配置文件",
@@ -1531,6 +1947,7 @@ const dirty = {
   bash: false,
   semantic: false,
   judge: false,
+  jev: false,
   browser: false,
 };
 
@@ -2184,7 +2601,8 @@ function validateForm() {
     }
     if (!validatePositiveInteger(row.context, t("validateContextLabel", { n: i + 1 }))) return false;
   }
-  return validatePositiveInteger($("askTimeout"), t("validateAskTimeoutLabel"));
+  return validatePositiveInteger($("askTimeout"), t("validateAskTimeoutLabel")) &&
+    validatePositiveInteger($("jevTimeout"), t("jevTimeoutLabel"));
 }
 
 async function load(messageKey, expectedVersion) {
@@ -2238,6 +2656,18 @@ async function load(messageKey, expectedVersion) {
     $("judgeOllamaBaseUrl").value = judge.ollamaBaseUrl || "";
     $("judgeModel").value = judge.model || "";
 
+    // JEV decision model (jev: section). Both model inputs paint the same
+    // jev.model key — the provider selects whose meaning applies.
+    const jev = doc.jev || {};
+    $("jevProvider").value = jev.provider || "";
+    $("jevApiKey").value = jev.apiKey || "";
+    $("jevBaseURL").value = jev.baseUrl || "";
+    $("jevApiModel").value = jev.model || "";
+    $("jevOllamaBaseURL").value = jev.ollamaBaseUrl || "";
+    $("jevOllamaModel").value = jev.model || "";
+    $("jevTimeout").value = jev.timeoutSec || "";
+    setJevVisibility();
+
     const browser = doc.browser || {};
     $("browserProfiles").value = (browser.profiles || []).join("\n");
     $("browserProxy").value = browser.proxy || "";
@@ -2246,6 +2676,17 @@ async function load(messageKey, expectedVersion) {
     // Absent defaults to true, so the box reflects the effective setting rather
     // than an undefined that reads as off.
     $("autoExpand").checked = ui.autoExpandToolOutput == null ? true : !!ui.autoExpandToolOutput;
+
+    // Weather (Open-Meteo weekly forecast, default-off).
+    const weather = doc.weather || {};
+    $("weatherEnabled").checked = !!weather.enabled;
+    $("weatherLatitude").value = weather.latitude || "";
+    $("weatherLongitude").value = weather.longitude || "";
+    $("weatherName").value = weather.name || "";
+
+    // Web GUI (smart session names default to on when the key is absent).
+    const web = doc.web || {};
+    $("autoNameSessions").checked = web.autoNameSessions == null ? true : !!web.autoNameSessions;
 
     updateModeHint();
     resetDirty();
@@ -2289,6 +2730,14 @@ function buildPayload() {
       model: $("judgeModel").value.trim() || null,
       ollamaBaseUrl: $("judgeOllamaBaseUrl").value.trim() || null,
     } : (orig && orig.judge != null ? orig.judge : null),
+    jev: dirty.jev ? {
+      provider: $("jevProvider").value || null,
+      apiKey: $("jevApiKey").value.trim() || null,
+      baseUrl: $("jevBaseURL").value.trim() || null,
+      model: ($("jevProvider").value === "ollama" ? $("jevOllamaModel") : $("jevApiModel")).value.trim() || null,
+      ollamaBaseUrl: $("jevOllamaBaseURL").value.trim() || null,
+      timeoutSec: readOptionalInteger($("jevTimeout")),
+    } : (orig && orig.jev != null ? orig.jev : null),
     browser: dirty.browser ? {
       profiles: $("browserProfiles").value.split("\n").map(s => s.trim()).filter(Boolean),
       proxy: $("browserProxy").value.trim() || null,
@@ -2296,6 +2745,20 @@ function buildPayload() {
     ui: dirty.autoExpand ? {
       autoExpandToolOutput: $("autoExpand").checked,
     } : (orig && orig.ui != null ? orig.ui : { autoExpandToolOutput: true }),
+    web: dirty.autoName ? {
+      autoNameSessions: $("autoNameSessions").checked,
+    } : (orig && orig.web != null ? orig.web : null),
+    weather: dirty.weather ? {
+      enabled: $("weatherEnabled").checked,
+      latitude: parseFloat($("weatherLatitude").value) || 0,
+      longitude: parseFloat($("weatherLongitude").value) || 0,
+      name: $("weatherName").value.trim() || null,
+    } : (orig && orig.weather != null ? orig.weather : null),
+    personas: orig && orig.personas != null ? orig.personas : null,
+    // Checks + schedules have no form; round-trip whatever the file had so
+    // a full-document save cannot wipe them.
+    checks: orig && orig.checks != null ? orig.checks : null,
+    schedules: orig && orig.schedules != null ? orig.schedules : null,
   };
 
   if (permissions.bash && !dirty.bash) {
@@ -2365,14 +2828,354 @@ $("semanticEmbeddingModel").addEventListener("input", () => markDirty("semantic"
 $("judgeOllamaBaseUrl").addEventListener("input", () => markDirty("judge"));
 $("judgeModel").addEventListener("input", () => markDirty("judge"));
 
+// JEV decision model — provider select drives the conditional fields; the
+// two model inputs both write the shared jev.model key on save (whichever
+// belongs to the selected provider).
+function setJevVisibility() {
+  const p = $("jevProvider").value;
+  $("jevApiKeyField").hidden = p !== "api";
+  $("jevBaseURLField").hidden = p !== "api";
+  $("jevApiModelField").hidden = p !== "api";
+  $("jevOllamaBaseURLField").hidden = p !== "ollama";
+  $("jevOllamaModelField").hidden = p !== "ollama";
+  $("jevTimeoutField").hidden = p === "";
+}
+$("jevProvider").addEventListener("change", () => {
+  markDirty("jev");
+  setJevVisibility();
+});
+for (const id of ["jevApiKey", "jevBaseURL", "jevApiModel", "jevOllamaBaseURL", "jevOllamaModel", "jevTimeout"]) {
+  $(id).addEventListener("input", () => markDirty("jev"));
+}
+
 $("browserProfiles").addEventListener("input", () => markDirty("browser"));
 $("browserProxy").addEventListener("input", () => markDirty("browser"));
 
 $("autoExpand").addEventListener("change", () => markDirty("autoExpand"));
 
+// Weather + Personas — new fields added when bringing the config editor
+// up to speed with the kami design language and the persona/weather agent
+// context injections. The fields are wired to the same dirty + payload
+// pipeline as the rest of the form so a save round-trips through /api/config
+// and the agent picks up the new values on the next turn (after the
+// webserver reloads the project config and refreshes the weather service).
+$("weatherEnabled").addEventListener("change", () => markDirty("weather"));
+$("weatherLatitude").addEventListener("input", () => markDirty("weather"));
+$("weatherLongitude").addEventListener("input", () => markDirty("weather"));
+$("weatherName").addEventListener("input", () => markDirty("weather"));
+
+$("autoNameSessions").addEventListener("change", () => markDirty("autoName"));
+
+// ---- Persona manager (live registry via the web GUI's /api/personas) ----
+
+const personaState = { list: [], models: [], editingId: null, busy: false };
+
+async function loadPersonas() {
+  const box = $("personaList");
+  try {
+    const res = await fetch("/api/personas");
+    if (!res.ok) throw new Error("unavailable");
+    const body = await res.json();
+    personaState.list = Array.isArray(body.personas) ? body.personas : [];
+    $("personaUnavailable").hidden = true;
+    box.hidden = false;
+    $("peNew").hidden = false;
+    renderPersonas();
+  } catch {
+    // Standalone `a1 config` has no persona API — the section degrades to
+    // a pointer instead of a broken form.
+    personaState.list = [];
+    $("personaUnavailable").hidden = false;
+    box.hidden = true;
+    $("peNew").hidden = true;
+    $("personaEditor").hidden = true;
+  }
+}
+
+async function loadPersonaModels() {
+  try {
+    const res = await fetch("/api/models");
+    if (!res.ok) throw new Error("unavailable");
+    const body = await res.json();
+    personaState.models = Array.isArray(body.models) ? body.models : [];
+  } catch {
+    personaState.models = [];
+  }
+}
+
+function fillModelSelect(sel, value) {
+  sel.innerHTML = "";
+  const blank = document.createElement("option");
+  blank.value = "";
+  blank.textContent = "Inherit (global config)";
+  sel.appendChild(blank);
+  for (const m of personaState.models) {
+    const opt = document.createElement("option");
+    opt.value = m.name;
+    opt.textContent = m.name + (m.contextWindow > 0 ? ` — ${Math.round(m.contextWindow / 1000)}K ctx` : "");
+    sel.appendChild(opt);
+  }
+  sel.value = value || "";
+}
+
+function renderPersonas() {
+  const box = $("personaList");
+  box.innerHTML = "";
+  for (const p of personaState.list) {
+    const row = document.createElement("div");
+    row.className = "persona-row" + (p.isActive ? " active" : "");
+
+    const id = document.createElement("div");
+    id.className = "persona-id";
+    id.textContent = (p.emoji ? p.emoji + " " : "") + p.name + (p.isActive ? "  ·  active" : "");
+    row.appendChild(id);
+
+    const meta = document.createElement("div");
+    meta.className = "persona-meta";
+    const chips = [];
+    if (p.model) chips.push("model: " + p.model);
+    if (p.memoryModel) chips.push("mem-ops: " + p.memoryModel);
+    if (p.permissionMode) chips.push("mode: " + p.permissionMode);
+    if (p.memoryCount) chips.push(p.memoryCount + (p.memoryCount === 1 ? " memory" : " memories"));
+    meta.textContent = chips.join(" · ") || (p.tagline || "");
+    row.appendChild(meta);
+
+    const actions = document.createElement("div");
+    actions.className = "persona-actions";
+    if (!p.isActive) {
+      const act = mkBtn("Speak as this", "button secondary small", () => activatePersona(p.id));
+      actions.appendChild(act);
+    }
+    actions.appendChild(mkBtn("Edit", "button secondary small", () => editPersona(p)));
+    if (!p.builtin) {
+      actions.appendChild(mkBtn("Delete", "button tertiary small danger", () => deletePersona(p)));
+    }
+    row.appendChild(actions);
+    box.appendChild(row);
+  }
+}
+
+function mkBtn(label, cls, onClick) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = cls;
+  b.textContent = label;
+  b.addEventListener("click", onClick);
+  return b;
+}
+
+async function activatePersona(id) {
+  try {
+    const res = await fetch("/api/personas/active", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setStatus(body.error || "switch failed", "error");
+      return;
+    }
+    await loadPersonas();
+    setStatus("Persona activated — new sessions speak as it", "success");
+  } catch (err) {
+    setStatus("switch failed: " + err.message, "error");
+  }
+}
+
+function editPersona(p) {
+  personaState.editingId = p ? p.id : null;
+  $("peName").value = p ? p.name : "";
+  $("peTagline").value = p ? (p.tagline || "") : "";
+  $("peEmoji").value = p ? p.emoji : "🧭";
+  fillModelSelect($("peModel"), p ? p.model : "");
+  fillModelSelect($("peMemoryModel"), p ? p.memoryModel : "");
+  $("pePermission").value = p ? (p.permissionMode || "") : "";
+  $("pePrompt").value = p ? p.prompt : "";
+  $("peOverride").checked = p ? !!p.overrideSystemPrompt : false;
+  $("personaEditor").hidden = false;
+  $("peName").focus();
+}
+
+async function savePersona() {
+  if (personaState.busy) return;
+  const name = $("peName").value.trim();
+  if (!name) {
+    setStatus("persona name is required", "error");
+    return;
+  }
+  personaState.busy = true;
+  const input = {
+    name,
+    tagline: $("peTagline").value.trim(),
+    emoji: $("peEmoji").value.trim() || "🧭",
+    hue: 200,
+    prompt: $("pePrompt").value,
+    overrideSystemPrompt: $("peOverride").checked,
+    model: $("peModel").value,
+    permissionMode: $("pePermission").value,
+    memoryEnabled: false,
+    memoryModel: $("peMemoryModel").value,
+  };
+  try {
+    const res = personaState.editingId
+      ? await fetch("/api/personas/" + encodeURIComponent(personaState.editingId), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        })
+      : await fetch("/api/personas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setStatus(body.error || "save failed", "error");
+      return;
+    }
+    $("personaEditor").hidden = true;
+    personaState.editingId = null;
+    await loadPersonas();
+    setStatus("Persona saved", "success");
+  } catch (err) {
+    setStatus("save failed: " + err.message, "error");
+  } finally {
+    personaState.busy = false;
+  }
+}
+
+async function deletePersona(p) {
+  if (!window.confirm(`Delete persona "${p.name}" and its memory bank? This cannot be undone.`)) return;
+  try {
+    const res = await fetch("/api/personas/" + encodeURIComponent(p.id), { method: "DELETE" });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setStatus(body.error || "delete failed", "error");
+      return;
+    }
+    await loadPersonas();
+    setStatus("Persona deleted", "success");
+  } catch (err) {
+    setStatus("delete failed: " + err.message, "error");
+  }
+}
+
+$("peNew").addEventListener("click", () => editPersona(null));
+$("peCancel").addEventListener("click", () => { $("personaEditor").hidden = true; personaState.editingId = null; });
+$("peSave").addEventListener("click", savePersona);
+
+// ---- MCP manager (live registry via the web GUI's /api/mcp) ----
+
+async function loadMCP() {
+  const list = $("mcpList");
+  try {
+    const res = await fetch("/api/mcp");
+    if (!res.ok) throw new Error("unavailable");
+    const body = await res.json();
+    $("mcpUnavailable").hidden = true;
+    list.hidden = false;
+    $("mcpForm").hidden = false;
+    $("mcpAdd").hidden = false;
+    list.innerHTML = "";
+    const servers = Array.isArray(body.servers) ? body.servers : [];
+    if (servers.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "mcp-hint";
+      empty.textContent = "No MCP servers configured yet — add one below.";
+      list.appendChild(empty);
+      return;
+    }
+    for (const s of servers) {
+      const row = document.createElement("div");
+      row.className = "mcp-row";
+      const id = document.createElement("div");
+      id.className = "persona-id";
+      const cfg = s.config || {};
+      const detail = s.source === "project"
+        ? (cfg.transport === "http" ? cfg.url : (cfg.command || []).join(" "))
+        : (cfg.transport === "http" ? cfg.url : [ (cfg.command || []).join(" "), (cfg.args || []).join(" ") ].filter(Boolean).join(" "));
+      id.textContent = s.name + "  ·  " + (s.source === "project" ? "project" : "user") + (detail ? "  ·  " + detail : "");
+      row.appendChild(id);
+      const actions = document.createElement("div");
+      actions.className = "persona-actions";
+      if (s.editable) {
+        actions.appendChild(mkBtn("Remove", "button tertiary small danger", () => removeMCPServer(s.name)));
+      } else {
+        const hint = document.createElement("span");
+        hint.className = "mcp-hint-inline";
+        hint.textContent = "defined by the project's .a1/mcp.json";
+        actions.appendChild(hint);
+      }
+      row.appendChild(actions);
+      list.appendChild(row);
+    }
+  } catch {
+    $("mcpUnavailable").hidden = false;
+    list.hidden = true;
+    $("mcpForm").hidden = true;
+    $("mcpAdd").hidden = true;
+  }
+}
+
+async function removeMCPServer(name) {
+  if (!window.confirm(`Remove MCP server "${name}" from the user config?`)) return;
+  try {
+    const res = await fetch("/api/mcp?name=" + encodeURIComponent(name), { method: "DELETE" });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setStatus(body.error || "remove failed", "error");
+      return;
+    }
+    await loadMCP();
+    setStatus("MCP server removed — new sessions pick up the change", "success");
+  } catch (err) {
+    setStatus("remove failed: " + err.message, "error");
+  }
+}
+
+$("mcpTransport").addEventListener("change", () => {
+  const http = $("mcpTransport").value === "http";
+  $("mcpUrlField").hidden = !http;
+  $("mcpCommand").parentElement.hidden = http;
+});
+
+$("mcpAdd").addEventListener("click", async () => {
+  const name = $("mcpName").value.trim();
+  if (!name) {
+    setStatus("server name is required", "error");
+    return;
+  }
+  const http = $("mcpTransport").value === "http";
+  const server = http
+    ? { transport: "http", url: $("mcpUrl").value.trim() }
+    : { transport: "stdio", command: $("mcpCommand").value.trim().split(/\s+/).filter(Boolean) };
+  try {
+    const res = await fetch("/api/mcp", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, server }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setStatus(body.error || "save failed", "error");
+      return;
+    }
+    $("mcpName").value = "";
+    $("mcpCommand").value = "";
+    $("mcpUrl").value = "";
+    await loadMCP();
+    setStatus("MCP server saved — new sessions pick it up", "success");
+  } catch (err) {
+    setStatus("save failed: " + err.message, "error");
+  }
+});
+
 applyLang();
 load();
 loadStats();
+loadPersonaModels().then(loadPersonas);
+loadMCP();
 </script>
 </body>
 </html>

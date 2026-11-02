@@ -15,7 +15,7 @@ const (
 )
 
 // EnvExtensions disables extension loading when set to "off".
-const EnvExtensions = "PHI_EXTENSIONS"
+const EnvExtensions = "A1_EXTENSIONS"
 
 // Warning is a non-fatal discovery or load problem.
 type Warning struct {
@@ -30,7 +30,7 @@ func (w Warning) String() string {
 	return w.Path + ": " + w.Message
 }
 
-// Discovered is one extension directory with a phi.yaml manifest.
+// Discovered is one extension directory with a a1.yaml manifest.
 type Discovered struct {
 	ID       string // directory name / manifest name
 	Path     string // absolute path to extension directory
@@ -38,7 +38,7 @@ type Discovered struct {
 	Source   string
 }
 
-// ExtensionsDisabled reports whether PHI_EXTENSIONS=off.
+// ExtensionsDisabled reports whether A1_EXTENSIONS=off.
 func ExtensionsDisabled() bool {
 	v := strings.TrimSpace(os.Getenv(EnvExtensions))
 	return strings.EqualFold(v, "off")
@@ -47,7 +47,7 @@ func ExtensionsDisabled() bool {
 // Discover finds extension directories under userDir then projectDir.
 // Same ID: project replaces user. Layout:
 //
-//	<dir>/<id>/phi.yaml   (exec points at a PXB binary)
+//	<dir>/<id>/a1.yaml   (exec points at a PXB binary)
 func Discover(userDir, projectDir string) ([]Discovered, []Warning, error) {
 	if ExtensionsDisabled() {
 		return nil, nil, nil

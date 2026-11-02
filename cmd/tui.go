@@ -32,7 +32,7 @@ func runTUI() error {
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "Configure a model first, then restart:")
 		fmt.Fprintln(os.Stderr, "  a1 config")
-		fmt.Fprintln(os.Stderr, "or set PHI_MODEL and PHI_API_KEY.")
+		fmt.Fprintln(os.Stderr, "or set A1_MODEL and A1_API_KEY.")
 		return exitCode(ExitUsage)
 	}
 	cfg := proj.Config().Model()

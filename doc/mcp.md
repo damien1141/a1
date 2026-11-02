@@ -13,7 +13,7 @@ That is the main difference from hosts that dump every `tools/list` schema into 
 
 ## Why this is a highlight
 
-| Pain | Typical MCP host | phi |
+| Pain | Typical MCP host | a1 |
 | --- | --- | --- |
 | Context | All schemas injected at startup | Model sees only three meta-tools |
 | Many servers | Uninstall / reload Tetris | Always configured; call on demand |
@@ -56,7 +56,7 @@ a1 mcp doctor|call  ──┐
 model mcp_* ───────────┘
 ```
 
-Sub-agents do **not** inherit MCP meta-tools by default. Disable with `PHI_MCP=off`.
+Sub-agents do **not** inherit MCP meta-tools by default. Disable with `A1_MCP=off`.
 
 ---
 
@@ -89,7 +89,7 @@ a1 mcp list
 a1 mcp doctor
 ```
 
-**Restart phi** after config changes (Pool loads at startup).
+**Restart a1** after config changes (Pool loads at startup).
 
 ### Migrating from Claude Desktop config
 
@@ -106,7 +106,7 @@ Claude / Cursor style:
 }
 ```
 
-phi equivalent:
+a1 equivalent:
 
 ```json
 {
@@ -134,7 +134,7 @@ a1 mcp call <server> <tool> [json]  call a tool directly
 a1 mcp doctor                       check config + connectivity
 ```
 
-Logs: `~/.a1/logs/mcp/<name>.log` (override with `PHI_MCP_LOG_DIR`).
+Logs: `~/.a1/logs/mcp/<name>.log` (override with `A1_MCP_LOG_DIR`).
 
 ---
 

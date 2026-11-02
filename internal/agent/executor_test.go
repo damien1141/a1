@@ -227,10 +227,10 @@ func TestExecutorExtDenySkipsGateAsk(t *testing.T) {
 	r := loadExt(t, `package main
 import (
   "github.com/damien1141/a1/ext/go"
-  "github.com/damien1141/a1/ext/go/phi"
+  "github.com/damien1141/a1/ext/go/a1"
 )
 func main() {
-  m := phi.New("test", "0.0.1")
+  m := a1.New("test", "0.0.1")
   m.OnToolCall(func(ev ext.ToolCallEvent) *ext.ToolCallResult {
     if ev.ToolName == "bash" {
       return &ext.ToolCallResult{Block: true, Reason: "ext blocked"}
@@ -279,10 +279,10 @@ func TestExecutorExtModifySeenByGateAndRun(t *testing.T) {
 import (
   "encoding/json"
   "github.com/damien1141/a1/ext/go"
-  "github.com/damien1141/a1/ext/go/phi"
+  "github.com/damien1141/a1/ext/go/a1"
 )
 func main() {
-  m := phi.New("test", "0.0.1")
+  m := a1.New("test", "0.0.1")
   m.OnToolCall(func(ev ext.ToolCallEvent) *ext.ToolCallResult {
     return &ext.ToolCallResult{Input: json.RawMessage(`+"`"+`{"command":"echo safe"}`+"`"+`)}
   })
@@ -319,10 +319,10 @@ func TestExecutorExtPostContextOnModelOnly(t *testing.T) {
 	r := loadExt(t, `package main
 import (
   "github.com/damien1141/a1/ext/go"
-  "github.com/damien1141/a1/ext/go/phi"
+  "github.com/damien1141/a1/ext/go/a1"
 )
 func main() {
-  m := phi.New("test", "0.0.1")
+  m := a1.New("test", "0.0.1")
   m.OnToolResult(func(ev ext.ToolResultEvent) *ext.ToolResultResult {
     return &ext.ToolResultResult{Context: "policy note"}
   })

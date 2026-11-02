@@ -1,0 +1,658 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Palette lives here as "R G B" channel triples; Tailwind consumes them via
+   rgb(var(--x) / <alpha-value>) (tailwind.config.cjs). Dark mode is a
+   variable swap under [data-theme="dark"] — no component-level branching.
+
+   Light = the original warm paper wash. Dark = the same hues re-tuned for a
+   warm charcoal ground: ink goes cream, seal lightens for contrast, the
+   seal-light tint pre-mixes its old 8% alpha into a solid so /alpha
+   modifiers keep behaving. */
+:root {
+  color-scheme: light;
+  --paper: 245 239 228;
+  --paper-card: 251 247 238;
+  --paper-sunk: 239 232 219;
+  --ink: 42 38 34;
+  --ink-light: 74 67 60;
+  --ink-muted: 107 97 88;
+  --seal: 83 125 150;
+  --seal-hover: 63 97 121;
+  --seal-light: 233 229 222;
+  --cinnabar: 139 44 31;
+  --moss: 74 107 74;
+  --hairline: 216 207 190;
+  --on-seal: 255 255 255;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: 27 24 20;
+  --paper-card: 38 34 27;
+  --paper-sunk: 22 19 16;
+  --ink: 233 227 215;
+  --ink-light: 199 190 175;
+  --ink-muted: 148 138 123;
+  --seal: 127 169 196;
+  --seal-hover: 157 189 211;
+  --seal-light: 39 46 49;
+  --cinnabar: 208 116 100;
+  --moss: 134 172 134;
+  --hairline: 59 53 44;
+  --on-seal: 27 24 20;
+}
+
+:root {
+  --font-ui: 'HarmonyOS Sans', 'Noto Sans SC', 'Noto Sans', 'Segoe UI', sans-serif;
+  --font-serif: 'EB Garamond', 'Noto Serif SC', 'Songti SC', serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(128, 128, 128, 0.2) transparent;
+}
+
+*::-webkit-scrollbar { width: 4px; height: 4px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: rgba(128, 128, 128, 0.2); border-radius: 2px; }
+*::-webkit-scrollbar-thumb:hover { background: rgba(128, 128, 128, 0.4); }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-ui);
+  /* Warm paper wash: two soft radial glows over the base tone. Deliberately
+     subtle (≤3% delta) so it reads as texture, not as a gradient. Var-driven,
+     so the dark theme gets its own glows from the same rules. */
+  background-color: rgb(var(--paper));
+  background-image:
+    radial-gradient(1200px 500px at 15% -10%, rgb(var(--seal) / 0.035), transparent 60%),
+    radial-gradient(1000px 600px at 110% 110%, rgb(var(--cinnabar) / 0.02), transparent 55%);
+  background-attachment: fixed;
+  color: rgb(var(--ink));
+  font-size: 15px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Themed text selection (muted seal wash). */
+::selection {
+  background: rgb(var(--seal) / 0.22);
+}
+
+/* Keyboard focus ring — :focus-visible only, so mouse clicks stay clean
+   while tab/shortcut navigation gets a clear affordance.
+
+   Text-entry elements (textarea, input) are deliberately excluded: the
+   composer's focus state is already signalled by its container's
+   focus-within border + ring, and modal/filter inputs draw their own
+   focus:border-seal. Layering a second outline on the element itself
+   renders as a box outline inside the box. */
+:focus-visible:not(textarea):not(input) {
+  outline: 2px solid rgb(var(--seal) / 0.55);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+/* Belt-and-braces: never draw an outline on focused text fields — each
+   one already has its own focus treatment. */
+textarea:focus-visible,
+input:focus-visible {
+  outline: none;
+}
+
+/* Inline keyboard hints ("Enter to send · <kbd>/</kbd> for commands"). */
+kbd {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1;
+  padding: 0.18em 0.4em;
+  border: 1px solid rgb(var(--hairline));
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: rgb(var(--paper-card));
+  color: rgb(var(--ink-light));
+}
+
+/* ========================================================================
+   Chat message markdown
+   ======================================================================== */
+
+.md-content { line-height: 1.75; }
+.md-content p { margin: 0 0 0.5em 0; }
+.md-content p:last-child { margin-bottom: 0; }
+.md-content code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: rgb(var(--ink) / 0.04);
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+}
+.md-content ul, .md-content ol { margin: 0.5rem 0 0.5rem 1.5rem; }
+.md-content li { margin-bottom: 0.25rem; }
+.md-content h1 { font-size: 1.3rem; font-weight: 600; margin: 1.5rem 0 0.5rem; color: rgb(var(--seal)); }
+.md-content h2 { font-size: 1.1rem; font-weight: 600; margin: 1.2rem 0 0.4rem; color: rgb(var(--seal)); }
+.md-content h3 { font-size: 1rem; font-weight: 600; margin: 1rem 0 0.3rem; }
+.md-content a { color: rgb(var(--seal)); text-decoration: none; }
+.md-content a:hover { color: rgb(var(--seal-hover)); text-decoration: underline; }
+.md-content blockquote {
+  border-left: 2px solid rgb(var(--hairline));
+  padding-left: 1rem;
+  margin: 0.5rem 0;
+  color: rgb(var(--ink-muted));
+  font-style: italic;
+}
+.md-content table {
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+  font-size: 0.875em;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 6px;
+  overflow: hidden;            /* clip the rounded corners on th/td */
+  display: block;             /* enables horizontal scroll on wide tables */
+  overflow-x: auto;
+  max-width: 100%;
+}
+.md-content thead th {
+  background: rgb(var(--seal) / 0.08);
+  font-weight: 600;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  position: sticky;
+  top: 0;
+  border-bottom: 1px solid rgb(var(--hairline));
+  white-space: nowrap;
+}
+.md-content td {
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid rgb(var(--hairline) / 0.5);
+  vertical-align: top;
+}
+.md-content tbody tr:nth-child(even) td {
+  background: rgb(var(--paper-card) / 0.5);    /* zebra */
+}
+.md-content tbody tr:hover td {
+  background: rgb(var(--seal) / 0.04);       /* hover */
+}
+.md-content tbody tr:last-child td {
+  border-bottom: none;                       /* clean rounded bottom */
+}
+.md-content td code, .md-content th code {
+  font-size: 0.9em;
+}
+
+/* Task-list checkboxes: GFM renders a disabled input; soften it into the
+   theme. The whole li gets a muted strike-through when checked so the
+   state reads at a glance. */
+.md-content li > input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 0.95em;
+  height: 0.95em;
+  margin-right: 0.4em;
+  vertical-align: -0.1em;
+  border: 1.5px solid rgb(var(--ink-muted) / 0.55);
+  border-radius: 3px;
+  background: rgb(var(--paper-card));
+  position: relative;
+  cursor: default;
+}
+.md-content li > input[type="checkbox"]:checked {
+  background: rgb(var(--seal));
+  border-color: rgb(var(--seal));
+}
+.md-content li > input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--on-seal);
+  clip-path: polygon(18% 46%, 12% 52%, 40% 82%, 88% 22%, 82% 16%, 40% 66%);
+}
+
+/* ---- Fenced code blocks ------------------------------------------- */
+
+/* The renderer wraps each fence in .md-code: a header strip (language
+   label + copy button) over the scrollable body. The header sticks while
+   the body scrolls, so long blocks keep their affordances in view. */
+.md-code {
+  margin: 1rem 0;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 6px;
+  background: rgb(var(--paper-card));
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgb(var(--ink) / 0.03);
+}
+.md-code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.3rem 0.6rem 0.3rem 0.85rem;
+  border-bottom: 1px solid rgb(var(--hairline) / 0.7);
+  background: rgb(var(--paper-sunk) / 0.55);
+}
+.md-code-lang {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(var(--ink-muted));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.md-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+  padding: 0.18rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  font-family: var(--font-ui);
+  font-size: 0.68rem;
+  color: rgb(var(--ink-muted));
+  cursor: pointer;
+  opacity: 0.75;
+  transition: color 0.15s ease, opacity 0.15s ease, border-color 0.15s ease,
+    background 0.15s ease, transform 0.12s ease;
+}
+.md-code:hover .md-copy { opacity: 1; }
+.md-copy:hover {
+  color: rgb(var(--seal));
+  border-color: rgb(var(--seal) / 0.3);
+  background: rgb(var(--seal) / 0.06);
+}
+.md-copy:active { transform: scale(0.94); }
+.md-copy.copied {
+  color: rgb(var(--moss));
+  border-color: rgb(var(--moss) / 0.35);
+  background: rgb(var(--moss) / 0.07);
+  opacity: 1;
+}
+.md-code pre {
+  margin: 0;
+  padding: 0.65rem 1rem;
+  overflow-x: auto;
+  line-height: 1.55;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+.md-code pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  color: rgb(var(--ink-light));
+}
+/* Bare fenced blocks that somehow skip the .md-code wrapper (custom
+   renderer bypassed) still get sane defaults. */
+.md-content pre {
+  background: rgb(var(--ink) / 0.04);
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  margin: 1rem 0;
+  overflow-x: auto;
+  line-height: 1.5;
+}
+.md-content pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.85rem;
+}
+
+/* ---- KaTeX ---------------------------------------------------------- */
+
+/* Display math: centered, own line, horizontal scroll instead of blowing
+   out the bubble on wide derivations. Inline math rides the text line. */
+.md-content .katex-display {
+  margin: 0.75rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.15rem 0;
+}
+.md-content .katex { font-size: 1.02em; }
+.md-content .katex-display .katex { font-size: 1.08em; }
+
+/* ---- Message hover actions ------------------------------------------ */
+
+/* .msg-actions is the row of quiet icon buttons under a bubble (copy,
+   regenerate, edit). Touch users see them at half opacity since
+   group-hover can't fire; pointer users get the fade-in. */
+.msg-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  opacity: 0.55;
+  transition: opacity 0.18s ease;
+}
+@media (hover: hover) {
+  .group:hover .msg-actions,
+  .msg-actions:focus-within { opacity: 1; }
+}
+.msg-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: rgb(var(--ink-muted));
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, transform 0.12s ease;
+}
+.msg-action:hover {
+  color: rgb(var(--seal));
+  background: rgb(var(--seal) / 0.08);
+}
+.msg-action:active { transform: scale(0.88); }
+.msg-action.text-moss { color: rgb(var(--moss)); }
+
+/* ---- Source pills (end-of-turn source row) -------------------------- */
+
+/* One chip per unique result: rank badge + favicon + host. The whole row
+   wraps on narrow viewports. Each pill staggers in (inline
+   animation-delay from TurnSources) so a completed search lands with a
+   soft cascade. */
+.source-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem 0.2rem 0.25rem;
+  border-radius: 9999px;
+  border: 1px solid rgb(var(--hairline));
+  background: rgb(var(--paper-card) / 0.65);
+  font-size: 0.72rem;
+  line-height: 1;
+  color: rgb(var(--ink-light));
+  text-decoration: none;
+  white-space: nowrap;
+  max-width: 13rem;
+  animation: pill-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease,
+    box-shadow 0.16s ease, transform 0.16s ease;
+}
+.source-pill:hover {
+  border-color: rgb(var(--seal) / 0.45);
+  background: rgb(var(--paper-card));
+  color: rgb(var(--ink));
+  box-shadow: 0 2px 6px rgb(var(--ink) / 0.07);
+  transform: translateY(-1px);
+}
+.source-pill:active {
+  transform: translateY(0) scale(0.97);
+}
+
+@keyframes pill-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.92); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Rank badge: the search position, set in a tiny seal-tinted round square
+   before the favicon. Merges the "which result was this" signal into the
+   chip without a separate label. */
+.source-pill-rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: rgb(var(--seal) / 0.12);
+  color: rgb(var(--seal));
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 600;
+}
+
+/* Favicon: 14x14, no alt-text (decorative; the host name beside it is
+   the accessible label). Lazy-loaded so a search with 5 results doesn't
+   fire 5 image requests until the user scrolls the pills into view. */
+.source-pill-favicon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border-radius: 3px;
+  /* Avoid layout shift while loading: reserve the box. */
+  background: transparent;
+}
+
+/* Host name: truncate with ellipsis when the host is long. */
+.source-pill-host {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* "+N" overflow badge: opens the sources sidebar when the pill row hits
+   its cap. A round badge in the pill line's own geometry — dashed border
+   and sunk background distinguish the BUTTON from the link pills around
+   it; mono digits keep "+93" compact. Grows into a capsule when the
+   count needs three characters, keeping the radius language intact. */
+.source-pill-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 25px;
+  height: 25px;
+  padding: 0 0.45rem;
+  border-radius: 9999px;
+  border: 1px dashed rgb(var(--ink-muted) / 0.45);
+  background: rgb(var(--paper-sunk) / 0.55);
+  color: rgb(var(--ink-muted));
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  animation: pill-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  transition: border-color 0.16s ease, border-style 0.16s ease, color 0.16s ease,
+    background 0.16s ease, transform 0.16s ease;
+}
+.source-pill-more:hover {
+  border-color: rgb(var(--seal) / 0.55);
+  border-style: solid;
+  color: rgb(var(--seal));
+  background: rgb(var(--seal) / 0.06);
+  transform: translateY(-1px);
+}
+.source-pill-more:active {
+  transform: translateY(0) scale(0.95);
+}
+
+/* Source cards (sources sidebar): one per source in the full list. The
+   whole card is the external link; rank + favicon + host lead, the
+   search-result title follows, the DDG snippet closes as the
+   description — clamped so a verbose listing can't blow the card open. */
+.source-card {
+  display: block;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 6px;
+  background: rgb(var(--paper) / 0.45);
+  text-decoration: none;
+  animation: pill-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  transition: border-color 0.16s ease, background 0.16s ease;
+}
+.source-card:hover {
+  border-color: rgb(var(--seal) / 0.45);
+  background: rgb(var(--paper-card));
+}
+.source-card-snippet {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---- Tool clusters (every tool run renders as one dropdown) ---------- */
+
+/* The cluster box carries the card chrome so its rows can go bare. Every
+   tool call — single calls included — renders as one of these dropdown
+   rows, so one call and a run of fifteen read as siblings. */
+.tool-cluster {
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 3px;
+  background: rgb(var(--paper-card));
+  overflow: hidden;
+  transition: border-color 0.16s ease;
+}
+.tool-cluster:hover {
+  border-color: rgb(var(--seal) / 0.3);
+}
+
+/* The header is one full-width button: status icon + tool name + ×count
+   + newest call's detail (a live ticker while the run streams) + chevron.
+   Button reset included — browsers ship their own font/background. */
+.tool-cluster-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.375rem 0.75rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+}
+.tool-cluster-header:focus-visible {
+  outline: 2px solid rgb(var(--seal) / 0.55);
+  outline-offset: -2px;
+}
+
+/* ×count badge: the same seal-tinted geometry as a pill's rank badge —
+   the count is the cluster's primary signal, "how many" beats "what". */
+.tool-cluster-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.08rem 0.38rem;
+  border-radius: 9999px;
+  background: rgb(var(--seal) / 0.12);
+  color: rgb(var(--seal));
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 600;
+  line-height: 1.3;
+  flex-shrink: 0;
+}
+
+/* Expanded rows: a sunken list under a hairline, numbered by the caller.
+   Bare rows (no chrome of their own) keep it visually INSIDE the box. */
+.tool-cluster-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0.3rem 0.4rem 0.4rem;
+  border-top: 1px solid rgb(var(--hairline) / 0.7);
+  background: rgb(var(--paper-sunk) / 0.4);
+}
+
+/* ---- Streaming affordances ------------------------------------------ */
+
+/* Blinking block caret appended to the last block of a streaming message.
+   A pseudo-element on the container's last child keeps it inline with the
+   text without mutating the dangerouslySetInnerHTML payload. */
+@keyframes caret-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.md-content.streaming > :last-child::after {
+  content: '';
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-left: 0.15em;
+  vertical-align: text-bottom;
+  background: rgb(var(--seal));
+  border-radius: 1px;
+  animation: caret-blink 0.9s steps(2, start) infinite;
+}
+
+/* "Thinking" indicator: three dots with a travelling bounce. */
+@keyframes dot-bounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.35; }
+  40% { transform: translateY(-3px); opacity: 1; }
+}
+.typing-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: rgb(var(--seal));
+  display: inline-block;
+  animation: dot-bounce 1.1s ease-in-out infinite;
+}
+.typing-dot:nth-child(2) { animation-delay: 0.14s; }
+.typing-dot:nth-child(3) { animation-delay: 0.28s; }
+
+/* Shimmering status text used while the agent is working: a light band
+   sweeps across the label. Gradient text needs the -webkit prefix set for
+   Chromium/Safari; `background-clip: text` covers the rest. */
+@keyframes text-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+.working-text {
+  background: linear-gradient(90deg, rgb(var(--ink-muted)) 30%, rgb(var(--ink)) 50%, rgb(var(--ink-muted)) 70%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: text-shimmer 1.8s linear infinite;
+}
+
+/* Toast countdown bar: scaleX 1 → 0 over --toast-ms. The element sets
+   animation-duration inline from the toast's real lifetime so the bar
+   always matches the auto-dismiss timer exactly. */
+@keyframes toast-progress {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+.toast-progress {
+  transform-origin: left;
+  animation-name: toast-progress;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+
+/* ---- Reduced motion --------------------------------------------------- */
+
+/* Users who ask the OS for less motion get an instant, opacity-only UI:
+   entrances/exits collapse to a 1-frame fade, looping indicators stop,
+   and smooth scrolling becomes instant. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .md-content.streaming > :last-child::after {
+    animation: none;
+    opacity: 0.6;
+  }
+  .working-text {
+    animation: none;
+    color: rgb(var(--ink-muted));
+  }
+  .source-pill,
+  .source-pill-more,
+  .source-card { animation: none; }
+}

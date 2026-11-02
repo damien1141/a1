@@ -257,6 +257,13 @@ func ChunkFiles(ctx context.Context, root string, windowSize, stride int) ([]Chu
 			return nil
 		}
 		if d.IsDir() {
+			// Match the graph walk's skip list: dependency caches and
+			// build output used to be chunked as opaque text, polluting
+			// the index (and the vault store's) with thousands of
+			// useless .git/node_modules chunks.
+			if skipIndexDir(d.Name()) {
+				return fs.SkipDir
+			}
 			return nil
 		}
 		if !isTextFile(path) {

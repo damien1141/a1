@@ -14,8 +14,8 @@ import (
 )
 
 func TestDownloadToolsFromGitHub(t *testing.T) {
-	if os.Getenv("PHI_RUN_NETWORK_TESTS") != "1" {
-		t.Skip("set PHI_RUN_NETWORK_TESTS=1 to test real GitHub release downloads")
+	if os.Getenv("A1_RUN_NETWORK_TESTS") != "1" {
+		t.Skip("set A1_RUN_NETWORK_TESTS=1 to test real GitHub release downloads")
 	}
 
 	for _, test := range []struct {
@@ -47,8 +47,8 @@ func TestDownloadToolsFromGitHub(t *testing.T) {
 }
 
 func TestSelectCompatibleFdReleaseFromGitHub(t *testing.T) {
-	if os.Getenv("PHI_RUN_NETWORK_TESTS") != "1" {
-		t.Skip("set PHI_RUN_NETWORK_TESTS=1 to query real GitHub releases")
+	if os.Getenv("A1_RUN_NETWORK_TESTS") != "1" {
+		t.Skip("set A1_RUN_NETWORK_TESTS=1 to query real GitHub releases")
 	}
 
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)

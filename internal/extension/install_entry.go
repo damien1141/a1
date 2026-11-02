@@ -13,7 +13,7 @@ func findInstallEntry(dir string) (string, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", errors.New(
-				"cloned repo has no phi.yaml (PXB extensions need phi.yaml + a compiled binary)",
+				"cloned repo has no a1.yaml (PXB extensions need a1.yaml + a compiled binary)",
 			)
 		}
 		return "", err
@@ -24,12 +24,12 @@ func findInstallEntry(dir string) (string, error) {
 	}
 	if st, err := os.Stat(execPath); err != nil {
 		return "", fmt.Errorf(
-			"phi.yaml exec %q not found (ship a release archive or include the binary in the repo): %w",
+			"a1.yaml exec %q not found (ship a release archive or include the binary in the repo): %w",
 			m.Exec,
 			err,
 		)
 	} else if st.IsDir() {
-		return "", fmt.Errorf("phi.yaml exec %q is a directory", m.Exec)
+		return "", fmt.Errorf("a1.yaml exec %q is a directory", m.Exec)
 	}
 	return execPath, nil
 }

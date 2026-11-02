@@ -2,32 +2,32 @@
 package editor
 
 import (
-	"path/filepath"
-	"strconv"
-	"strings"
-	"time"
+        "path/filepath"
+        "strconv"
+        "strings"
+        "time"
 
-	"github.com/pulseaiclub/xui"
+        "github.com/pulseaiclub/xui"
 
-	"github.com/damien1141/a1/internal/components"
-	"github.com/damien1141/a1/internal/components/app"
-	"github.com/damien1141/a1/internal/components/chat"
-	"github.com/damien1141/a1/internal/components/palette"
-	"github.com/damien1141/a1/internal/components/toast"
-	"github.com/damien1141/a1/internal/session"
-	"github.com/damien1141/a1/internal/session/memory"
-	"github.com/damien1141/a1/internal/tui/codepane"
-	"github.com/damien1141/a1/internal/tui/commands"
-	"github.com/damien1141/a1/internal/tui/composer"
-	"github.com/damien1141/a1/internal/tui/controller"
-	"github.com/damien1141/a1/internal/tui/diffpane"
-	"github.com/damien1141/a1/internal/tui/footer"
-	"github.com/damien1141/a1/internal/tui/overlays"
-	"github.com/damien1141/a1/internal/tui/pathutil"
-	"github.com/damien1141/a1/internal/tui/submit"
-	"github.com/damien1141/a1/internal/tui/transcript"
-	"github.com/damien1141/a1/internal/util/update"
-	"github.com/damien1141/a1/internal/version"
+        "github.com/damien1141/a1/internal/components"
+        "github.com/damien1141/a1/internal/components/app"
+        "github.com/damien1141/a1/internal/components/chat"
+        "github.com/damien1141/a1/internal/components/palette"
+        "github.com/damien1141/a1/internal/components/toast"
+        "github.com/damien1141/a1/internal/session"
+        "github.com/damien1141/a1/internal/session/memory"
+        "github.com/damien1141/a1/internal/tui/codepane"
+        "github.com/damien1141/a1/internal/tui/commands"
+        "github.com/damien1141/a1/internal/tui/composer"
+        "github.com/damien1141/a1/internal/tui/controller"
+        "github.com/damien1141/a1/internal/tui/diffpane"
+        "github.com/damien1141/a1/internal/tui/footer"
+        "github.com/damien1141/a1/internal/tui/overlays"
+        "github.com/damien1141/a1/internal/tui/pathutil"
+        "github.com/damien1141/a1/internal/tui/submit"
+        "github.com/damien1141/a1/internal/tui/transcript"
+        "github.com/damien1141/a1/internal/util/update"
+        "github.com/damien1141/a1/internal/version"
 )
 
 // Editor is the TUI root widget: layout composition and the UI-goroutine
@@ -39,427 +39,437 @@ import (
 // builtins via commands.NewBuiltinRegistry. Editor does not create
 // controller.EngineController or fetch the project singleton.
 type Editor struct {
-	vx    *xui.XUI
-	App   *app.App
-	theme components.Theme
-	bus   *controller.Bus
-	cwd   string
+        vx    *xui.XUI
+        App   *app.App
+        theme components.Theme
+        bus   *controller.Bus
+        cwd   string
 
-	transcript *transcript.TranscriptPane
-	composer   *composer.ComposerPane
-	footer     *footer.FooterChrome
-	overlays   *overlays.Overlays
-	toast      toast.Toast
-	diff       *diffpane.Pane
-	code       *codepane.Pane
+        transcript *transcript.TranscriptPane
+        composer   *composer.ComposerPane
+        footer     *footer.FooterChrome
+        overlays   *overlays.Overlays
+        toast      toast.Toast
+        diff       *diffpane.Pane
+        code       *codepane.Pane
 
-	ctrl *controller.EngineController
+        ctrl *controller.EngineController
 
-	commands  *commands.CommandRegistry
-	sessions  *commands.SessionCommands
-	extCmds   *commands.ExtCommands
-	submitter *submit.Submitter
+        commands  *commands.CommandRegistry
+        sessions  *commands.SessionCommands
+        extCmds   *commands.ExtCommands
+        submitter *submit.Submitter
 
-	lastHistorySessionID string
+        lastHistorySessionID string
 }
 
 // NewEditor builds the TUI panes and wires injected collaborators.
 // application, bus, and ctrl must be non-nil.
 func NewEditor(
-	application *app.App,
-	bus *controller.Bus,
-	ctrl *controller.EngineController,
-	vx *xui.XUI,
-	theme components.Theme,
-	cwd, modelLabel, skillPath string,
-	contextWindow int,
-	modelNames []string,
-	autoExpandToolOutput bool,
+        application *app.App,
+        bus *controller.Bus,
+        ctrl *controller.EngineController,
+        vx *xui.XUI,
+        theme components.Theme,
+        cwd, modelLabel, skillPath string,
+        contextWindow int,
+        modelNames []string,
+        autoExpandToolOutput bool,
 ) *Editor {
-	e := &Editor{
-		vx:       vx,
-		App:      application,
-		theme:    theme,
-		cwd:      cwd,
-		bus:      bus,
-		ctrl:     ctrl,
-		toast:    toast.Toast{Theme: theme},
-		composer: composer.NewComposerPane(theme, modelLabel, cwd),
-		footer:   footer.NewFooterChrome(theme, contextWindow),
-	}
-	// Seed the label from the controller's startup config so the thinking
-	// level shows even when no ModelChangeMsg fires — e.g. the startup model
-	// ships with think.mode=default and the user never switches models.
-	if e.ctrl != nil {
-		e.composer.SetModelLabel(e.ctrl.ModelName(), string(e.ctrl.ThinkLevel()))
-	}
-	e.transcript = transcript.NewTranscriptPane(theme, e.footer.Spinner(), "A1 "+version.Version)
-	e.transcript.SetAutoExpandToolOutput(autoExpandToolOutput)
-	e.transcript.SetChecklistFile(filepath.Join(cwd, ChecklistFileName))
-	e.transcript.SetUsageCallback(e.footer.UpdateTokenDisplay)
-	// Sync once at startup. The transcript is normally synced from a session
-	// event (drainBus), but the checklist row is synthesized by the mapper
-	// rather than projected from the session — so with no session events yet,
-	// an existing TODO.md never appeared until the first prompt was sent.
-	e.transcript.Sync()
-	e.footer.BindComposer(e.composer)
-	e.footer.SetLabelContext(e.transcript.Snapshot)
-	e.footer.SetLiveJobs(func() int {
-		if e.ctrl != nil {
-			return e.ctrl.LiveJobCount()
-		}
-		return 0
-	})
-	e.overlays = overlays.NewOverlays(
-		theme,
-		e.footer.Activity(),
-		e.composer,
-		func() {
-			if e.App != nil {
-				e.App.RequestFocus(e)
-			}
-		},
-		func() {
-			if e.App != nil {
-				e.composer.FocusChat()
-			}
-		},
-	)
-	e.transcript.SetCopyHandlers(
-		e.bus,
-		func(text string) bool {
-			return e.vx != nil && e.vx.CopyToClipboard(text) == nil
-		},
-	)
-	e.diff = diffpane.New(e.theme, cwd,
-		func(text string) {
-			e.Publish(controller.SubmitMsg{Text: text})
-		},
-		func(text string) bool {
-			return e.vx != nil && e.vx.CopyToClipboard(text) == nil
-		},
-		func(msg string) {
-			e.Publish(controller.ToastMsg{Message: msg, Kind: toast.ToastSuccess, Duration: 2 * time.Second})
-		},
-	)
+        e := &Editor{
+                vx:       vx,
+                App:      application,
+                theme:    theme,
+                cwd:      cwd,
+                bus:      bus,
+                ctrl:     ctrl,
+                toast:    toast.Toast{Theme: theme},
+                composer: composer.NewComposerPane(theme, modelLabel, cwd),
+                footer:   footer.NewFooterChrome(theme, contextWindow),
+        }
+        // Live ctx denominator: the footer reads the engine's resolved window
+        // (config → probe → assumed → learned) on every repaint, so a model
+        // switch or a learned window re-scales the fill label without a restart.
+        if e.ctrl != nil {
+                ctrl := e.ctrl
+                e.footer.SetWindowSource(func() int { return ctrl.EngineContextWindow() })
+        }
+        // Seed the label from the controller's startup config so the thinking
+        // level shows even when no ModelChangeMsg fires — e.g. the startup model
+        // ships with think.mode=default and the user never switches models.
+        if e.ctrl != nil {
+                e.composer.SetModelLabel(e.ctrl.ModelName(), string(e.ctrl.ThinkLevel()))
+        }
+        e.transcript = transcript.NewTranscriptPane(theme, e.footer.Spinner(), "A1 "+version.Version)
+        e.transcript.SetAutoExpandToolOutput(autoExpandToolOutput)
+        e.transcript.SetChecklistFile(filepath.Join(cwd, ChecklistFileName))
+        e.transcript.SetUsageCallback(e.footer.UpdateTokenDisplay)
+        // Sync once at startup. The transcript is normally synced from a session
+        // event (drainBus), but the checklist row is synthesized by the mapper
+        // rather than projected from the session — so with no session events yet,
+        // an existing TODO.md never appeared until the first prompt was sent.
+        e.transcript.Sync()
+        e.footer.BindComposer(e.composer)
+        e.footer.SetLabelContext(e.transcript.Snapshot)
+        e.footer.SetLiveJobs(func() int {
+                if e.ctrl != nil {
+                        return e.ctrl.LiveJobCount()
+                }
+                return 0
+        })
+        e.overlays = overlays.NewOverlays(
+                theme,
+                e.footer.Activity(),
+                e.composer,
+                func() {
+                        if e.App != nil {
+                                e.App.RequestFocus(e)
+                        }
+                },
+                func() {
+                        if e.App != nil {
+                                e.composer.FocusChat()
+                        }
+                },
+        )
+        e.transcript.SetCopyHandlers(
+                e.bus,
+                func(text string) bool {
+                        return e.vx != nil && e.vx.CopyToClipboard(text) == nil
+                },
+        )
+        e.diff = diffpane.New(e.theme, cwd,
+                func(text string) {
+                        e.Publish(controller.SubmitMsg{Text: text})
+                },
+                func(text string) bool {
+                        return e.vx != nil && e.vx.CopyToClipboard(text) == nil
+                },
+                func(msg string) {
+                        e.Publish(controller.ToastMsg{Message: msg, Kind: toast.ToastSuccess, Duration: 2 * time.Second})
+                },
+        )
 
-	e.code = codepane.New(e.theme, cwd,
-		func(ref chat.Ref) {
-			// The pane's own toast reports the add; this only fills the composer.
-			e.composer.AddPendingRef(ref)
-			e.composer.FocusChat()
-		},
-		func(msg string) {
-			e.Publish(controller.ToastMsg{Message: msg, Kind: toast.ToastSuccess, Duration: 2 * time.Second})
-		},
-	)
+        e.code = codepane.New(e.theme, cwd,
+                func(ref chat.Ref) {
+                        // The pane's own toast reports the add; this only fills the composer.
+                        e.composer.AddPendingRef(ref)
+                        e.composer.FocusChat()
+                },
+                func(msg string) {
+                        e.Publish(controller.ToastMsg{Message: msg, Kind: toast.ToastSuccess, Duration: 2 * time.Second})
+                },
+        )
 
-	builtins := commands.NewBuiltinRegistry(
-		e.bus,
-		e.ctrl,
-		e.composer,
-		e.transcript,
-		e.footer,
-		modelNames,
-		skillPath,
-		e.openDiff,
-		e.openCode,
-	)
-	e.commands = builtins.Registry
-	e.sessions = builtins.Sessions
-	e.extCmds = builtins.Ext
+        builtins := commands.NewBuiltinRegistry(
+                e.bus,
+                e.ctrl,
+                e.composer,
+                e.transcript,
+                e.footer,
+                modelNames,
+                skillPath,
+                e.openDiff,
+                e.openCode,
+        )
+        e.commands = builtins.Registry
+        e.sessions = builtins.Sessions
+        e.extCmds = builtins.Ext
 
-	cmdCtx := commands.NewContext(e.bus, func(title string, cmds []palette.PaletteCommand) {
-		e.composer.PushPalette(title, cmds)
-	})
-	e.submitter = submit.NewSubmitter(
-		e.ctrl,
-		e.commands,
-		e.transcript,
-		e.footer.Activity(),
-		e.composer,
-		e.bus,
-		func() commands.Context { return cmdCtx },
-		e.overlays.PermissionActive,
-		e.overlays.ContinueActive,
-		e.overlays.ConfirmActive,
-		e.overlays.ResolvePermission,
-		e.overlays.ResolveContinue,
-		e.overlays.ResolveConfirm,
-	)
-	builtins.Bind(
-		e.submitter,
-		func() commands.Context { return cmdCtx },
-		func(items []session.SessionMeta, currentID string) {
-			e.composer.ShowSessionList(items, currentID, e.sessions.Accept)
-		},
-		e.composer.ShowBranchList,
-		func() string { return e.cwd },
-		e.submitter.StreamActive,
-	)
+        cmdCtx := commands.NewContext(e.bus, func(title string, cmds []palette.PaletteCommand) {
+                e.composer.PushPalette(title, cmds)
+        })
+        e.submitter = submit.NewSubmitter(
+                e.ctrl,
+                e.commands,
+                e.transcript,
+                e.footer.Activity(),
+                e.composer,
+                e.bus,
+                func() commands.Context { return cmdCtx },
+                e.overlays.PermissionActive,
+                e.overlays.ContinueActive,
+                e.overlays.ConfirmActive,
+                e.overlays.ResolvePermission,
+                e.overlays.ResolveContinue,
+                e.overlays.ResolveConfirm,
+        )
+        builtins.Bind(
+                e.submitter,
+                func() commands.Context { return cmdCtx },
+                func(items []session.SessionMeta, currentID string) {
+                        e.composer.ShowSessionList(items, currentID, e.sessions.Accept)
+                },
+                e.composer.ShowBranchList,
+                func() string { return e.cwd },
+                e.submitter.StreamActive,
+        )
 
-	e.composer.Wire(
-		e.transcript,
-		e.submitter,
-		e.commands,
-		e.cwd,
-		e.bus,
-		e.drainBus,
-		func() {
-			if e.vx != nil {
-				e.vx.QueueRefresh()
-			}
-		},
-		func() bool { return e.ctrl != nil && e.ctrl.ImageEnabled() },
-		e.blocksComposer,
-		e.overlays.HandlePermissionKey,
-		e.overlays.HandleQuestionKey,
-		e.overlays.HandleContinueKey,
-		e.overlays.HandleConfirmKey,
-		e.handleCopyKey,
-		e.handleMessageActionsKey,
-		func() {
-			if e.App != nil {
-				e.App.RequestFocus(e)
-			}
-		},
-		func(w components.Widget) {
-			if e.App != nil {
-				e.App.RequestFocus(w)
-			}
-		},
-		func() {
-			if e.ctrl != nil {
-				e.ctrl.Close()
-			}
-		},
-		func() {
-			if e.ctrl != nil {
-				e.ctrl.CyclePermissionMode()
-			}
-		},
-		func() {
-			if e.ctrl != nil {
-				e.ctrl.CycleThinkLevel()
-			}
-		},
-	)
+        e.composer.Wire(
+                e.transcript,
+                e.submitter,
+                e.commands,
+                e.cwd,
+                e.bus,
+                e.drainBus,
+                func() {
+                        if e.vx != nil {
+                                e.vx.QueueRefresh()
+                        }
+                },
+                func() bool { return e.ctrl != nil && e.ctrl.ImageEnabled() },
+                e.blocksComposer,
+                e.overlays.HandlePermissionKey,
+                e.overlays.HandleQuestionKey,
+                e.overlays.HandleContinueKey,
+                e.overlays.HandleConfirmKey,
+                e.handleCopyKey,
+                e.handleMessageActionsKey,
+                func() {
+                        if e.App != nil {
+                                e.App.RequestFocus(e)
+                        }
+                },
+                func(w components.Widget) {
+                        if e.App != nil {
+                                e.App.RequestFocus(w)
+                        }
+                },
+                func() {
+                        if e.ctrl != nil {
+                                e.ctrl.Close()
+                        }
+                },
+                func() {
+                        if e.ctrl != nil {
+                                e.ctrl.CyclePermissionMode()
+                        }
+                },
+                func() {
+                        if e.ctrl != nil {
+                                e.ctrl.CycleThinkLevel()
+                        }
+                },
+        )
 
-	e.composer.SetHistoryStore(e.storeHistory)
-	e.loadInputHistory()
-	e.extCmds.Sync()
-	return e
+        e.composer.SetHistoryStore(e.storeHistory)
+        e.loadInputHistory()
+        e.extCmds.Sync()
+        return e
 }
 
 func (e *Editor) storeHistory(text string) {
-	if e == nil || e.ctrl == nil || e.composer == nil {
-		return
-	}
-	sid := e.ctrl.SessionID()
-	if sid == "" {
-		return
-	}
-	bank, err := memory.OpenBank(sid, "")
-	if err != nil {
-		return
-	}
-	_ = bank.Append(memory.EntryInput, text)
+        if e == nil || e.ctrl == nil || e.composer == nil {
+                return
+        }
+        sid := e.ctrl.SessionID()
+        if sid == "" {
+                return
+        }
+        bank, err := memory.OpenBank(sid, "")
+        if err != nil {
+                return
+        }
+        _ = bank.Append(memory.EntryInput, text)
 }
 
 func (e *Editor) loadInputHistory() {
-	if e == nil || e.ctrl == nil || e.composer == nil {
-		return
-	}
-	sid := e.ctrl.SessionID()
-	if sid == "" {
-		return
-	}
-	bank, err := memory.OpenBank(sid, "")
-	if err != nil {
-		return
-	}
-	entries, err := bank.RecentInputHistory(50)
-	if err != nil {
-		return
-	}
-	e.composer.LoadHistory(entries)
+        if e == nil || e.ctrl == nil || e.composer == nil {
+                return
+        }
+        sid := e.ctrl.SessionID()
+        if sid == "" {
+                return
+        }
+        bank, err := memory.OpenBank(sid, "")
+        if err != nil {
+                return
+        }
+        entries, err := bank.RecentInputHistory(50)
+        if err != nil {
+                return
+        }
+        e.composer.LoadHistory(entries)
 }
 
 // Publish sends a message onto the bus from any goroutine / widget callback.
 func (e *Editor) Publish(m controller.Msg) {
-	if e.bus == nil {
-		return
-	}
-	e.bus.Publish(m)
+        if e.bus == nil {
+                return
+        }
+        e.bus.Publish(m)
 }
 
 // Update applies one message on the UI goroutine.
 func (e *Editor) Update(m controller.Msg) {
-	switch msg := m.(type) {
-	case controller.SubmitMsg:
-		e.submitter.Submit(msg.Text)
-	case controller.CancelStreamMsg:
-		e.submitter.Cancel()
-	case controller.MentionResultsMsg:
-		e.composer.ApplyMentionResults(msg)
-	case controller.OverlayMsg:
-		e.overlays.Apply(msg)
-	case controller.FooterMsg:
-		e.footer.Apply(msg)
-	case controller.ToastMsg:
-		e.toast.Show(msg.Message, msg.Kind, msg.Duration)
-		if e.App != nil {
-			e.App.RequestRedraw()
-		}
-	case controller.ThemeMsg:
-		e.applyTheme(msg.Name)
-	case controller.ModelChangeMsg:
-		switch msg.Kind {
-		case "model":
-			e.composer.SetModelLabel(msg.Value, string(e.ctrl.ThinkLevel()))
-		case "think_level":
-			e.composer.SetModelLabel(e.ctrl.ModelName(), msg.Value)
-		}
-	case controller.ExtSessionEffectsMsg:
-		e.footer.ApplySessionEffects(msg)
-		if msg.Toast != "" {
-			e.toast.Show(msg.Toast, toast.ToastSuccess, 3*time.Second)
-		}
-	case controller.BranchLabelMsg:
-		e.composer.SetBranchLabel(msg.Text)
-		if e.vx != nil {
-			e.vx.QueueRefresh()
-		}
-	case controller.ExtCommandResultMsg:
-		if e.extCmds != nil {
-			e.extCmds.Apply(msg)
-		}
-	case controller.JobProgressMsg:
-		// Applied in drainBus so we can skip Sync when the tree is unchanged.
-	}
+        switch msg := m.(type) {
+        case controller.SubmitMsg:
+                e.submitter.Submit(msg.Text)
+        case controller.CancelStreamMsg:
+                e.submitter.Cancel()
+        case controller.MentionResultsMsg:
+                e.composer.ApplyMentionResults(msg)
+        case controller.OverlayMsg:
+                e.overlays.Apply(msg)
+        case controller.FooterMsg:
+                e.footer.Apply(msg)
+        case controller.ToastMsg:
+                e.toast.Show(msg.Message, msg.Kind, msg.Duration)
+                if e.App != nil {
+                        e.App.RequestRedraw()
+                }
+        case controller.ThemeMsg:
+                e.applyTheme(msg.Name)
+        case controller.ModelChangeMsg:
+                switch msg.Kind {
+                case "model":
+                        e.composer.SetModelLabel(msg.Value, string(e.ctrl.ThinkLevel()))
+                        // The new model's window differs from the old one's: repaint the
+                        // ctx fill label against the live denominator immediately.
+                        e.footer.SyncNow()
+                case "think_level":
+                        e.composer.SetModelLabel(e.ctrl.ModelName(), msg.Value)
+                }
+        case controller.ExtSessionEffectsMsg:
+                e.footer.ApplySessionEffects(msg)
+                if msg.Toast != "" {
+                        e.toast.Show(msg.Toast, toast.ToastSuccess, 3*time.Second)
+                }
+        case controller.BranchLabelMsg:
+                e.composer.SetBranchLabel(msg.Text)
+                if e.vx != nil {
+                        e.vx.QueueRefresh()
+                }
+        case controller.ExtCommandResultMsg:
+                if e.extCmds != nil {
+                        e.extCmds.Apply(msg)
+                }
+        case controller.JobProgressMsg:
+                // Applied in drainBus so we can skip Sync when the tree is unchanged.
+        }
 }
 
 func (e *Editor) drainBus() {
-	batch := e.bus.Drain()
-	if len(batch) == 0 {
-		return
-	}
-	atBottom := e.transcript.AtBottom()
-	agentEvent := false
-	for _, m := range batch {
-		switch msg := m.(type) {
-		case controller.SessionEventMsg:
-			agentEvent = true
-			e.transcript.ApplySession(msg.Event)
-		case controller.JobProgressMsg:
-			if e.transcript.ApplyJobProgress(msg.Progress) {
-				agentEvent = true
-			}
-		default:
-			e.Update(m)
-		}
-	}
-	if agentEvent {
-		e.transcript.Sync()
-		e.footer.SyncFromSnap(e.transcript.Snapshot())
-		if atBottom {
-			e.transcript.StickToBottom()
-		}
-	}
-	if e.ctrl != nil && e.composer != nil {
-		if sid := e.ctrl.SessionID(); sid != "" && sid != e.lastHistorySessionID {
-			e.lastHistorySessionID = sid
-			e.loadInputHistory()
-		}
-	}
+        batch := e.bus.Drain()
+        if len(batch) == 0 {
+                return
+        }
+        atBottom := e.transcript.AtBottom()
+        agentEvent := false
+        for _, m := range batch {
+                switch msg := m.(type) {
+                case controller.SessionEventMsg:
+                        agentEvent = true
+                        e.transcript.ApplySession(msg.Event)
+                case controller.JobProgressMsg:
+                        if e.transcript.ApplyJobProgress(msg.Progress) {
+                                agentEvent = true
+                        }
+                default:
+                        e.Update(m)
+                }
+        }
+        if agentEvent {
+                e.transcript.Sync()
+                e.footer.SyncFromSnap(e.transcript.Snapshot())
+                if atBottom {
+                        e.transcript.StickToBottom()
+                }
+        }
+        if e.ctrl != nil && e.composer != nil {
+                if sid := e.ctrl.SessionID(); sid != "" && sid != e.lastHistorySessionID {
+                        e.lastHistorySessionID = sid
+                        e.loadInputHistory()
+                }
+        }
 }
 
 func (e *Editor) blocksComposer() bool {
-	if e.overlays != nil && e.overlays.BlocksComposer() {
-		return true
-	}
-	if e.diff != nil && e.diff.Active() {
-		return true
-	}
-	return e.code != nil && e.code.Active()
+        if e.overlays != nil && e.overlays.BlocksComposer() {
+                return true
+        }
+        if e.diff != nil && e.diff.Active() {
+                return true
+        }
+        return e.code != nil && e.code.Active()
 }
 
 // openDiff and openCode each close the other: two full-screen overlays cannot
 // both own the frame, and the one underneath would come back on the next Esc.
 func (e *Editor) openDiff(args []string) {
-	if e.diff == nil {
-		return
-	}
-	if e.code != nil {
-		e.code.Close()
-	}
-	e.diff.OpenGit(e.cwd, args)
-	e.captureOverlayFocus()
+        if e.diff == nil {
+                return
+        }
+        if e.code != nil {
+                e.code.Close()
+        }
+        e.diff.OpenGit(e.cwd, args)
+        e.captureOverlayFocus()
 }
 
 // openCode shows a file in the viewer. A ":line" suffix puts the cursor there.
 // An "@" prefix is expanded to "./" so the shell can complete the path.
 func (e *Editor) openCode(args []string) {
-	if e.code == nil {
-		return
-	}
-	path := strings.TrimSpace(strings.Join(args, " "))
-	if strings.HasPrefix(path, "@") {
-		path = "./" + path[1:]
-	}
-	if path == "" {
-		e.toast.Show("usage: /code <path>[:line]", toast.ToastWarning, 2*time.Second)
-		return
-	}
-	line := 0
-	if base, tail, ok := strings.Cut(path, ":"); ok {
-		if n, err := strconv.Atoi(tail); err == nil && n > 0 {
-			path, line = base, n
-		}
-	}
-	if e.diff != nil {
-		e.diff.Close()
-	}
-	e.code.OpenAt(path, line)
-	e.captureOverlayFocus()
+        if e.code == nil {
+                return
+        }
+        path := strings.TrimSpace(strings.Join(args, " "))
+        if strings.HasPrefix(path, "@") {
+                path = "./" + path[1:]
+        }
+        if path == "" {
+                e.toast.Show("usage: /code <path>[:line]", toast.ToastWarning, 2*time.Second)
+                return
+        }
+        line := 0
+        if base, tail, ok := strings.Cut(path, ":"); ok {
+                if n, err := strconv.Atoi(tail); err == nil && n > 0 {
+                        path, line = base, n
+                }
+        }
+        if e.diff != nil {
+                e.diff.Close()
+        }
+        e.code.OpenAt(path, line)
+        e.captureOverlayFocus()
 }
 
 func (e *Editor) captureOverlayFocus() {
-	if e.App != nil {
-		e.App.RequestFocus(e)
-	}
-	if e.composer != nil {
-		e.composer.HideCompleters()
-		e.composer.HidePalette()
-	}
+        if e.App != nil {
+                e.App.RequestFocus(e)
+        }
+        if e.composer != nil {
+                e.composer.HideCompleters()
+                e.composer.HidePalette()
+        }
 }
 
 func (e *Editor) Handle(ctx *components.EventContext, ev xui.Event) {
-	if ke, ok := ev.(xui.KeyEvent); ok && ke.CtrlC() {
-		e.composer.Handle(ctx, ev)
-		return
-	}
-	if e.diff != nil && e.diff.Active() {
-		e.captureOverlayFocus()
-		e.diff.Handle(ctx, ev)
-		if !e.diff.Active() && e.composer != nil {
-			e.composer.FocusChat()
-		}
-		return
-	}
-	if e.code != nil && e.code.Active() {
-		e.captureOverlayFocus()
-		e.code.Handle(ctx, ev)
-		if !e.code.Active() && e.composer != nil {
-			e.composer.FocusChat()
-		}
-		return
-	}
-	e.composer.Handle(ctx, ev)
+        if ke, ok := ev.(xui.KeyEvent); ok && ke.CtrlC() {
+                e.composer.Handle(ctx, ev)
+                return
+        }
+        if e.diff != nil && e.diff.Active() {
+                e.captureOverlayFocus()
+                e.diff.Handle(ctx, ev)
+                if !e.diff.Active() && e.composer != nil {
+                        e.composer.FocusChat()
+                }
+                return
+        }
+        if e.code != nil && e.code.Active() {
+                e.captureOverlayFocus()
+                e.code.Handle(ctx, ev)
+                if !e.code.Active() && e.composer != nil {
+                        e.composer.FocusChat()
+                }
+                return
+        }
+        e.composer.Handle(ctx, ev)
 }
 
 func (e *Editor) handleCopyKey(ctx *components.EventContext, ke xui.KeyEvent) bool {
-	return e.transcript.HandleCopyKey(ctx, ke)
+        return e.transcript.HandleCopyKey(ctx, ke)
 }
 
 // handleMessageActionsKey owns the transcript cursor.
@@ -469,29 +479,29 @@ func (e *Editor) handleCopyKey(ctx *components.EventContext, ke xui.KeyEvent) bo
 // impossible until Esc leaves — which is the same trade Claude Code makes, and
 // the footer hint says so.
 func (e *Editor) handleMessageActionsKey(ctx *components.EventContext, ke xui.KeyEvent) bool {
-	if e.transcript == nil {
-		return false
-	}
-	actions := e.transcript.Actions()
-	if actions == nil {
-		return false
-	}
-	if !actions.Active {
-		if ke.Press && ke.Code == xui.KeyUp && ke.Mods.Has(xui.ModShift) {
-			if actions.Enter() {
-				e.showActionsHint()
-				ctx.ConsumeAndRedraw()
-				return true
-			}
-		}
-		return false
-	}
-	if actions.Handle(ctx, ke) {
-		e.showActionsHint()
-		ctx.ConsumeAndRedraw()
-		return true
-	}
-	return true
+        if e.transcript == nil {
+                return false
+        }
+        actions := e.transcript.Actions()
+        if actions == nil {
+                return false
+        }
+        if !actions.Active {
+                if ke.Press && ke.Code == xui.KeyUp && ke.Mods.Has(xui.ModShift) {
+                        if actions.Enter() {
+                                e.showActionsHint()
+                                ctx.ConsumeAndRedraw()
+                                return true
+                        }
+                }
+                return false
+        }
+        if actions.Handle(ctx, ke) {
+                e.showActionsHint()
+                ctx.ConsumeAndRedraw()
+                return true
+        }
+        return true
 }
 
 // showActionsHint puts the mode's copy in the composer status slot, where the
@@ -499,186 +509,186 @@ func (e *Editor) handleMessageActionsKey(ctx *components.EventContext, ke xui.Ke
 // it here means the keys are discoverable without a help screen, and it goes away
 // the moment the mode exits.
 func (e *Editor) showActionsHint() {
-	if e.footer == nil || e.transcript == nil {
-		return
-	}
-	actions := e.transcript.Actions()
-	if actions == nil || !actions.Active {
-		e.footer.SetActionsHint("")
-		return
-	}
-	hint := "↑↓ move · c copy · Esc close"
-	if pos := actions.Position(); pos != "" {
-		hint += " · " + pos
-	}
-	e.footer.SetActionsHint(hint)
+        if e.footer == nil || e.transcript == nil {
+                return
+        }
+        actions := e.transcript.Actions()
+        if actions == nil || !actions.Active {
+                e.footer.SetActionsHint("")
+                return
+        }
+        hint := "↑↓ move · c copy · Esc close"
+        if pos := actions.Position(); pos != "" {
+                hint += " · " + pos
+        }
+        e.footer.SetActionsHint(hint)
 }
 
 // Draw renders the editor surface for the given draw context.
 func (e *Editor) Draw(ctx components.DrawContext) components.Surface {
-	e.drainBus()
+        e.drainBus()
 
-	if e.footer != nil {
-		e.footer.AdvanceTick()
-	}
-	_ = e.toast.Visible()
+        if e.footer != nil {
+                e.footer.AdvanceTick()
+        }
+        _ = e.toast.Visible()
 
-	if e.diff != nil && e.diff.Active() {
-		return e.drawOverlay(ctx, e.diff.Draw(ctx))
-	}
-	if e.code != nil && e.code.Active() {
-		return e.drawOverlay(ctx, e.code.Draw(ctx))
-	}
+        if e.diff != nil && e.diff.Active() {
+                return e.drawOverlay(ctx, e.diff.Draw(ctx))
+        }
+        if e.code != nil && e.code.Active() {
+                return e.drawOverlay(ctx, e.code.Draw(ctx))
+        }
 
-	maxSize := ctx.Max
-	root := components.Surface{Size: maxSize, Widget: e}
+        maxSize := ctx.Max
+        root := components.Surface{Size: maxSize, Widget: e}
 
-	footerH := 1
-	var chatH int
-	if askH, overlay := e.overlays.PreferredBottomHeight(maxSize.Width, ctx.Method); overlay {
-		chatH = askH
-		maxChatH := maxSize.Height - footerH - 3
-		if chatH > maxChatH {
-			chatH = maxChatH
-		}
-		if chatH < 8 {
-			chatH = 8
-		}
-	} else {
-		chatH = e.composer.PreferredHeight(maxSize.Width, ctx.Method)
-		minChatH := 5
-		if len(e.composer.Chat.PendingSkills) > 0 {
-			minChatH++
-		}
-		if chatH < minChatH {
-			chatH = minChatH
-		}
-		maxChatH := maxSize.Height - footerH - 3
-		maxChatH = max(maxChatH, minChatH)
-		if chatH > maxChatH {
-			chatH = maxChatH
-		}
-	}
-	listH := maxSize.Height - chatH - footerH
-	if listH < 3 {
-		listH = 3
-		chatH = maxSize.Height - listH - footerH
-		chatH = max(chatH, 5)
-	}
+        footerH := 1
+        var chatH int
+        if askH, overlay := e.overlays.PreferredBottomHeight(maxSize.Width, ctx.Method); overlay {
+                chatH = askH
+                maxChatH := maxSize.Height - footerH - 3
+                if chatH > maxChatH {
+                        chatH = maxChatH
+                }
+                if chatH < 8 {
+                        chatH = 8
+                }
+        } else {
+                chatH = e.composer.PreferredHeight(maxSize.Width, ctx.Method)
+                minChatH := 5
+                if len(e.composer.Chat.PendingSkills) > 0 {
+                        minChatH++
+                }
+                if chatH < minChatH {
+                        chatH = minChatH
+                }
+                maxChatH := maxSize.Height - footerH - 3
+                maxChatH = max(maxChatH, minChatH)
+                if chatH > maxChatH {
+                        chatH = maxChatH
+                }
+        }
+        listH := maxSize.Height - chatH - footerH
+        if listH < 3 {
+                listH = 3
+                chatH = maxSize.Height - listH - footerH
+                chatH = max(chatH, 5)
+        }
 
-	listSurf := e.transcript.Draw(ctx, maxSize.Width, listH)
-	listH = e.transcript.ListHeight()
+        listSurf := e.transcript.Draw(ctx, maxSize.Width, listH)
+        listH = e.transcript.ListHeight()
 
-	var chatSurf components.Surface
-	if surf, ok := e.overlays.DrawBottom(ctx, maxSize.Width, chatH); ok {
-		chatSurf = surf
-	} else {
-		chatSurf = e.composer.DrawChat(ctx, maxSize.Width, chatH)
-	}
-	footerSurf := e.footer.Draw(ctx, maxSize.Width)
+        var chatSurf components.Surface
+        if surf, ok := e.overlays.DrawBottom(ctx, maxSize.Width, chatH); ok {
+                chatSurf = surf
+        } else {
+                chatSurf = e.composer.DrawChat(ctx, maxSize.Width, chatH)
+        }
+        footerSurf := e.footer.Draw(ctx, maxSize.Width)
 
-	root.Children = []components.SubSurface{
-		{Origin: components.Point{X: 0, Y: 0}, Surface: listSurf},
-		{Origin: components.Point{X: 0, Y: listH}, Surface: chatSurf, Z: 1},
-		{Origin: components.Point{X: 0, Y: maxSize.Height - footerH}, Surface: footerSurf, Z: 2},
-	}
-	if !e.overlays.Active() {
-		root.Children = append(root.Children, e.composer.PickerOverlays(ctx, listH, maxSize.Width)...)
-	}
-	if pal, ok := e.composer.PaletteOverlay(ctx); ok {
-		root.Children = append(root.Children, pal)
-	}
-	if list, ok := e.composer.ListOverlay(ctx); ok {
-		root.Children = append(root.Children, list)
-	}
-	if e.toast.Visible() {
-		toastSurf := e.toast.Draw(ctx)
-		root.Children = append(root.Children, components.SubSurface{
-			Origin:  components.Point{X: 0, Y: 0},
-			Surface: toastSurf,
-			Z:       40,
-		})
-	}
-	return root
+        root.Children = []components.SubSurface{
+                {Origin: components.Point{X: 0, Y: 0}, Surface: listSurf},
+                {Origin: components.Point{X: 0, Y: listH}, Surface: chatSurf, Z: 1},
+                {Origin: components.Point{X: 0, Y: maxSize.Height - footerH}, Surface: footerSurf, Z: 2},
+        }
+        if !e.overlays.Active() {
+                root.Children = append(root.Children, e.composer.PickerOverlays(ctx, listH, maxSize.Width)...)
+        }
+        if pal, ok := e.composer.PaletteOverlay(ctx); ok {
+                root.Children = append(root.Children, pal)
+        }
+        if list, ok := e.composer.ListOverlay(ctx); ok {
+                root.Children = append(root.Children, list)
+        }
+        if e.toast.Visible() {
+                toastSurf := e.toast.Draw(ctx)
+                root.Children = append(root.Children, components.SubSurface{
+                        Origin:  components.Point{X: 0, Y: 0},
+                        Surface: toastSurf,
+                        Z:       40,
+                })
+        }
+        return root
 }
 
 // drawOverlay finishes a full-screen overlay: it keeps keyboard focus on the
 // Editor (palette and slash leave it on Chat, where keys would land under the
 // overlay) and stacks the toast on top.
 func (e *Editor) drawOverlay(ctx components.DrawContext, root components.Surface) components.Surface {
-	e.captureOverlayFocus()
-	root.Widget = e
-	if e.toast.Visible() {
-		root.Children = append(root.Children, components.SubSurface{
-			Origin:  components.Point{X: 0, Y: 0},
-			Surface: e.toast.Draw(ctx),
-			Z:       40,
-		})
-	}
-	return root
+        e.captureOverlayFocus()
+        root.Widget = e
+        if e.toast.Visible() {
+                root.Children = append(root.Children, components.SubSurface{
+                        Origin:  components.Point{X: 0, Y: 0},
+                        Surface: e.toast.Draw(ctx),
+                        Z:       40,
+                })
+        }
+        return root
 }
 
 func (e *Editor) requestRedraw() {
-	if e.App != nil {
-		e.App.RequestRedraw()
-	}
+        if e.App != nil {
+                e.App.RequestRedraw()
+        }
 }
 
 // RequestRedraw asks the app to repaint (safe to bind onto controller.RedrawRelay / controller.Bus).
 func (e *Editor) RequestRedraw() {
-	e.requestRedraw()
+        e.requestRedraw()
 }
 
 // StartUpdateCheck queries GitHub for a newer release in the background and
 // surfaces a footer hint when one is available. cacheDir is where the version
 // check may store its cache (e.g. project global root); empty disables disk cache.
 func (e *Editor) StartUpdateCheck(cacheDir string) {
-	ch := update.CheckAsync(update.CheckOptions{
-		Current:  version.Version,
-		CacheDir: cacheDir,
-	})
-	go func() {
-		info, ok := <-ch
-		if !ok || !info.Available {
-			return
-		}
-		e.Publish(controller.FooterMsg{
-			Kind:    controller.FooterUpdateAvailable,
-			Latest:  info.Latest,
-			Current: info.Current,
-		})
-	}()
+        ch := update.CheckAsync(update.CheckOptions{
+                Current:  version.Version,
+                CacheDir: cacheDir,
+        })
+        go func() {
+                info, ok := <-ch
+                if !ok || !info.Available {
+                        return
+                }
+                e.Publish(controller.FooterMsg{
+                        Kind:    controller.FooterUpdateAvailable,
+                        Latest:  info.Latest,
+                        Current: info.Current,
+                })
+        }()
 }
 
 // StartBranchWatch hot-reloads the git branch in the path label when the
 // repo HEAD changes (checkout from another terminal, editor, …).
 func (e *Editor) StartBranchWatch() {
-	pathutil.WatchBranch(e.cwd, func(label string) {
-		e.Publish(controller.BranchLabelMsg{Text: label})
-	})
+        pathutil.WatchBranch(e.cwd, func(label string) {
+                e.Publish(controller.BranchLabelMsg{Text: label})
+        })
 }
 
 func (e *Editor) applyTheme(name string) {
-	th, ok := components.ThemeByName(name)
-	if !ok {
-		return
-	}
-	e.theme = th
-	e.composer.SetTheme(th)
-	e.toast.Theme = th
-	e.transcript.SetTheme(th)
-	e.footer.SetTheme(th)
-	e.overlays.SetTheme(th)
-	if e.diff != nil {
-		e.diff.SetTheme(th)
-	}
-	if e.code != nil {
-		e.code.SetTheme(th)
-	}
-	e.toast.Show("Theme: "+name, toast.ToastSuccess, 2*time.Second)
-	if e.vx != nil {
-		e.vx.QueueRefresh()
-	}
+        th, ok := components.ThemeByName(name)
+        if !ok {
+                return
+        }
+        e.theme = th
+        e.composer.SetTheme(th)
+        e.toast.Theme = th
+        e.transcript.SetTheme(th)
+        e.footer.SetTheme(th)
+        e.overlays.SetTheme(th)
+        if e.diff != nil {
+                e.diff.SetTheme(th)
+        }
+        if e.code != nil {
+                e.code.SetTheme(th)
+        }
+        e.toast.Show("Theme: "+name, toast.ToastSuccess, 2*time.Second)
+        if e.vx != nil {
+                e.vx.QueueRefresh()
+        }
 }
 
 // ChecklistFileName is the project task file rendered as a live progress row.

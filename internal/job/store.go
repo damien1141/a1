@@ -2,6 +2,7 @@ package job
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -19,16 +20,20 @@ const (
 
 type store struct {
 	root string
+	db   *sql.DB // nil = files only (degraded, no vault)
 }
 
-func newStore(root string) (*store, error) {
+func newStore(root string, db *sql.DB) (*store, error) {
 	if root == "" {
 		return nil, fmt.Errorf("%w: root directory is required", ErrInvalid)
 	}
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, err
 	}
-	return &store{root: root}, nil
+	if err := EnsureJobRows(db); err != nil {
+		return nil, err
+	}
+	return &store{root: root, db: db}, nil
 }
 
 func (s *store) create(meta Meta) (Meta, error) {
@@ -50,7 +55,7 @@ func (s *store) create(meta Meta) (Meta, error) {
 	return meta, nil
 }
 
-func (*store) writeMeta(meta Meta) error {
+func (s *store) writeMeta(meta Meta) error {
 	path := filepath.Join(meta.Dir, metaFile)
 	data, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
@@ -60,7 +65,12 @@ func (*store) writeMeta(meta Meta) error {
 	if err := os.WriteFile(tmp, data, 0o644); err != nil { //nolint:gosec // G306: job meta is local tooling state
 		return err
 	}
-	return os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	// Mirror into the vault's jobs table (Bet 01): meta.json stays the
+	// working store; the row is the durable, queryable record.
+	return PutJobRow(s.db, meta)
 }
 
 func (s *store) readMeta(id string) (Meta, error) {
@@ -148,6 +158,16 @@ func (s *store) listIDs() ([]string, error) {
 		}
 	}
 	return ids, nil
+}
+
+// remove deletes a job dir outright — used when a spawn is rejected after
+// the dir was created (queue overflow), so no orphaned non-terminal meta
+// survives on disk for Wait to trip over. The vault row goes with it.
+func (s *store) remove(id string) error {
+	if err := DeleteJobRow(s.db, id); err != nil {
+		return err
+	}
+	return os.RemoveAll(filepath.Join(s.root, id))
 }
 
 func newJobID() (string, error) {

@@ -1,6 +1,6 @@
 # Extensions (PXB)
 
-Extensions are **native binaries** that speak the **Phi eXtension Binary (PXB)**
+Extensions are **native binaries** that speak the **a1 eXtension Binary (PXB)**
 protocol over stdin/stdout. They replace the former yaegi-interpreted `.go`
 sources.
 
@@ -48,12 +48,12 @@ root [README](../README.md#extensions). Re-probe with
 
 | Location | Scope |
 |----------|-------|
-| `~/.a1/extensions/<name>/phi.yaml` | Global |
-| `<cwd>/.a1/extensions/<name>/phi.yaml` | Project-local |
+| `~/.a1/extensions/<name>/a1.yaml` | Global |
+| `<cwd>/.a1/extensions/<name>/a1.yaml` | Project-local |
 
-Same name: project wins. Disable all with `PHI_EXTENSIONS=off`.
+Same name: project wins. Disable all with `A1_EXTENSIONS=off`.
 
-### `phi.yaml`
+### `a1.yaml`
 
 ```yaml
 name: hello
@@ -99,21 +99,21 @@ computation) so the host may run a batch of all-readable calls concurrently.
 
 ```go
 m.RegisterTool(ext.Tool{
-	Name:        "fetch",
-	Description: "HTTP GET",
-	TimeoutSec:  120, // host waits up to 2m for this tool
-	Parameters:  map[string]any{"type": "object", /* … */},
-	DetailFromArgs: func(input json.RawMessage) string {
-		var in struct {
-			URL string `json:"url"`
-		}
-		_ = json.Unmarshal(input, &in)
-		return in.URL // TUI row shows this instead of raw JSON
-	},
-	Execute: func(ctx context.Context, args json.RawMessage) (ext.ToolResult, error) {
-		// …
-		return ext.ToolResult{}, nil
-	},
+        Name:        "fetch",
+        Description: "HTTP GET",
+        TimeoutSec:  120, // host waits up to 2m for this tool
+        Parameters:  map[string]any{"type": "object", /* … */},
+        DetailFromArgs: func(input json.RawMessage) string {
+                var in struct {
+                        URL string `json:"url"`
+                }
+                _ = json.Unmarshal(input, &in)
+                return in.URL // TUI row shows this instead of raw JSON
+        },
+        Execute: func(ctx context.Context, args json.RawMessage) (ext.ToolResult, error) {
+                // …
+                return ext.ToolResult{}, nil
+        },
 })
 ```
 
@@ -121,51 +121,51 @@ m.RegisterTool(ext.Tool{
 package main
 
 import (
-	"github.com/damien1141/a1/ext/go"
-	"github.com/damien1141/a1/ext/go/phi"
+        "github.com/damien1141/a1/ext/go"
+        "github.com/damien1141/a1/ext/go/a1"
 )
 
 func main() {
-	m := phi.New("hello", "0.1.0")
-	m.RegisterCommand("hello", ext.Command{
-		Description: "Say hi",
-		Handler: func(args string, ctx *ext.Context) error {
-			m.Notify("info", "Hello!")
-			// m.Submit("follow-up") // after /hello returns
-			// m.SendUserMessage("…") // enqueue a turn anytime
-			return nil
-		},
-	})
-	// NeedsArgs: picker accept / bare "/plan" leaves "/plan " in the composer.
-	m.RegisterCommand("plan", ext.Command{
-		Description: "Enter/exit plan mode — /plan on|off|status",
-		NeedsArgs:   true,
-		Handler: func(args string, ctx *ext.Context) error {
-			_ = args
-			return nil
-		},
-	})
-	m.OnUserInput(func(ev ext.UserInputEvent) *ext.UserInputResult {
-		// return &ext.UserInputResult{Handled: true} to swallow
-		// return &ext.UserInputResult{Text: "rewritten"} to transform
-		return nil
-	})
-	m.OnToolCall(func(ev ext.ToolCallEvent) *ext.ToolCallResult {
-		// return &ext.ToolCallResult{Block: true, Reason: "..."} to deny
-		return nil
-	})
-	m.OnToolResult(func(ev ext.ToolResultEvent) *ext.ToolResultResult {
-		// return &ext.ToolResultResult{Stop: true} to end the agent loop
-		return nil
-	})
-	m.OnTurnStopping(func(ev ext.TurnStoppingEvent) *ext.TurnStoppingResult {
-		// return &ext.TurnStoppingResult{Continue: true, Message: "check X"} to steer
-		return nil
-	})
-	m.SubscribeEvent(ext.EventSessionStart, func(ev pxb.EventNotify) {
-		_ = ev // Reason, PreviousSessionID, …
-	})
-	_ = m.Run()
+        m := a1.New("hello", "0.1.0")
+        m.RegisterCommand("hello", ext.Command{
+                Description: "Say hi",
+                Handler: func(args string, ctx *ext.Context) error {
+                        m.Notify("info", "Hello!")
+                        // m.Submit("follow-up") // after /hello returns
+                        // m.SendUserMessage("…") // enqueue a turn anytime
+                        return nil
+                },
+        })
+        // NeedsArgs: picker accept / bare "/plan" leaves "/plan " in the composer.
+        m.RegisterCommand("plan", ext.Command{
+                Description: "Enter/exit plan mode — /plan on|off|status",
+                NeedsArgs:   true,
+                Handler: func(args string, ctx *ext.Context) error {
+                        _ = args
+                        return nil
+                },
+        })
+        m.OnUserInput(func(ev ext.UserInputEvent) *ext.UserInputResult {
+                // return &ext.UserInputResult{Handled: true} to swallow
+                // return &ext.UserInputResult{Text: "rewritten"} to transform
+                return nil
+        })
+        m.OnToolCall(func(ev ext.ToolCallEvent) *ext.ToolCallResult {
+                // return &ext.ToolCallResult{Block: true, Reason: "..."} to deny
+                return nil
+        })
+        m.OnToolResult(func(ev ext.ToolResultEvent) *ext.ToolResultResult {
+                // return &ext.ToolResultResult{Stop: true} to end the agent loop
+                return nil
+        })
+        m.OnTurnStopping(func(ev ext.TurnStoppingEvent) *ext.TurnStoppingResult {
+                // return &ext.TurnStoppingResult{Continue: true, Message: "check X"} to steer
+                return nil
+        })
+        m.SubscribeEvent(ext.EventSessionStart, func(ev pxb.EventNotify) {
+                _ = ev // Reason, PreviousSessionID, …
+        })
+        _ = m.Run()
 }
 ```
 
@@ -176,7 +176,7 @@ UI surface today: **toast** (`Notify`), **footer status** (`SetStatus`), **Submi
 
 ```go
 ok := m.ConfirmOpts(ext.ConfirmRequest{
-	Title: "Delete?", Message: "Remove /tmp/x", Yes: "Delete", No: "Cancel", Danger: true,
+        Title: "Delete?", Message: "Remove /tmp/x", Yes: "Delete", No: "Cancel", Danger: true,
 }).OK
 ```
 
@@ -185,7 +185,7 @@ Build and install:
 ```bash
 go build -o hello .
 mkdir -p ~/.a1/extensions/hello
-cp hello phi.yaml ~/.a1/extensions/hello/
+cp hello a1.yaml ~/.a1/extensions/hello/
 ```
 
 Reload: **Ctrl+K → extensions → reload**.
@@ -299,7 +299,7 @@ Build and install (see `ext/rust/examples/` for runnable extensions):
 cd ext/rust
 cargo build --release --example hello
 mkdir -p ~/.a1/extensions/hello
-cp target/release/examples/hello phi.yaml ~/.a1/extensions/hello/
+cp target/release/examples/hello a1.yaml ~/.a1/extensions/hello/
 ```
 
 Reload: **Ctrl+K → extensions → reload**.
@@ -319,7 +319,7 @@ naming as `a1 update`):
 ```
 
 Example: `greet_1.2.3_darwin_arm64.tar.gz`. The archive must contain
-`phi.yaml` and the compiled `exec` binary (optionally nested one directory
+`a1.yaml` and the compiled `exec` binary (optionally nested one directory
 deep). If a `checksums_{version}.txt` asset is present, SHA-256 is verified.
 
 When no matching release asset exists, install falls back to a shallow
@@ -351,7 +351,7 @@ them under management.
 
 ## Lifecycle (process)
 
-1. Discover `phi.yaml`
+1. Discover `a1.yaml`
 2. Spawn `exec` (stderr → `~/.a1/logs/ext-<name>.log`)
 3. Ext → `Hello` · Host → `HelloAck`
 4. Ext → `Register*` / `Subscribe` · Ext → `Ready`
@@ -364,7 +364,7 @@ them under management.
 |------|------|
 | `ext/go/` (module `github.com/damien1141/a1/ext/go`) | Shared types (`Tool`, events) |
 | `ext/go/pxb` | Binary wire protocol |
-| `ext/go/phi` | Go author SDK (`ExtensionAPI.Run`) |
+| `ext/go/a1` | Go author SDK (`ExtensionAPI.Run`) |
 | `ext/rust` (crate `phi-ext`) | Rust author SDK (`pxb` + `a1` modules; deps: serde/serde_json + tokio `rt`) |
 | `internal/extension` | Discover, spawn, Runner shims |
 
@@ -372,8 +372,8 @@ them under management.
 
 | Old | New |
 |-----|-----|
-| `func Extension(phi *ext.API)` in `.go` | `phi.New` + `m.Run()` binary |
-| Drop file under `extensions/` | Directory + `phi.yaml` + binary |
+| `func Extension(phi *ext.API)` in `.go` | `a1.New` + `m.Run()` binary |
+| Drop file under `extensions/` | Directory + `a1.yaml` + binary |
 | `phi.On(ext.EventToolCall, …)` | `m.OnToolCall(…)` |
 
 ## Migration from shell hooks

@@ -1,4 +1,4 @@
-//! Rust author SDK for [Phi] PXB extensions — a faithful port of the Go SDK
+//! Rust author SDK for [a1] PXB extensions — a faithful port of the Go SDK
 //! under `ext/go`.
 //!
 //! Two layers, mirroring the Go module:
@@ -31,7 +31,7 @@
 //! }
 //! ```
 //!
-//! [Phi]: https://github.com/pulseaiclub/phi
+//! [a1]: https://github.com/damien1141/a1
 
 pub mod phi;
 pub mod pxb;

@@ -1,18 +1,18 @@
 package project
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
+        "fmt"
+        "os"
+        "os/exec"
+        "path/filepath"
+        "runtime"
 
-	"github.com/damien1141/a1/internal/llm/skills"
+        "github.com/damien1141/a1/internal/llm/skills"
 )
 
 // GlobalLayout describes the global a1 home directory (~/.a1).
 type GlobalLayout struct {
-	root string
+        root string
 }
 
 // Root returns the global a1 home directory (~/.a1).
@@ -26,16 +26,16 @@ func (g GlobalLayout) BinDir() string { return filepath.Join(g.root, "bin") }
 
 // LookBin returns name from BinDir if present, otherwise PATH.
 func (g GlobalLayout) LookBin(name string) (string, error) {
-	for _, path := range binCandidates(filepath.Join(g.BinDir(), name)) {
-		if _, err := os.Stat(path); err == nil {
-			return path, nil
-		}
-	}
-	p, err := exec.LookPath(name)
-	if err != nil {
-		return "", fmt.Errorf("%s is not available: install to ~/.a1/bin or PATH", name)
-	}
-	return p, nil
+        for _, path := range binCandidates(filepath.Join(g.BinDir(), name)) {
+                if _, err := os.Stat(path); err == nil {
+                        return path, nil
+                }
+        }
+        p, err := exec.LookPath(name)
+        if err != nil {
+                return "", fmt.Errorf("%s is not available: install to ~/.a1/bin or PATH", name)
+        }
+        return p, nil
 }
 
 // binCandidates returns the paths to probe inside a single directory.
@@ -43,10 +43,10 @@ func (g GlobalLayout) LookBin(name string) (string, error) {
 // misses an fd/rg that is sitting right there in ~/.a1/bin. exec.LookPath
 // appends PATHEXT on its own, so only the bin dir needs the extra variant.
 func binCandidates(path string) []string {
-	if runtime.GOOS == "windows" && filepath.Ext(path) == "" {
-		return []string{path + ".exe", path}
-	}
-	return []string{path}
+        if runtime.GOOS == "windows" && filepath.Ext(path) == "" {
+                return []string{path + ".exe", path}
+        }
+        return []string{path}
 }
 
 // SkillsDir returns the directory for SKILL.md files.
@@ -62,18 +62,22 @@ func (g GlobalLayout) SessionBase() string { return filepath.Join(g.root, "sessi
 // (~/.a1/sessions/memory).
 func (g GlobalLayout) MemoryDir() string { return filepath.Join(g.root, "sessions", "memory") }
 
+// PersonasDir returns the directory for persona registries, avatars and
+// per-persona memory banks (~/.a1/personas).
+func (g GlobalLayout) PersonasDir() string { return filepath.Join(g.root, "personas") }
+
 // JobsDir returns the directory for sub-agent job artifacts.
 func (g GlobalLayout) JobsDir() string { return filepath.Join(g.root, "jobs") }
 
 // SessionDir returns the per-cwd session storage directory
 // (~/.a1/session/<encoded-cwd>/).
 func (p *Project) SessionDir() string {
-	return ProjectSessionDir(p.global.SessionBase(), p.root)
+        return ProjectSessionDir(p.global.SessionBase(), p.root)
 }
 
 // JobsDir returns ~/.a1/jobs for sub-agent job artifacts.
 func (p *Project) JobsDir() string {
-	return p.global.JobsDir()
+        return p.global.JobsDir()
 }
 
 // ScratchpadDir returns ~/.a1/scratchpad for agent notes.
@@ -82,21 +86,21 @@ func (g GlobalLayout) ScratchpadDir() string { return filepath.Join(g.root, "scr
 // ExtensionsDir returns <root>/.a1/extensions, the per-project extensions
 // directory (user extensions live under Global().ExtensionsDir()).
 func (p *Project) ExtensionsDir() string {
-	return filepath.Join(p.root, ".a1", "extensions")
+        return filepath.Join(p.root, ".a1", "extensions")
 }
 
 // MCPConfigFile returns <root>/.a1/mcp.json, the per-project MCP config
 // file (the user config is ~/.a1/mcp.json).
 func (p *Project) MCPConfigFile() string {
-	return filepath.Join(p.root, ".a1", "mcp.json")
+        return filepath.Join(p.root, ".a1", "mcp.json")
 }
 
 // Project is the resolved a1 workspace: the current working directory plus
 // the global layout and its loaded configuration.
 type Project struct {
-	root   string
-	global GlobalLayout
-	config *Config
+        root   string
+        global GlobalLayout
+        config *Config
 }
 
 // Root returns the working directory the project was resolved from.
@@ -111,63 +115,64 @@ func (p *Project) Config() *Config { return p.config }
 // LoadConfig reads, env-overrides and finalizes the global configuration.
 // The result is cached on the Project until the next LoadConfig call.
 func (p *Project) LoadConfig() error {
-	cfg, err := loadConfig(p.global)
-	if err != nil {
-		return err
-	}
-	p.config = cfg
-	return nil
+        cfg, err := loadConfig(p.global)
+        if err != nil {
+                return err
+        }
+        p.config = cfg
+        return nil
 }
 
 // ensureGlobalDirs creates the global a1 home directories. It is what makes
-// ~/.a1/{bin,skills,extensions,session,jobs,sessions/memory} exist from the
+// ~/.a1/{bin,skills,extensions,session,jobs,sessions/memory,personas} exist from the
 // very first startup.
 func ensureGlobalDirs(global GlobalLayout) error {
-	dirs := []string{
-		global.Root(),
-		global.BinDir(),
-		global.SkillsDir(),
-		global.ExtensionsDir(),
-		global.SessionBase(),
-		global.JobsDir(),
-		global.MemoryDir(),
-	}
-	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return fmt.Errorf("create directory %q: %w", dir, err)
-		}
-	}
+        dirs := []string{
+                global.Root(),
+                global.BinDir(),
+                global.SkillsDir(),
+                global.ExtensionsDir(),
+                global.SessionBase(),
+                global.JobsDir(),
+                global.MemoryDir(),
+                global.PersonasDir(),
+        }
+        for _, dir := range dirs {
+                if err := os.MkdirAll(dir, 0o755); err != nil {
+                        return fmt.Errorf("create directory %q: %w", dir, err)
+                }
+        }
 
-	// Install default skills on first run so ~/.a1/skills/ is populated
-	// automatically. Existing user skills are never overwritten.
-	if _, err := skills.InstallDefault(global.SkillsDir()); err != nil {
-		return fmt.Errorf("install default skills: %w", err)
-	}
+        // Install default skills on first run so ~/.a1/skills/ is populated
+        // automatically. Existing user skills are never overwritten.
+        if _, err := skills.InstallDefault(global.SkillsDir()); err != nil {
+                return fmt.Errorf("install default skills: %w", err)
+        }
 
-	return nil
+        return nil
 }
 
 // Discover resolves the a1 workspace starting from startDir ("" = cwd) and
 // ensures the global directory layout exists.
 func Discover(startDir string) (*Project, error) {
-	if startDir == "" {
-		var err error
-		startDir, err = os.Getwd()
-		if err != nil {
-			return nil, err
-		}
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, err
-	}
-	absRoot, err := filepath.Abs(startDir)
-	if err != nil {
-		return nil, err
-	}
-	global := GlobalLayout{root: filepath.Join(home, ".a1")}
-	if err := ensureGlobalDirs(global); err != nil {
-		return nil, err
-	}
-	return &Project{root: absRoot, global: global}, nil
+        if startDir == "" {
+                var err error
+                startDir, err = os.Getwd()
+                if err != nil {
+                        return nil, err
+                }
+        }
+        home, err := os.UserHomeDir()
+        if err != nil {
+                return nil, err
+        }
+        absRoot, err := filepath.Abs(startDir)
+        if err != nil {
+                return nil, err
+        }
+        global := GlobalLayout{root: filepath.Join(home, ".a1")}
+        if err := ensureGlobalDirs(global); err != nil {
+                return nil, err
+        }
+        return &Project{root: absRoot, global: global}, nil
 }

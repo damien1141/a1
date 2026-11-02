@@ -25,9 +25,7 @@ func OpenGraph(ctx context.Context, root string) (*Graph, error) {
 			return nil
 		}
 		if d.IsDir() {
-			name := d.Name()
-			if name == "vendor" || name == ".git" || name == "node_modules" || name == "target" || name == "dist" ||
-				name == "build" {
+			if skipDirName(d.Name()) {
 				return fs.SkipDir
 			}
 			return nil

@@ -101,7 +101,7 @@ type ChatInput struct {
 	// QuestionOpen is set while the ? shortcut picker is visible.
 	QuestionOpen bool
 
-	// dumpNextDraw is set on paste/insert when PHI_DEBUG=1.
+	// dumpNextDraw is set on paste/insert when A1_DEBUG=1.
 	dumpNextDraw bool
 }
 

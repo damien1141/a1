@@ -113,7 +113,50 @@ func TestDepthLimit(t *testing.T) {
 	require.ErrorIs(t, err, job.ErrDepth)
 }
 
-func TestConcurrencyBusy(t *testing.T) {
+func TestConcurrencyQueuesAndDrainsFIFO(t *testing.T) {
+	var order []string
+	var mu sync.Mutex
+	record := func(p string) {
+		mu.Lock()
+		order = append(order, p)
+		mu.Unlock()
+	}
+	block := make(chan struct{})
+	m := newMgr(t, job.RunnerFunc(func(ctx context.Context, env job.RunEnv) (string, error) {
+		record(env.Job.Prompt)
+		if env.Job.Prompt == "1" {
+			<-block
+		}
+		return "ok", nil
+	}), job.Options{MaxConcurrent: 1})
+
+	ctx := t.Context()
+	info1, err := m.Spawn(ctx, job.SpawnRequest{Prompt: "1"})
+	require.NoError(t, err)
+	// Slots full: the second and third spawns queue (FIFO) instead of
+	// failing with ErrBusy.
+	info2, err := m.Spawn(ctx, job.SpawnRequest{Prompt: "2"})
+	require.NoError(t, err)
+	require.Equal(t, job.StatusQueued, info2.Status)
+	info3, err := m.Spawn(ctx, job.SpawnRequest{Prompt: "3"})
+	require.NoError(t, err)
+	require.Equal(t, job.StatusQueued, info3.Status)
+
+	close(block)
+	for _, id := range []string{info1.ID, info2.ID, info3.ID} {
+		res, err := m.Wait(ctx, id)
+		require.NoError(t, err)
+		require.Equal(t, job.StatusCompleted, res.Info.Status)
+	}
+	// FIFO: 2 started before 3.
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, order, 3)
+	require.Equal(t, "2", order[1])
+	require.Equal(t, "3", order[2])
+}
+
+func TestQueueOverflowReturnsBusy(t *testing.T) {
 	block := make(chan struct{})
 	m := newMgr(t, job.RunnerFunc(func(ctx context.Context, _ job.RunEnv) (string, error) {
 		select {
@@ -122,16 +165,23 @@ func TestConcurrencyBusy(t *testing.T) {
 		case <-ctx.Done():
 			return "", ctx.Err()
 		}
-	}), job.Options{MaxConcurrent: 1})
+	}), job.Options{MaxConcurrent: 1, MaxQueue: 1})
 
 	ctx := t.Context()
-	info, err := m.Spawn(ctx, job.SpawnRequest{Prompt: "1"})
+	_, err := m.Spawn(ctx, job.SpawnRequest{Prompt: "1"})
 	require.NoError(t, err)
 	_, err = m.Spawn(ctx, job.SpawnRequest{Prompt: "2"})
+	require.NoError(t, err) // fills the queue
+	_, err = m.Spawn(ctx, job.SpawnRequest{Prompt: "3"})
 	require.ErrorIs(t, err, job.ErrBusy)
 	close(block)
-	_, err = m.Wait(ctx, info.ID)
+	// Drain both accepted jobs so cleanup does not race their goroutines.
+	list, err := m.List(ctx)
 	require.NoError(t, err)
+	for _, info := range list {
+		_, werr := m.Wait(ctx, info.ID)
+		require.NoError(t, werr)
+	}
 }
 
 func TestHandleList(t *testing.T) {

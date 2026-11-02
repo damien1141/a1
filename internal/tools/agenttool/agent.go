@@ -3,6 +3,7 @@ package agenttool
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -20,7 +21,7 @@ const agentLaunchGuidance = `Launch a specialized sub-agent. Pick a role:
 
 - explore (default): no write/edit; full bash except hard denies. Multi-hop recon / unknown location — keep tool noise out of this context.
 - review: same tools as explore; diffs, checks, quality/security report — do not edit.
-- worker: read/write/edit + bash; implement a scoped, self-contained change and verify. Not for open-ended exploration.
+- worker: read/write/edit + bash; implement a scoped, self-contained change and verify. Workers above the depth floor can spawn their own worker sub-agents. Not for open-ended exploration.
 
 When NOT to use any sub-agent:
 - Exact file path already known — use read yourself
@@ -29,21 +30,28 @@ When NOT to use any sub-agent:
 
 How to use:
 1. Use agent_spawn to launch a job, then agent_wait for its summary. For parallel jobs, spawn all first, then wait each.
-2. Stateless: put a highly detailed, self-contained prompt and say what the final summary must include.
-3. You only receive the final summary. Summarize for the user if needed.
-4. Sub-agents cannot spawn further agents. Do not put secrets in the prompt.
-5. Verify before relying on a worker's edits in follow-up work.`
+2. Stateless: put a highly detailed, self-contained prompt and say what the final summary must include. (Exception: warm_from_job reuses a worker's prior session.)
+3. You only receive the final summary plus the structured handoff (files touched, check states). Summarize for the user if needed.
+4. Explore/review sub-agents cannot spawn further agents; workers can, within cheaper step budgets.
+5. Verify before relying on a worker's edits in follow-up work.
+6. Sub-agents inherit the checks you declared with the contract tool — a worker is held to that finish line.`
 
 // AgentDeps wires sub-agent tools to a process-level [job.Manager].
 // ParentID/WorkDir are read at call time (session may change via /resume).
+// Depth is the spawning engine's fleet depth (0 = top-level parent);
+// FleetContract (nil = none) supplies the task-contract checks children
+// inherit (Bet 04).
 type AgentDeps struct {
-	Manager  *job.Manager
-	ParentID func() string
-	WorkDir  func() string
+	Manager       *job.Manager
+	ParentID      func() string
+	WorkDir       func() string
+	Depth         int
+	FleetContract func() []string
 }
 
-// AgentTools returns agent_spawn / list / wait / cancel.
-// Depth is forced to 0; ParentID comes from ParentID(), not model args.
+// AgentTools returns agent_spawn / list / wait / cancel. Depth comes from
+// AgentDeps (the spawning engine's fleet depth); ParentID comes from
+// ParentID(), not model args.
 func AgentTools(deps AgentDeps) []tooldef.Tool {
 	if deps.Manager == nil {
 		return nil
@@ -70,7 +78,7 @@ func agentSpawnTool(deps AgentDeps) tooldef.Tool {
 
 Starts asynchronously and returns job_id immediately. Use agent_wait for the summary. Best for parallel jobs.
 
-Concurrency cap: at most %d sub-agents run concurrently; spawning more fails (jobs are not queued).`, deps.Manager.MaxConcurrent()),
+Concurrency: at most %d sub-agents run at once; further spawns join a FIFO queue (up to %d) and start as slots free.`, deps.Manager.MaxConcurrent(), deps.Manager.MaxQueue()),
 			Params: &llm.FunctionParameters{
 				Type: "object",
 				Properties: llm.Object{
@@ -91,6 +99,10 @@ Concurrency cap: at most %d sub-agents run concurrently; spawning more fails (jo
 						"type":        "string",
 						"description": "Working directory for the sub-agent (default: parent session cwd).",
 					},
+					"warm_from_job": llm.Object{
+						"type":        "string",
+						"description": "Reuse a finished worker job's session (job_id from a previous agent_wait) so it skips re-reading the repo. Requires role=worker.",
+					},
 					"timeout_sec": llm.Object{
 						"type":        "integer",
 						"description": "Optional run timeout in seconds for the job itself (not wait).",
@@ -109,18 +121,30 @@ Concurrency cap: at most %d sub-agents run concurrently; spawning more fails (jo
 			if err != nil {
 				return tooldef.Result{}, err
 			}
+			warm := strings.TrimSpace(in.WarmFromJob)
+			if warm != "" && role != job.RoleWorker {
+				return tooldef.Result{}, errors.New(
+					"agent_spawn: warm_from_job requires role=worker (warm resume is the worker pool)",
+				)
+			}
 			wd := strings.TrimSpace(in.WorkDir)
 			if wd == "" {
 				wd = deps.WorkDir()
+			}
+			var contract []string
+			if deps.FleetContract != nil {
+				contract = deps.FleetContract()
 			}
 			req := job.SpawnRequest{
 				Prompt:          in.Prompt,
 				Description:     in.Description,
 				ParentID:        deps.ParentID(),
 				ParentToolUseID: tooldef.ToolCallID(ctx),
-				Depth:           0,
+				Depth:           deps.Depth,
 				Role:            role,
 				WorkDir:         wd,
+				WarmFrom:        warm,
+				Contract:        contract,
 			}
 			if in.TimeoutSec > 0 {
 				req.Timeout = time.Duration(in.TimeoutSec) * time.Second
@@ -146,6 +170,7 @@ type spawnInput struct {
 	Description string `json:"description"`
 	Role        string `json:"role"`
 	WorkDir     string `json:"workdir"`
+	WarmFromJob string `json:"warm_from_job"`
 	TimeoutSec  int    `json:"timeout_sec"`
 }
 
@@ -248,18 +273,30 @@ Use agent_cancel to stop a running job.`,
 				return tooldef.Result{}, err
 			}
 			summary := truncateBytes(res.Summary, agentSummaryLimit)
-			body := mustJSON(map[string]any{
+			body := map[string]any{
 				"job_id":      res.Info.ID,
 				"status":      res.Info.Status,
 				"role":        res.Info.Role,
 				"error":       res.Info.Error,
 				"result_path": res.Info.ResultPath,
 				"summary":     summary,
-			})
+			}
+			// Structured handoff (Bet 04): files the child
+			// touched and where every observed check stands —
+			// merged as data, not prose, so a fleet parent can
+			// act on them without re-reading the child's
+			// transcript. Absent for runners without handoff
+			// support; the summary above stands alone then.
+			if h, ok := job.ReadHandoff(res.Info.Dir); ok {
+				body["files_read"] = h.FilesRead
+				body["files_modified"] = h.FilesModified
+				body["checks"] = h.Checks
+			}
+			out := mustJSON(body)
 			return tooldef.Result{
-				Content: body,
+				Content: out,
 				Detail:  roleDetail(string(res.Info.Role), string(res.Info.Status)),
-				Output:  body,
+				Output:  out,
 			}, nil
 		},
 	}

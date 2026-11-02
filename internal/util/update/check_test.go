@@ -13,8 +13,8 @@ import (
 )
 
 func TestCheckUsesCacheWhenAvailable(t *testing.T) {
-	t.Setenv("PHI_SKIP_VERSION_CHECK", "")
-	t.Setenv("PHI_OFFLINE", "")
+	t.Setenv("A1_SKIP_VERSION_CHECK", "")
+	t.Setenv("A1_OFFLINE", "")
 
 	dir := t.TempDir()
 	cache := filepath.Join(dir, "update-check.json")
@@ -35,7 +35,7 @@ func TestCheckUsesCacheWhenAvailable(t *testing.T) {
 }
 
 func TestSkipCheckEnv(t *testing.T) {
-	t.Setenv("PHI_SKIP_VERSION_CHECK", "1")
+	t.Setenv("A1_SKIP_VERSION_CHECK", "1")
 	info := update.Check(t.Context(), update.CheckOptions{Current: "v0.1.0"})
 	require.False(t, info.Available, "expected skip, got %+v", info)
 }

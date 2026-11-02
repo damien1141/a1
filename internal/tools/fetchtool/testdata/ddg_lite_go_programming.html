@@ -1,0 +1,139 @@
+<!--
+  Fixture: DuckDuckGo Lite HTML result page for "go programming language".
+  Captured from https://lite.duckduckgo.com/lite/?q=go+programming+language
+  on 2026-10-28. The Lite endpoint serves a minimal HTML 4.01 Transitional
+  page where each result is a 3-row table block:
+
+    <tr><td align="right">N.</td><td><a class="result-link" href="...">Title</a></td></tr>
+    <tr><td></td><td class="result-snippet">Snippet text...</td></tr>
+    <tr><td></td><td><span class="link-text">https://displayed-url</span></td></tr>
+
+  URLs are sometimes wrapped in a duckduckgo.com/l/?uddg=<encoded> redirect
+  (the parser must unwrap these) and sometimes link directly. This fixture
+  includes both forms so the parser is tested against both.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>go programming language at DuckDuckGo</title>
+</head>
+<body>
+  <center id="lite_wrapper">
+    <a class="header-url" href="/lite/">
+      <span class="header">DuckDuckGo</span>
+    </a>
+
+    <form action="/lite/" method="post">
+      <input type="text" name="q" value="go programming language">
+      <input type="submit" value="Search">
+    </form>
+
+    <!-- Result 1: direct URL, no DDG redirect wrapper -->
+    <table border="0" cellpadding="5" cellspacing="0">
+      <tr>
+        <td align="right" valign="top">1.</td>
+        <td>
+          <a rel="nofollow" class="result-link" href="https://go.dev/">The Go Programming Language</a>
+        </td>
+      </tr>
+      <tr>
+        <td></td>
+        <td class="result-snippet">Go is an open source programming language that makes it easy to build simple, reliable, and efficient software. Get started with Go. Use the Go playground to try Go in your browser. Documentation. Tutorial: Getting started.</td>
+      </tr>
+      <tr>
+        <td></td>
+        <td>
+          <span class="link-text">https://go.dev/</span>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Result 2: DDG redirect wrapper (uddg parameter) -->
+    <table border="0" cellpadding="5" cellspacing="0">
+      <tr>
+        <td align="right" valign="top">2.</td>
+        <td>
+          <a rel="nofollow" class="result-link" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FGo_%28programming_language%29&rut=abc123">Go (programming language) - Wikipedia</a>
+        </td>
+      </tr>
+      <tr>
+        <td></td>
+        <td class="result-snippet">Go is a statically typed, compiled high-level programming language designed at Google. It is syntactically similar to C, but with memory safety, garbage collection, and structural typing.</td>
+      </tr>
+      <tr>
+        <td></td>
+        <td>
+          <span class="link-text">en.wikipedia.org/wiki/Go_(programming_language)</span>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Result 3: direct URL with path -->
+    <table border="0" cellpadding="5" cellspacing="0">
+      <tr>
+        <td align="right" valign="top">3.</td>
+        <td>
+          <a rel="nofollow" class="result-link" href="https://www.tutorialspoint.com/go/index.htm">Go Programming Language Tutorial - Tutorialspoint</a>
+        </td>
+      </tr>
+      <tr>
+        <td></td>
+        <td class="result-snippet">Go programming language tutorial for beginners and experienced developers. Learn Go syntax, data types, control structures, functions, interfaces, and concurrency patterns with hands-on examples.</td>
+      </tr>
+      <tr>
+        <td></td>
+        <td>
+          <span class="link-text">tutorialspoint.com/go/index.htm</span>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Result 4: https with www, will need www-stripping for the host -->
+    <table border="0" cellpadding="5" cellspacing="0">
+      <tr>
+        <td align="right" valign="top">4.</td>
+        <td>
+          <a rel="nofollow" class="result-link" href="https://www.golang-news.com/news/2024">Golang News - Latest updates from the Go community</a>
+        </td>
+      </tr>
+      <tr>
+        <td></td>
+        <td class="result-snippet">Latest news, tutorials, and discussions from the Go community. Track new releases, language proposals, and ecosystem developments.</td>
+      </tr>
+      <tr>
+        <td></td>
+        <td>
+          <span class="link-text">golang-news.com/news/2024</span>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Result 5: DDG redirect with query params in the target -->
+    <table border="0" cellpadding="5" cellspacing="0">
+      <tr>
+        <td align="right" valign="top">5.</td>
+        <td>
+          <a rel="nofollow" class="result-link" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fstackoverflow.com%2Fquestions%2Ftagged%2Fgo&rut=def456">Newest 'go' Questions - Stack Overflow</a>
+        </td>
+      </tr>
+      <tr>
+        <td></td>
+        <td class="result-snippet">Q&amp;A for professional and enthusiast programmers. Find answers to common Go questions about goroutines, channels, error handling, and the standard library.</td>
+      </tr>
+      <tr>
+        <td></td>
+        <td>
+          <span class="link-text">stackoverflow.com/questions/tagged/go</span>
+        </td>
+      </tr>
+    </table>
+
+    <table border="0" cellpadding="5" cellspacing="0" class="paganation">
+      <tr>
+        <td><a href="/lite/?q=go+programming+language&p=1">Next</a></td>
+      </tr>
+    </table>
+  </center>
+</body>
+</html>

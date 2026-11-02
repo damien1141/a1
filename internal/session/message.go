@@ -1,10 +1,10 @@
 package session
 
 import (
-	"slices"
-	"strings"
+        "slices"
+        "strings"
 
-	"github.com/damien1141/a1/internal/llm"
+        "github.com/damien1141/a1/internal/llm"
 )
 
 // Role is the speaker of a transcript message.
@@ -12,10 +12,10 @@ type Role int
 
 // Role values for transcript messages.
 const (
-	RoleUser Role = iota
-	RoleAssistant
-	RoleCompaction // transcript marker after context compaction ("Compacted")
-	RoleLocalBash  // user-initiated "!cmd" shell run (UI-only, not agent)
+        RoleUser Role = iota
+        RoleAssistant
+        RoleCompaction // transcript marker after context compaction ("Compacted")
+        RoleLocalBash  // user-initiated "!cmd" shell run (UI-only, not agent)
 )
 
 // State is the assistant message lifecycle.
@@ -23,25 +23,25 @@ type State int
 
 // State lifecycle values.
 const (
-	StateStreaming State = iota
-	StateComplete
-	StateCancelled
-	StateError
+        StateStreaming State = iota
+        StateComplete
+        StateCancelled
+        StateError
 )
 
 func (s State) String() string {
-	switch s {
-	case StateStreaming:
-		return "streaming"
-	case StateComplete:
-		return "complete"
-	case StateCancelled:
-		return "cancelled"
-	case StateError:
-		return "error"
-	default:
-		return "unknown"
-	}
+        switch s {
+        case StateStreaming:
+                return "streaming"
+        case StateComplete:
+                return "complete"
+        case StateCancelled:
+                return "cancelled"
+        case StateError:
+                return "error"
+        default:
+                return "unknown"
+        }
 }
 
 // StopReason is set when an assistant message completes.
@@ -49,10 +49,10 @@ type StopReason int
 
 // StopReason values for completed assistant messages.
 const (
-	StopNone StopReason = iota
-	StopEndTurn
-	StopToolUse
-	StopMaxTokens
+        StopNone StopReason = iota
+        StopEndTurn
+        StopToolUse
+        StopMaxTokens
 )
 
 // BlockType is an assistant content block discriminant.
@@ -60,23 +60,23 @@ type BlockType int
 
 // BlockType values for assistant content blocks.
 const (
-	BlockText BlockType = iota
-	BlockThinking
-	BlockToolUse
+        BlockText BlockType = iota
+        BlockThinking
+        BlockToolUse
 )
 
 // ContentBlock is one assistant content part.
 type ContentBlock struct {
-	Type BlockType
+        Type BlockType
 
-	// Text / Thinking
-	Text string
+        // Text / Thinking
+        Text string
 
-	// ToolUse
-	ID       string
-	Name     string
-	Input    string // display / JSON-ish input
-	Complete bool
+        // ToolUse
+        ID       string
+        Name     string
+        Input    string // display / JSON-ish input
+        Complete bool
 }
 
 // ToolStatus is the tool run status.
@@ -84,132 +84,163 @@ type ToolStatus int
 
 // ToolStatus values for tool runs.
 const (
-	ToolQueued ToolStatus = iota
-	ToolInProgress
-	ToolDone
-	ToolError
-	ToolCancelled
-	ToolRejected
+        ToolQueued ToolStatus = iota
+        ToolInProgress
+        ToolDone
+        ToolError
+        ToolCancelled
+        ToolRejected
 )
 
 func (s ToolStatus) String() string {
-	switch s {
-	case ToolQueued:
-		return "queued"
-	case ToolInProgress:
-		return "in-progress"
-	case ToolDone:
-		return "done"
-	case ToolError:
-		return "error"
-	case ToolCancelled:
-		return "cancelled"
-	case ToolRejected:
-		return "rejected"
-	default:
-		return "unknown"
-	}
+        switch s {
+        case ToolQueued:
+                return "queued"
+        case ToolInProgress:
+                return "in-progress"
+        case ToolDone:
+                return "done"
+        case ToolError:
+                return "error"
+        case ToolCancelled:
+                return "cancelled"
+        case ToolRejected:
+                return "rejected"
+        default:
+                return "unknown"
+        }
 }
 
 // ParseToolStatus maps a progress / persist string onto ToolStatus.
 // Unknown values (including "") become ToolInProgress so live rows keep spinning.
 func ParseToolStatus(s string) ToolStatus {
-	switch s {
-	case "queued":
-		return ToolQueued
-	case "in-progress":
-		return ToolInProgress
-	case "done":
-		return ToolDone
-	case "error":
-		return ToolError
-	case "cancelled":
-		return ToolCancelled
-	case "rejected", "rejected-by-user":
-		return ToolRejected
-	default:
-		return ToolInProgress
-	}
+        switch s {
+        case "queued":
+                return ToolQueued
+        case "in-progress":
+                return ToolInProgress
+        case "done":
+                return ToolDone
+        case "error":
+                return ToolError
+        case "cancelled":
+                return ToolCancelled
+        case "rejected", "rejected-by-user":
+                return ToolRejected
+        default:
+                return ToolInProgress
+        }
 }
 
 // ToolRun is the live execution state for a tool_use id.
 type ToolRun struct {
-	ToolUseID string
-	Name      string // tool name (bash, read, ...)
-	Status    ToolStatus
-	Output    string
-	Error     string
-	Detail    string // optional one-line detail (path, cmd summary)
-	// Summary is the one-line outcome shown beside Detail once the run resolves
-	// ("200 OK · 42.1 KB · 1.2s"). Empty for most tools.
-	Summary  string
-	ExitCode int  // set when a local bash run finishes (Status Done/Error)
-	Local    bool // user "!cmd" bash; ignored by agent streaming/busy checks
-	Expanded bool // TUI starts the tool row open (user toggle still wins)
-	// Group is set when this run stands for a collapsed run of read-only calls
-	// (see CollapseGroups). Nil for every ordinary single-tool row.
-	Group *ToolGroup
+        ToolUseID string
+        Name      string // tool name (bash, read, ...)
+        Status    ToolStatus
+        Output    string
+        Error     string
+        Detail    string // optional one-line detail (path, cmd summary)
+        // Summary is the one-line outcome shown beside Detail once the run resolves
+        // ("200 OK · 42.1 KB · 1.2s"). Empty for most tools.
+        Summary  string
+        ExitCode int  // set when a local bash run finishes (Status Done/Error)
+        Local    bool // user "!cmd" bash; ignored by agent streaming/busy checks
+        Expanded bool // TUI starts the tool row open (user toggle still wins)
+        // Group is set when this run stands for a collapsed run of read-only calls
+        // (see CollapseGroups). Nil for every ordinary single-tool row.
+        Group *ToolGroup
+        // Sources carries structured source-card data for tools that produce
+        // ranked references (search-mode fetch). The TUI ignores this; the web
+        // frontend renders it as small source pills (favicon + host) below the
+        // answer bubble. Nil for non-search tool calls — the existing render
+        // path is unchanged.
+        //
+        // Populated by the executor when a tool's tooldef.Result carries Sources
+        // (see tooldef.Source for the field-by-field shape). Serialized as
+        // "sources" in the transcript JSON the web frontend reads.
+        Sources []ToolSource
+}
+
+// ToolSource is the session-layer mirror of tooldef.Source. We can't use
+// tooldef.Source directly because the session package is below tooldef in
+// the import graph (session is a low-level package; tooldef is one layer
+// up). The executor copies tooldef.Source → ToolSource when it converts a
+// tooldef.Result into a session.ToolData event, so the JSON shape the web
+// frontend reads is identical to what the tool produced.
+//
+// JSON tag names match tooldef.Source's exactly so the web frontend's
+// TypeScript Source interface works against either type without
+// per-field translation.
+type ToolSource struct {
+        Rank       int    `json:"rank"`
+        URL        string `json:"url"`
+        Title      string `json:"title"`
+        Host       string `json:"host"`
+        FaviconURL string `json:"favicon_url"`
+        Snippet    string `json:"snippet"`
+        Content    string `json:"content,omitempty"`
+        FetchError string `json:"fetch_error,omitempty"`
 }
 
 // ToolGroup describes a collapsed run of read-only tool calls. The counts are
 // what the summary row shows; Members are the individual tool_use ids, which the
 // UI expands into their own cards.
 type ToolGroup struct {
-	Members  []string
-	Reads    int
-	Searches int
-	Lists    int
-	// Fetched counts fetch / browser calls, which carry per-call detail worth
-	// keeping separate from plain reads.
-	Fetched int
-	// Hint is the most recent member's detail, so the row still says what it
-	// happened to be looking at last.
-	Hint string
+        Members  []string
+        Reads    int
+        Searches int
+        Lists    int
+        // Fetched counts fetch / browser calls, which carry per-call detail worth
+        // keeping separate from plain reads.
+        Fetched int
+        // Hint is the most recent member's detail, so the row still says what it
+        // happened to be looking at last.
+        Hint string
 }
 
 // Message is one session message. Assistant rows carry Content blocks and State.
 type Message struct {
-	ID         string
-	Role       Role
-	State      State      // assistant
-	StopReason StopReason // assistant when complete
-	Text       string     // user visible text
-	Images     []llm.Image
-	Content    []ContentBlock
-	// Usage is token consumption for the latest assistant turn (UI + diagnostics).
-	// Zero means unknown / not yet reported by the provider.
-	Usage TokenUsage
-	// TokensBefore is the context size before a compaction cut (RoleCompaction rows).
-	TokensBefore int
+        ID         string
+        Role       Role
+        State      State      // assistant
+        StopReason StopReason // assistant when complete
+        Text       string     // user visible text
+        Images     []llm.Image
+        Content    []ContentBlock
+        // Usage is token consumption for the latest assistant turn (UI + diagnostics).
+        // Zero means unknown / not yet reported by the provider.
+        Usage TokenUsage
+        // TokensBefore is the context size before a compaction cut (RoleCompaction rows).
+        TokensBefore int
 }
 
 // TokenUsage is a UI-facing copy of provider token counts for one completion.
 // The buckets mirror llm.Usage: PromptTokens is the input that missed the
 // cache, and the cached counts are separate rather than a subset.
 type TokenUsage struct {
-	PromptTokens     int
-	CompletionTokens int
-	CachedTokens     int // prompt cache reads (C in the composer)
-	CacheWriteTokens int // prompt cache writes (W in the composer)
-	TotalTokens      int
-	TPS              float64 // completion tokens per second, 0 when unknown
+        PromptTokens     int
+        CompletionTokens int
+        CachedTokens     int // prompt cache reads (C in the composer)
+        CacheWriteTokens int // prompt cache writes (W in the composer)
+        TotalTokens      int
+        TPS              float64 // completion tokens per second, 0 when unknown
 }
 
 // TokenUsageFrom converts provider usage into the UI-facing copy.
 func TokenUsageFrom(u llm.Usage) TokenUsage {
-	return TokenUsage{
-		PromptTokens:     u.PromptTokens,
-		CompletionTokens: u.CompletionTokens,
-		CachedTokens:     u.CachedTokens(),
-		CacheWriteTokens: u.CacheWriteTokens(),
-		TotalTokens:      u.TotalTokens,
-	}
+        return TokenUsage{
+                PromptTokens:     u.PromptTokens,
+                CompletionTokens: u.CompletionTokens,
+                CachedTokens:     u.CachedTokens(),
+                CacheWriteTokens: u.CacheWriteTokens(),
+                TotalTokens:      u.TotalTokens,
+        }
 }
 
 // Reported is true when the provider sent any non-zero token count.
 func (u TokenUsage) Reported() bool {
-	return u.TotalTokens > 0 || u.PromptTokens > 0 || u.CompletionTokens > 0 ||
-		u.CachedTokens > 0 || u.CacheWriteTokens > 0
+        return u.TotalTokens > 0 || u.PromptTokens > 0 || u.CompletionTokens > 0 ||
+                u.CachedTokens > 0 || u.CacheWriteTokens > 0
 }
 
 // ContextTokens is the size of the context the last completion occupied: the
@@ -219,48 +250,48 @@ func (u TokenUsage) Reported() bool {
 // llm.Usage.ContextTokens, and TestContextTokensMatchesProviderUsage keeps the
 // two from drifting apart.
 func (u TokenUsage) ContextTokens() int {
-	if u.TotalTokens > 0 {
-		return u.TotalTokens
-	}
-	return u.PromptTokens + u.CompletionTokens + u.CachedTokens + u.CacheWriteTokens
+        if u.TotalTokens > 0 {
+                return u.TotalTokens
+        }
+        return u.PromptTokens + u.CompletionTokens + u.CachedTokens + u.CacheWriteTokens
 }
 
 // FlatText joins assistant text blocks.
 func (m Message) FlatText() string {
-	if m.Role == RoleUser {
-		return m.Text
-	}
-	var text strings.Builder
-	for _, blk := range m.Content {
-		if blk.Type == BlockText {
-			text.WriteString(blk.Text)
-		}
-	}
-	out := text.String()
-	if out == "" {
-		return m.Text
-	}
-	return out
+        if m.Role == RoleUser {
+                return m.Text
+        }
+        var text strings.Builder
+        for _, blk := range m.Content {
+                if blk.Type == BlockText {
+                        text.WriteString(blk.Text)
+                }
+        }
+        out := text.String()
+        if out == "" {
+                return m.Text
+        }
+        return out
 }
 
 // Event is applied to session state.
 type Event interface {
-	isSessionEvent()
+        isSessionEvent()
 }
 
 // UserAppend appends a user message.
 type UserAppend struct {
-	ID     string
-	Text   string
-	Images []llm.Image
+        ID     string
+        Text   string
+        Images []llm.Image
 }
 
 func (UserAppend) isSessionEvent() {}
 
 // LocalBashStart appends a user-initiated "!cmd" bash row.
 type LocalBashStart struct {
-	ID      string
-	Command string
+        ID      string
+        Command string
 }
 
 func (LocalBashStart) isSessionEvent() {}
@@ -269,14 +300,14 @@ func (LocalBashStart) isSessionEvent() {}
 // appends if the last message is not a streaming/incomplete assistant —
 // mirrors assistant message-update semantics.
 type AssistantMessageUpdate struct {
-	Message Message
+        Message Message
 }
 
 func (AssistantMessageUpdate) isSessionEvent() {}
 
 // ToolData updates a tool run by tool_use id.
 type ToolData struct {
-	Run ToolRun
+        Run ToolRun
 }
 
 func (ToolData) isSessionEvent() {}
@@ -296,28 +327,28 @@ func (CompactionStarted) isSessionEvent() {}
 // appends a compaction transcript marker. TokensBefore is the context size
 // before the cut, which that marker shows.
 type CompactionComplete struct {
-	ID           string
-	TokensBefore int
-	Failed       bool
+        ID           string
+        TokensBefore int
+        Failed       bool
 }
 
 func (CompactionComplete) isSessionEvent() {}
 
 // Snapshot is the full session state the TUI projects from.
 type Snapshot struct {
-	Messages   []Message
-	Tools      map[string]ToolRun
-	Compacting bool
+        Messages   []Message
+        Tools      map[string]ToolRun
+        Compacting bool
 }
 
 // LastUsage returns the newest reported token usage in the snapshot. The UI
 // uses it to restore the token readout after a resume instead of keeping the
 // previous session's counts.
 func (s Snapshot) LastUsage() TokenUsage {
-	for _, m := range slices.Backward(s.Messages) {
-		if m.Usage.Reported() {
-			return m.Usage
-		}
-	}
-	return TokenUsage{}
+        for _, m := range slices.Backward(s.Messages) {
+                if m.Usage.Reported() {
+                        return m.Usage
+                }
+        }
+        return TokenUsage{}
 }

@@ -1,17 +1,17 @@
 package session
 
 import (
-	"time"
+        "time"
 
-	"github.com/damien1141/a1/internal/llm"
+        "github.com/damien1141/a1/internal/llm"
 )
 
 // MessageEntry is one node in the session tree. Entries are linked by
 // parent ID, enabling branching and cursor-based context building.
 type MessageEntry interface {
-	GetType() string
-	GetID() string
-	GetParent() *string
+        GetType() string
+        GetID() string
+        GetParent() *string
 }
 
 // EntryType is the JSON "type" discriminant of an entry.
@@ -19,19 +19,19 @@ type EntryType string
 
 // EntryType values stored in the JSON "type" discriminant.
 const (
-	EntrySession    = "EntrySession"
-	EntryMessage    = "EntryMessage"
-	EntryCompaction = "EntryCompaction"
+        EntrySession    = "EntrySession"
+        EntryMessage    = "EntryMessage"
+        EntryCompaction = "EntryCompaction"
 )
 
 // SessionHeader is the root entry of a session file.
 type SessionHeader struct {
-	Type          string `json:"type"` // Always "session"
-	Version       int    `json:"version,omitempty"`
-	ID            string `json:"id"`
-	Timestamp     string `json:"timestamp"`
-	Cwd           string `json:"cwd"`
-	ParentSession string `json:"parentSession,omitempty"`
+        Type          string `json:"type"` // Always "session"
+        Version       int    `json:"version,omitempty"`
+        ID            string `json:"id"`
+        Timestamp     string `json:"timestamp"`
+        Cwd           string `json:"cwd"`
+        ParentSession string `json:"parentSession,omitempty"`
 }
 
 // GetType implements MessageEntry.
@@ -42,18 +42,18 @@ func (s SessionHeader) GetID() string { return s.ID }
 
 // GetParent implements MessageEntry.
 func (s SessionHeader) GetParent() *string {
-	if s.ParentSession == "" {
-		return nil
-	}
-	return &s.ParentSession
+        if s.ParentSession == "" {
+                return nil
+        }
+        return &s.ParentSession
 }
 
 // SessionBaseEntry is the common header for non-root entries.
 type SessionBaseEntry struct {
-	Type      string    `json:"type"`
-	ID        string    `json:"id"`
-	ParentID  *string   `json:"parentID"` // null for root entries
-	Timestamp time.Time `json:"timestamp"`
+        Type      string    `json:"type"`
+        ID        string    `json:"id"`
+        ParentID  *string   `json:"parentID"` // null for root entries
+        Timestamp time.Time `json:"timestamp"`
 }
 
 // SessionMessageEntry wraps an LLM message as a session tree node.
@@ -61,9 +61,18 @@ type SessionBaseEntry struct {
 // dropped at flush) so token counts survive persist/reload for diagnostics
 // and session lifecycle extensions.
 type SessionMessageEntry struct {
-	SessionBaseEntry
-	Message llm.Message `json:"message"`
-	Usage   llm.Usage   `json:"usage,omitempty"`
+        SessionBaseEntry
+        Message llm.Message `json:"message"`
+        Usage   llm.Usage   `json:"usage,omitempty"`
+        // Sources carries the ranked source cards a search-mode fetch produced
+        // for this tool result — UI metadata the model-facing Message content
+        // has no field for. It rides the entry so the web transcript can
+        // re-render source pills after a reload (the live ToolRun.Sources the
+        // SSE stream mirrors is otherwise process-local). Nil for every other
+        // entry. JSONL decode ignores unknown fields and omits empty ones, so
+        // old binaries and old files interoperate in both directions, and the
+        // vault stores the entry JSON byte-faithfully — no vault change needed.
+        Sources []ToolSource `json:"sources,omitempty"`
 }
 
 // GetType implements MessageEntry.
@@ -77,24 +86,24 @@ func (s SessionMessageEntry) GetParent() *string { return s.ParentID }
 
 // Compaction is the data attached to a compaction entry.
 type Compaction struct {
-	Summary          string            `json:"summary"`
-	FirstKeptEntryID string            `json:"firstKeptEntryId"`
-	TokensBefore     int               `json:"tokensBefore"`
-	Details          CompactionDetails `json:"details,omitempty"`
-	PreserveData     map[string]any    `json:"preserveData,omitempty"`
-	FromExtension    *bool             `json:"fromExtension,omitempty"`
+        Summary          string            `json:"summary"`
+        FirstKeptEntryID string            `json:"firstKeptEntryId"`
+        TokensBefore     int               `json:"tokensBefore"`
+        Details          CompactionDetails `json:"details,omitempty"`
+        PreserveData     map[string]any    `json:"preserveData,omitempty"`
+        FromExtension    *bool             `json:"fromExtension,omitempty"`
 }
 
 // CompactionEntry is a compaction node in the session tree.
 type CompactionEntry struct {
-	SessionBaseEntry
-	Compaction Compaction `json:"compaction"`
+        SessionBaseEntry
+        Compaction Compaction `json:"compaction"`
 }
 
 // CompactionDetails records file reads/modifications captured at compaction.
 type CompactionDetails struct {
-	ReadFiles     []string `json:"readFiles,omitempty"`
-	ModifiedFiles []string `json:"modifiedFiles,omitempty"`
+        ReadFiles     []string `json:"readFiles,omitempty"`
+        ModifiedFiles []string `json:"modifiedFiles,omitempty"`
 }
 
 // GetType implements MessageEntry.

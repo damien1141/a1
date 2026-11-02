@@ -1,144 +1,194 @@
 package readtool
 
 import (
-	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"os"
-	"strings"
+        "context"
+        "encoding/json"
+        "errors"
+        "fmt"
+        "os"
+        "strings"
 
-	"github.com/damien1141/a1/internal/tools/tooldef"
+        "github.com/damien1141/a1/internal/tools/lstool"
+        "github.com/damien1141/a1/internal/tools/tooldef"
+        "github.com/damien1141/a1/internal/tools/watchertool"
 
-	"github.com/damien1141/a1/internal/llm"
-	"github.com/damien1141/a1/internal/util"
+        "github.com/damien1141/a1/internal/llm"
+        "github.com/damien1141/a1/internal/util"
 )
 
 const (
-	readDefaultMaxLines = 1000
-	readDefaultMaxBytes = 50 * 1024
+        readDefaultMaxLines = 1000
+        readDefaultMaxBytes = 50 * 1024
 )
 
-var readDescription = fmt.Sprintf(`Read a file and return its contents.
+var readDescription = fmt.Sprintf(`Read files and directory state. Prefer this over bash cat/head/tail.
 
-Pass the file path; use offset (1-based) and limit to paginate.
-Body lines are formatted as 'line_number|content'.
-Output body is capped at %d lines and %d KiB per call.`,
-	readDefaultMaxLines, readDefaultMaxBytes/1024)
+- file (default): read a file. Pass path; offset (1-based) + limit paginate.
+  Lines are 'line_number|content', capped at %d lines / %d KiB per call.
+  Re-reading an unchanged file returns an "unchanged" note while the earlier
+  content is still in context; refresh: true forces the content again.
+- ls: list a directory (names, sizes, types).
+- watch: files changed on disk since the last check (first call sets the
+  baseline).`,
+        readDefaultMaxLines, readDefaultMaxBytes/1024)
 
 // ReadTool returns the read tool definition + handler.
+// Dispatches by mode: file (default) → runRead, ls → lstool.LsTool().Run,
+// watch → watchertool.WatcherTool().Run. The two non-file modes are
+// escape hatches that delegate to the underlying tool without changing
+// the read surface — one tool to learn, three behaviors available.
 func ReadTool() tooldef.Tool {
-	return tooldef.Tool{
-		Definition: llm.ToolDefinition{
-			Name:        "read",
-			Description: readDescription,
-			Params: &llm.FunctionParameters{
-				Type: "object",
-				Properties: llm.Object{
-					"path": llm.Object{
-						"type":        "string",
-						"description": "Path to an existing file. Example: src/main.go",
-					},
-					"offset": llm.Object{
-						"type":        "integer",
-						"description": "First line to return, 1-based. Example: 11",
-					},
-					"limit": llm.Object{
-						"type":        "integer",
-						"description": fmt.Sprintf("Maximum lines to return; capped at %d.", readDefaultMaxLines),
-					},
-				},
-				Required: []string{"path"},
-			},
-			Readable: true,
-		},
-		DetailFromArgs: func(input json.RawMessage) string {
-			var in readInput
-			_ = json.Unmarshal(input, &in)
-			return strings.TrimSpace(in.Path)
-		},
-		Run: runRead,
-	}
+        return tooldef.Tool{
+                Definition: llm.ToolDefinition{
+                        Name:        "read",
+                        Description: readDescription,
+                        Params: &llm.FunctionParameters{
+                                Type: "object",
+                                Properties: llm.Object{
+                                        "mode": llm.Object{
+                                                "type":        "string",
+                                                "description": "file (default) | ls | watch.",
+                                                "enum":        []string{"file", "ls", "watch"},
+                                        },
+                                        "path": llm.Object{
+                                                "type":        "string",
+                                                "description": "File (file mode) or directory (ls/watch).",
+                                        },
+                                        "offset": llm.Object{
+                                                "type":        "integer",
+                                                "description": "First line to return, 1-based (file mode).",
+                                        },
+                                        "limit": llm.Object{
+                                                "type":        "integer",
+                                                "description": fmt.Sprintf("Maximum lines to return (mode=file), capped at %d. Ignored in ls/watch modes.", readDefaultMaxLines),
+                                        },
+                                        "refresh": llm.Object{
+                                                "type":        "boolean",
+                                                "description": "file mode: return full content even when unchanged since your last read (identical re-reads otherwise collapse to a note).",
+                                        },
+                                },
+                                Required: []string{"path"},
+                        },
+                        Readable: true,
+                },
+                DetailFromArgs: func(input json.RawMessage) string {
+                        var in readInput
+                        _ = json.Unmarshal(input, &in)
+                        return strings.TrimSpace(in.Path)
+                },
+                Run: runReadDispatch,
+        }
 }
 
+// readInput is the union of file + ls + watch params. Mode picks the
+// handler; the unused fields are ignored by the dispatched-to handler.
+// Refresh is consumed by the executor-level read elider (see
+// internal/agent/readcache.go), not the read itself — the tool always reads.
 type readInput struct {
-	Path   string `json:"path"`
-	Limit  int    `json:"limit,omitempty"`
-	Offset int    `json:"offset,omitempty"`
+        Mode    string `json:"mode,omitempty"`
+        Path    string `json:"path"`
+        Limit   int    `json:"limit,omitempty"`
+        Offset  int    `json:"offset,omitempty"`
+        Refresh bool   `json:"refresh,omitempty"`
+}
+
+// runReadDispatch reads the mode field and routes to the matching handler.
+// Default mode is "file" for backward compatibility; an empty mode is
+// treated as "file" so legacy callers that only sent path + offset + limit
+// keep working.
+func runReadDispatch(ctx context.Context, input json.RawMessage) (tooldef.Result, error) {
+        var in readInput
+        if err := json.Unmarshal(input, &in); err != nil {
+                return tooldef.Result{}, fmt.Errorf("failed to parse read arguments: %w", err)
+        }
+        mode := strings.ToLower(strings.TrimSpace(in.Mode))
+        if mode == "" {
+                mode = "file"
+        }
+        switch mode {
+        case "file":
+                return runRead(ctx, input)
+        case "ls":
+                return lstool.LsTool().Run(ctx, input)
+        case "watch":
+                return watchertool.WatcherTool().Run(ctx, input)
+        default:
+                return tooldef.Result{}, fmt.Errorf("unknown read mode %q: use file, ls, or watch", in.Mode)
+        }
 }
 
 func runRead(ctx context.Context, input json.RawMessage) (tooldef.Result, error) {
-	var in readInput
-	if err := json.Unmarshal(input, &in); err != nil {
-		return tooldef.Result{}, fmt.Errorf("failed to parse read arguments: %w", err)
-	}
-	path := strings.TrimSpace(in.Path)
-	if path == "" {
-		return tooldef.Result{}, errors.New("path is required")
-	}
-	path, err := tooldef.ResolveToCwd(ctx, path)
-	if err != nil {
-		return tooldef.Result{}, err
-	}
+        var in readInput
+        if err := json.Unmarshal(input, &in); err != nil {
+                return tooldef.Result{}, fmt.Errorf("failed to parse read arguments: %w", err)
+        }
+        path := strings.TrimSpace(in.Path)
+        if path == "" {
+                return tooldef.Result{}, errors.New("path is required")
+        }
+        path, err := tooldef.ResolveToCwd(ctx, path)
+        if err != nil {
+                return tooldef.Result{}, err
+        }
 
-	select {
-	case <-ctx.Done():
-		return tooldef.Result{}, ctx.Err()
-	default:
-	}
+        select {
+        case <-ctx.Done():
+                return tooldef.Result{}, ctx.Err()
+        default:
+        }
 
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return tooldef.Result{}, err
-	}
-	text := util.NormalizeLF(string(raw))
-	display := tooldef.RelToCwd(ctx, path)
-	header := "@file " + display
+        raw, err := os.ReadFile(path)
+        if err != nil {
+                return tooldef.Result{}, err
+        }
+        text := util.NormalizeLF(string(raw))
+        display := tooldef.RelToCwd(ctx, path)
+        header := "@file " + display
 
-	startLine := in.Offset
-	startLine = max(startLine, 1)
-	limit := in.Limit
-	if limit <= 0 || limit > readDefaultMaxLines {
-		limit = readDefaultMaxLines
-	}
+        startLine := in.Offset
+        startLine = max(startLine, 1)
+        limit := in.Limit
+        if limit <= 0 || limit > readDefaultMaxLines {
+                limit = readDefaultMaxLines
+        }
 
-	lines := strings.Split(text, "\n")
-	// Trailing empty split from final newline is fine for line numbering.
-	if text == "" {
-		out := header + "\n(empty file)"
-		return tooldef.Result{Content: out, Detail: display, Output: out}, nil
-	}
+        lines := strings.Split(text, "\n")
+        // Trailing empty split from final newline is fine for line numbering.
+        if text == "" {
+                out := header + "\n(empty file)"
+                return tooldef.Result{Content: out, Detail: display, Output: out}, nil
+        }
 
-	var (
-		b         strings.Builder
-		collected int
-		bytesN    int
-	)
-	b.WriteString(header)
-	b.WriteByte('\n')
+        var (
+                b         strings.Builder
+                collected int
+                bytesN    int
+        )
+        b.WriteString(header)
+        b.WriteByte('\n')
 
-	for lineNo := startLine; lineNo <= len(lines); lineNo++ {
-		select {
-		case <-ctx.Done():
-			return tooldef.Result{}, ctx.Err()
-		default:
-		}
-		line := lines[lineNo-1]
-		if bytesN+len(line)+1 > readDefaultMaxBytes {
-			fmt.Fprintf(&b, "\n... truncated at %d bytes. Next offset: %d\n", readDefaultMaxBytes, lineNo)
-			break
-		}
-		fmt.Fprintf(&b, "%4d|%s\n", lineNo, line)
-		bytesN += len(line) + 1
-		collected++
-		if collected >= limit {
-			if lineNo < len(lines) {
-				fmt.Fprintf(&b, "... truncated at %d lines. Next offset: %d\n", limit, lineNo+1)
-			}
-			break
-		}
-	}
+        for lineNo := startLine; lineNo <= len(lines); lineNo++ {
+                select {
+                case <-ctx.Done():
+                        return tooldef.Result{}, ctx.Err()
+                default:
+                }
+                line := lines[lineNo-1]
+                if bytesN+len(line)+1 > readDefaultMaxBytes {
+                        fmt.Fprintf(&b, "\n... truncated at %d bytes. Next offset: %d\n", readDefaultMaxBytes, lineNo)
+                        break
+                }
+                fmt.Fprintf(&b, "%4d|%s\n", lineNo, line)
+                bytesN += len(line) + 1
+                collected++
+                if collected >= limit {
+                        if lineNo < len(lines) {
+                                fmt.Fprintf(&b, "... truncated at %d lines. Next offset: %d\n", limit, lineNo+1)
+                        }
+                        break
+                }
+        }
 
-	out := b.String()
-	return tooldef.Result{Content: out, Detail: display, Output: out}, nil
+        out := b.String()
+        return tooldef.Result{Content: out, Detail: display, Output: out}, nil
 }

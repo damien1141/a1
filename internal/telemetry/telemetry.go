@@ -21,6 +21,11 @@ type Event struct {
 	CallID string
 	When   time.Time
 	Err    string
+	// DurationMS is the tool-run wall time (ok / error events only). Zero
+	// on tool_call events, which fire before the run starts.
+	DurationMS int64 `json:"duration_ms"`
+	// SessionID attributes the event to a session; empty when unknown.
+	SessionID string `json:"session_id"`
 }
 
 // Recorder collects lightweight telemetry events in memory.
@@ -37,15 +42,20 @@ func NewRecorder() *Recorder {
 	}
 }
 
-// Record adds a single event.
+// Record adds a single event. When a global sink is installed the event
+// is also handed to it (fire-and-forget; a slow or broken sink must never
+// stall the tool loop, so sink errors are dropped here).
 func (r *Recorder) Record(e Event) {
 	if r == nil {
 		return
 	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	r.events = append(r.events, e)
 	r.lastTool[e.Tool] = e.When
+	r.mu.Unlock()
+	if s := GlobalSink(); s != nil {
+		s.Record(e)
+	}
 }
 
 // ToolCalls returns the total number of tool_call events recorded.
@@ -155,6 +165,31 @@ func GlobalRecorder() *Recorder {
 	globalMu.RLock()
 	defer globalMu.RUnlock()
 	return globalRecorder
+}
+
+// Sink receives telemetry events for out-of-process persistence. The
+// in-memory Recorder stays the query surface for live counters; a sink is
+// the durable shadow (Bet 07: SQLite via AttachDB). Implementations must
+// be safe for concurrent use and must not block: Record is called on the
+// tool-loop path.
+type Sink interface {
+	Record(Event)
+}
+
+var globalSink Sink
+
+// SetGlobalSink installs the process-wide telemetry sink (nil detaches).
+func SetGlobalSink(s Sink) {
+	globalMu.Lock()
+	defer globalMu.Unlock()
+	globalSink = s
+}
+
+// GlobalSink returns the installed sink, or nil.
+func GlobalSink() Sink {
+	globalMu.RLock()
+	defer globalMu.RUnlock()
+	return globalSink
 }
 
 func countEvents(events []Event, kind EventKind) int {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/damien1141/a1/internal/llm"
 	"github.com/damien1141/a1/internal/project"
+	"github.com/damien1141/a1/internal/session"
 	"github.com/damien1141/a1/internal/tools/tooldef"
 	"github.com/damien1141/a1/internal/vector"
 )
@@ -113,35 +114,73 @@ func runVectorSearch(ctx context.Context, input json.RawMessage) (tooldef.Result
 		return tooldef.Result{}, fmt.Errorf("vector_search: embedding_model is not configured")
 	}
 
-	storePath := filepath.Join(proj.Global().Root(), "semantic_index.json")
-	store, err := vector.OpenStore(storePath)
-	if err != nil {
-		return tooldef.Result{}, fmt.Errorf("open vector store: %w", err)
-	}
-	defer store.Close()
-
 	embedder, err := vector.NewOllamaEmbedder(ss.OllamaBaseURL, ss.EmbeddingModel)
 	if err != nil {
 		return tooldef.Result{}, fmt.Errorf("create embedder: %w", err)
 	}
 
-	indexer := vector.NewIndexer(vector.IndexerConfig{
-		Embedder:   embedder,
-		Store:      store,
-		Root:       searchPath,
-		WindowSize: 50,
-		Stride:     25,
-	})
-
-	if in.Reindex || store.Len() == 0 {
-		if _, err := indexer.Reindex(ctx); err != nil {
-			return tooldef.Result{}, fmt.Errorf("reindex failed: %w", err)
+	var chunks []vector.Chunk
+	if v := session.DefaultVault(); v != nil && v.DB() != nil {
+		// Vault-backed store: chunks live as project-scoped rows in
+		// ~/.a1/a1.db, re-embedding only files whose (mtime, size)
+		// changed, with hybrid dense+FTS5 retrieval. The project key is
+		// the resolved search path so two workspaces sharing a vault
+		// keep separate indexes.
+		vs, err := vector.OpenVaultStore(vector.VaultStoreConfig{
+			DB:         v.DB(),
+			Project:    searchPath,
+			Root:       searchPath,
+			WindowSize: 50,
+			Stride:     25,
+			Embedder:   embedder,
+			Model:      ss.EmbeddingModel,
+		})
+		if err != nil {
+			return tooldef.Result{}, fmt.Errorf("open vector store: %w", err)
 		}
-	}
+		n, err := vs.Len(ctx)
+		if err != nil {
+			return tooldef.Result{}, fmt.Errorf("vector store len: %w", err)
+		}
+		// Same trigger as before, but "empty" is now per project + model
+		// instead of one global JSON file.
+		if in.Reindex || n == 0 {
+			if _, err := vs.Reindex(ctx, in.Reindex); err != nil {
+				return tooldef.Result{}, fmt.Errorf("reindex failed: %w", err)
+			}
+		}
+		chunks, err = vs.Search(ctx, query, limit)
+		if err != nil {
+			return tooldef.Result{}, fmt.Errorf("search failed: %w", err)
+		}
+	} else {
+		// Degraded mode (no vault handle — e.g. a harness that booted
+		// without one): the legacy JSON brute-force store, unchanged.
+		storePath := filepath.Join(proj.Global().Root(), "semantic_index.json")
+		store, err := vector.OpenStore(storePath)
+		if err != nil {
+			return tooldef.Result{}, fmt.Errorf("open vector store: %w", err)
+		}
+		defer store.Close()
 
-	chunks, err := indexer.Query(ctx, query, limit)
-	if err != nil {
-		return tooldef.Result{}, fmt.Errorf("search failed: %w", err)
+		indexer := vector.NewIndexer(vector.IndexerConfig{
+			Embedder:   embedder,
+			Store:      store,
+			Root:       searchPath,
+			WindowSize: 50,
+			Stride:     25,
+		})
+
+		if in.Reindex || store.Len() == 0 {
+			if _, err := indexer.Reindex(ctx); err != nil {
+				return tooldef.Result{}, fmt.Errorf("reindex failed: %w", err)
+			}
+		}
+
+		chunks, err = indexer.Query(ctx, query, limit)
+		if err != nil {
+			return tooldef.Result{}, fmt.Errorf("search failed: %w", err)
+		}
 	}
 
 	if len(chunks) == 0 {

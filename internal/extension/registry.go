@@ -63,7 +63,7 @@ type Installed struct {
 }
 
 // ListInstalled returns extension directories under dir with their install
-// metadata, sorted by ID. Dirs without a phi.yaml are skipped; hidden entries
+// metadata, sorted by ID. Dirs without a a1.yaml are skipped; hidden entries
 // are ignored (same rules as discovery).
 func ListInstalled(dir string) ([]Installed, error) {
 	entries, err := os.ReadDir(dir)

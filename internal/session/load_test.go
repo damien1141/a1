@@ -5,11 +5,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/vault"
 )
 
 func TestSessionPersistRoundTrip(t *testing.T) {
@@ -277,4 +279,38 @@ func messageContents(entries []MessageEntry) []string {
 
 func jsonEncode(f *os.File, v any) error {
 	return json.NewEncoder(f).Encode(v)
+}
+
+// TestListSessionsVaultPreview pins the vault-backed sidebar label: vault
+// rows carry no preview column and SessionPath is a synthetic path, so the
+// preview must come from the stored entry lines — otherwise vault-backed
+// sessions show their hex id in the sidebar forever.
+func TestListSessionsVaultPreview(t *testing.T) {
+	dir := t.TempDir()
+	v, err := vault.Open(filepath.Join(dir, "vault"))
+	require.NoError(t, err)
+	SetDefaultVault(v)
+	t.Cleanup(func() { SetDefaultVault(nil) })
+
+	project := filepath.Join(dir, "sessions")
+	require.NoError(t, os.MkdirAll(project, 0o755))
+	row := vault.SessionRow{
+		ID: "vaultpreview1", Project: project, Ts: "2026-11-01T00-00-00",
+		Cwd: project, CreatedAt: time.Now().UTC(),
+	}
+	require.NoError(t, v.PutSession(row))
+	require.NoError(t, v.AppendSessionEntries([]vault.SessionEntryRow{
+		{SessionID: row.ID, Seq: 1, Kind: "header",
+			Payload: `{"type":"EntrySession","id":"vaultpreview1","timestamp":"t","cwd":"` + project + `"}`},
+		{SessionID: row.ID, Seq: 2, Kind: "message",
+			Payload: `{"type":"EntryMessage","message":{"role":"user","content":"vault preview please"}}`},
+		{SessionID: row.ID, Seq: 3, Kind: "message",
+			Payload: `{"type":"EntryMessage","message":{"role":"assistant","content":"ok"}}`},
+	}))
+
+	list, err := ListSessions(project)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, "vaultpreview1", list[0].ID)
+	assert.Equal(t, "vault preview please", list[0].Preview)
 }

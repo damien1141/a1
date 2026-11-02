@@ -188,11 +188,11 @@ func runConfigValidate(ctx context.Context, input json.RawMessage) (tooldef.Resu
 	}
 
 	// Validate env overrides.
-	if os.Getenv("PHI_MODEL") != "" && cfg.DefaultModel != "" && os.Getenv("PHI_MODEL") != cfg.DefaultModel {
-		issues = append(issues, validationIssue{Severity: "info", Message: "PHI_MODEL overrides default_model"})
+	if os.Getenv("A1_MODEL") != "" && cfg.DefaultModel != "" && os.Getenv("A1_MODEL") != cfg.DefaultModel {
+		issues = append(issues, validationIssue{Severity: "info", Message: "A1_MODEL overrides default_model"})
 	}
-	if os.Getenv("PHI_API_KEY") != "" {
-		issues = append(issues, validationIssue{Severity: "info", Message: "PHI_API_KEY is set"})
+	if os.Getenv("A1_API_KEY") != "" {
+		issues = append(issues, validationIssue{Severity: "info", Message: "A1_API_KEY is set"})
 	}
 
 	if len(issues) == 0 {

@@ -135,11 +135,35 @@ func BuildRequest(
 			blocks := make([]anthropicContentBlock, 0, 1)
 			for i < len(msgs) && msgs[i].Role == llm.RoleTool {
 				tm := msgs[i]
-				blocks = append(blocks, anthropicContentBlock{
+				block := anthropicContentBlock{
 					Type:      "tool_result",
 					ToolUseID: normalizeToolCallID(tm.ToolCallID),
-					Content:   tm.Content,
-				})
+				}
+				if len(tm.Images) > 0 {
+					// Multimodal tool_result: Anthropic accepts an
+					// array of text/image blocks where the plain
+					// string would go. The text stays first so the
+					// path/summary reads even if the image is the
+					// payload the model actually wants.
+					inner := make([]anthropicContentBlock, 0, len(tm.Images)+1)
+					if tm.Content != "" {
+						inner = append(inner, anthropicContentBlock{Type: "text", Text: tm.Content})
+					}
+					for _, img := range tm.Images {
+						inner = append(inner, anthropicContentBlock{
+							Type: "image",
+							Source: &anthropicImageSource{
+								Type:      "base64",
+								MediaType: img.MimeType,
+								Data:      img.Data,
+							},
+						})
+					}
+					block.Content = inner
+				} else if tm.Content != "" {
+					block.Content = tm.Content
+				}
+				blocks = append(blocks, block)
 				i++
 			}
 			i--

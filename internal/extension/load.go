@@ -43,7 +43,7 @@ func Load(userDir, projectDir string) (*Runner, []Warning, error) {
 
 func extensionLogDir(userDir string) string {
 	if userDir == "" {
-		return filepath.Join(os.TempDir(), "phi-ext-logs")
+		return filepath.Join(os.TempDir(), "a1-ext-logs")
 	}
 	// ~/.a1/extensions → ~/.a1/logs
 	return filepath.Join(filepath.Dir(userDir), "logs")
