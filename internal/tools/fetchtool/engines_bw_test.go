@@ -103,3 +103,56 @@ func TestRouterWithCatchAllEngineRunsLast(t *testing.T) {
 	_, isMerged := r.fallbacks[0].(*mergedEngine)
 	assert.True(t, isMerged, "first fallback should be the merged web engine")
 }
+
+// fakeBWArgDaemon records the full argv of every daemon call (the -c-only
+// recorder above cannot see the lane/profile flags).
+func fakeBWArgDaemon(t *testing.T) *[][]string {
+	t.Helper()
+	var calls [][]string
+	origRun, origResolve := bw.RunCommand, bw.Resolve
+	bw.RunCommand = func(_ context.Context, _ string, args []string, _ []string) ([]byte, error) {
+		cp := append([]string(nil), args...)
+		calls = append(calls, cp)
+		return []byte(`{"ok":true,"result":[]}`), nil
+	}
+	bw.Resolve = func() (string, error) { return "/usr/bin/fake-betterwright", nil }
+	t.Cleanup(func() { bw.RunCommand, bw.Resolve = origRun, origResolve })
+	return &calls
+}
+
+// TestBWSearchEngineRidesBackgroundLane pins the daemon isolation: the
+// search fallback runs on the BACKGROUND lane of a DEDICATED profile, so
+// its headless spawns can never cold-spawn the shared default-profile
+// daemon headless (which made "/browser open" land in an invisible
+// window) and its page state never interleaves with the user's.
+func TestBWSearchEngineRidesBackgroundLane(t *testing.T) {
+	calls := fakeBWArgDaemon(t)
+	e := newBWSearchEngine()
+	_, _ = e.Search(t.Context(), "test query", searchOptions{maxResults: 5})
+
+	require.Len(t, *calls, 1, "one search = one daemon call")
+	args := (*calls)[0]
+	require.Contains(t, args, "run")
+	i := -1
+	for j, a := range args {
+		if a == "--session" && j+1 < len(args) {
+			i = j
+			break
+		}
+	}
+	require.GreaterOrEqual(t, i, 0, "the run must name a session lane")
+	assert.Equal(t, bw.BackgroundSession, args[i+1],
+		"search traffic must ride the background lane, never the user's a1 lane")
+	p := -1
+	for j, a := range args {
+		if a == "--profile" && j+1 < len(args) {
+			p = j
+			break
+		}
+	}
+	require.GreaterOrEqual(t, p, 0, "the run must pin a dedicated profile")
+	assert.Equal(t, bw.BackgroundProfile, args[p+1],
+		"the dedicated profile isolates the search daemon from the interactive one")
+	assert.NotContains(t, args, "--headed",
+		"background search is always headless — no window may pop up")
+}

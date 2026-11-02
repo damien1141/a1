@@ -17,10 +17,11 @@ import (
         "path/filepath"
 
         "github.com/damien1141/a1/internal/agent"
+        "github.com/damien1141/a1/internal/llm"
         "github.com/damien1141/a1/internal/memstore"
         "github.com/damien1141/a1/internal/persona"
 
-	"github.com/damien1141/a1/internal/vault"
+        "github.com/damien1141/a1/internal/vault"
 )
 
 // personaView is the lightweight persona embedded in /api/state so every
@@ -146,4 +147,67 @@ func (s *Server) effectiveMemoryEnabled(global bool) bool {
                 }
         }
         return global
+}
+
+// effectiveModelName resolves the model name the UI should show and new
+// engines should boot: the manual settings-panel knob when set, otherwise
+// the ACTIVE persona's Model, otherwise "" (the project default sentinel
+// the frontend renders as "default"). This is the display-side counterpart
+// of Engine.applyPersonaSettings' model layer — before it, an untouched
+// knob resolved straight to the startup model and the persona's model was
+// invisible to the footer chip and the settings panel until some engine
+// happened to apply it.
+func (s *Server) effectiveModelName() string {
+        if name := s.stateStore().snapshot().Model; name != "" {
+                return name
+        }
+        if s.personaStore != nil {
+                if p, err := s.personaStore.ActivePersona(); err == nil && p.Model != "" {
+                        return p.Model
+                }
+        }
+        return ""
+}
+
+// effectiveModelConfig resolves the model config for a new engine: knob →
+// active persona's Model → project default (same order as
+// effectiveModelName, returning the full config + think level).
+func (s *Server) effectiveModelConfig() (llm.ModelConfig, bool) {
+        return s.stateStore().resolveModel(s.proj, s.personaModelName())
+}
+
+// personaModelName returns the active persona's Model override ("" when the
+// persona declares none, no store is attached, or the store fails to read).
+func (s *Server) personaModelName() string {
+        if s.personaStore != nil {
+                if p, err := s.personaStore.ActivePersona(); err == nil {
+                        return p.Model
+                }
+        }
+        return ""
+}
+
+// personaPermissionMode returns the active persona's PermissionMode override
+// ("" when the persona declares none). Used by the mode surfaces so the
+// switcher shows — and writes — what the persona owns, mirroring the memory
+// toggle's persona-ownership pattern.
+func (s *Server) personaPermissionMode() string {
+        if s.personaStore != nil {
+                if p, err := s.personaStore.ActivePersona(); err == nil {
+                        return p.PermissionMode
+                }
+        }
+        return ""
+}
+
+// effectivePermissionMode resolves the permission mode the UI displays and
+// new sessions run with: the ACTIVE persona's explicit PermissionMode when
+// set, otherwise the surface's raw mode (modeStore). The engine folds the
+// same layer in applyPersonaSettings, so the switcher pill and the gate can
+// never disagree about which mode is live.
+func (s *Server) effectivePermissionMode() string {
+        if m := s.personaPermissionMode(); m != "" {
+                return m
+        }
+        return string(s.modeStore().mode())
 }

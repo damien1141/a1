@@ -10,6 +10,40 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **Persona settings are the defaults everywhere.** The active persona's
+  Model, PermissionMode, MemoryModel, and memory toggle now define what a
+  new session actually runs and what every selector shows — the "falls back
+  to the startup model" gap is closed at every layer:
+  - The DEFAULT persona's settings are real settings. `applyPersonaSettings`
+    dropped its isDefault skip (the editor writes Model/PermissionMode for
+    every persona; they were silently dead on the default one), fresh web
+    engines now adopt the active persona even when it is the default
+    (`liveFor` no longer skips SetPersona for it), and the memory-ops client
+    routes the default persona's MemoryModel too — smart session names and
+    consolidation finally run on the configured second model instead of the
+    main one.
+  - The memory-ops model resolves through the model catalog before the
+    legacy name-swap, so a MemoryModel on another provider (a local 8B
+    against a hosted main model) gets that provider's base URL, API key, and
+    request hooks. Persona model swaps carry the override model's hooks the
+    same way, and reverting restores the construction-time pair.
+  - The web GUI shows — and writes — what the persona owns. The footer chip,
+    the settings panel, and the mode switcher resolve the EFFECTIVE values
+    (manual knob → persona override → project default) exactly like the
+    engines do; the model picker and the mode switcher persist to the
+    persona when it carries the corresponding override (the memory toggle's
+    ownership rule, applied consistently); and a persona switch clears the
+    stale per-run model knob so the new persona owns the defaults from the
+    first render. The persona editor's memory toggle is tri-state
+    (Inherit / On / Off, via `clearMemoryEnabled`) — the old binary form
+    silently pinned "off" on every save.
+
+- **`browser.headless` in config.yaml** forces the interactive browser's
+  window mode past the display probe: `false` gives `/browser open` a
+  visible window from DISPLAY-less TUI environments (tmux over SSH), `true`
+  keeps servers/CI invisible. `A1_BROWSER_HEADLESS` still wins per
+  invocation.
+
 - **JEV is configurable from the config web server — TypeSafe API or a
   local Ollama model.** A new `jev:` section in config.yaml (and a real
   editor panel replacing the stale "JEV placeholder", which actually
@@ -87,6 +121,42 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
     contracts can declare them as done-criteria.
 
 ### Fixed
+
+- **Smart titles ran on the main model.** `memoryConsolidationClient`
+  consulted `session.activePersona()`, which reports false for the default
+  persona — a MemoryModel configured there never routed. It now reads the
+  persona store directly and resolves the model through the catalog (see
+  Added above).
+
+- **The TUI browser tool never launched a live browser.** Four stacked
+  causes: the fetch tool's BetterWright search fallback cold-spawned the
+  shared default-profile daemon HEADLESS, and a warm daemon ignores
+  `--headed` — every later `/browser open` landed in an invisible window
+  (the fallback now rides a dedicated `a1-bg` lane and profile with its own
+  daemon, so background search can neither poison the interactive browser
+  nor navigate its page); `browserHeadless` had no config override (added,
+  see Added above); kamitool's PDF render still spawns the shared profile
+  headless, but the spawn is now tracked and `ensureBrowser` recovers a
+  visible window by stopping every daemon and respawning cold-headed; and
+  the `/browser` command discarded both its result and its error
+  (DispatchSlash swallows them), so success and failure were both invisible
+  — it now toasts the outcome, and `open` says which window mode landed and
+  how to force the other one.
+
+- **DELETE /api/session left underscore-id sessions on disk.**
+  `deleteSessionFiles` matched the id after the LAST underscore while the
+  canonical filename parser uses the FIRST — a "successful" delete left the
+  file and the sidebar row alive for any session id containing an
+  underscore.
+
+- **The webserver test suite deadlocked.** One test's hanging LLM handler
+  parked with the request body unread; net/http only arms the
+  disconnect-detection that cancels `r.Context()` after the body is
+  consumed, so the test server's Close blocked forever and the entire
+  package timed out (the long-standing "webserver e2e too heavy to run"
+  caveat). The handler now drains the body before parking, the test cancels
+  its in-flight turn via /api/cancel, and teardown force-drops connections.
+  The full suite runs unfiltered in seconds.
 
 - **Auto-compaction robustness on small windows (the 64K "sometimes
   works or doesn't" pass).** Five structural weaknesses, each capable of

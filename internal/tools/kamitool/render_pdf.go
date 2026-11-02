@@ -1,13 +1,13 @@
 package kamitool
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"os"
-	"path/filepath"
+        "context"
+        "encoding/json"
+        "fmt"
+        "os"
+        "path/filepath"
 
-	"github.com/damien1141/a1/internal/bw"
+        "github.com/damien1141/a1/internal/bw"
 )
 
 // renderPDF generates a PDF from an HTML string using the BetterWright
@@ -21,45 +21,51 @@ import (
 // shows in the PDF (the default is white-only). page.pdf requires headless
 // Chromium, which is the daemon's default launch mode.
 //
+// The render rides the BACKGROUND session lane (headless, shared profile —
+// PDFs may need the user's logged-in profile for authenticated pages). The
+// headless spawn is recorded by the bw client, so a later interactive
+// "/browser open" detects the headless daemon and recovers a visible
+// window (close + respawn headed) instead of silently landing headless.
+//
 // paperSize is "A4" or "Letter".
 func renderPDF(ctx context.Context, html string, outputPath string, paperSize string) error {
-	// Write HTML next to the output so the daemon can load it via file://.
-	// Inline content (page.setContent) works but is less reliable for
-	// @font-face with file:// URLs — the browser may not resolve local
-	// font paths from an inline context.
-	tmpDir := filepath.Dir(outputPath)
-	htmlFile, err := os.CreateTemp(tmpDir, "kami-*.html")
-	if err != nil {
-		return fmt.Errorf("create temp html: %w", err)
-	}
-	htmlPath := htmlFile.Name()
-	defer os.Remove(htmlPath)
-	if _, err := htmlFile.WriteString(html); err != nil {
-		_ = htmlFile.Close()
-		return fmt.Errorf("write temp html: %w", err)
-	}
-	_ = htmlFile.Close()
+        // Write HTML next to the output so the daemon can load it via file://.
+        // Inline content (page.setContent) works but is less reliable for
+        // @font-face with file:// URLs — the browser may not resolve local
+        // font paths from an inline context.
+        tmpDir := filepath.Dir(outputPath)
+        htmlFile, err := os.CreateTemp(tmpDir, "kami-*.html")
+        if err != nil {
+                return fmt.Errorf("create temp html: %w", err)
+        }
+        htmlPath := htmlFile.Name()
+        defer os.Remove(htmlPath)
+        if _, err := htmlFile.WriteString(html); err != nil {
+                _ = htmlFile.Close()
+                return fmt.Errorf("write temp html: %w", err)
+        }
+        _ = htmlFile.Close()
 
-	js := fmt.Sprintf(`await page.goto(%s);
+        js := fmt.Sprintf(`await page.goto(%s);
 await page.evaluate(() => document.fonts.ready);
 const out = artifactPath('a1.pdf');
 await page.pdf({path: out, format: %s, printBackground: true, margin: {top: '0', bottom: '0', left: '0', right: '0'}});
 return out;`, bw.JSString("file://"+htmlPath), bw.JSString(paperSize))
 
-	env, err := bw.Run(ctx, "", false, js)
-	if err != nil {
-		return fmt.Errorf("render pdf: %w", err)
-	}
-	var artifact string
-	if jerr := json.Unmarshal(env.Result, &artifact); jerr != nil || artifact == "" {
-		return fmt.Errorf("render pdf: unexpected daemon result %.200s", string(env.Result))
-	}
-	pdfBytes, err := os.ReadFile(artifact)
-	if err != nil {
-		return fmt.Errorf("read pdf artifact: %w", err)
-	}
-	if err := os.WriteFile(outputPath, pdfBytes, 0o644); err != nil {
-		return fmt.Errorf("write pdf: %w", err)
-	}
-	return nil
+        env, err := bw.RunLane(ctx, bw.BackgroundSession, "", false, js)
+        if err != nil {
+                return fmt.Errorf("render pdf: %w", err)
+        }
+        var artifact string
+        if jerr := json.Unmarshal(env.Result, &artifact); jerr != nil || artifact == "" {
+                return fmt.Errorf("render pdf: unexpected daemon result %.200s", string(env.Result))
+        }
+        pdfBytes, err := os.ReadFile(artifact)
+        if err != nil {
+                return fmt.Errorf("read pdf artifact: %w", err)
+        }
+        if err := os.WriteFile(outputPath, pdfBytes, 0o644); err != nil {
+                return fmt.Errorf("write pdf: %w", err)
+        }
+        return nil
 }

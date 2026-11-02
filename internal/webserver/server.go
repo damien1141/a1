@@ -437,9 +437,11 @@ func (s *Server) liveFor(sessionID string) (*liveEngine, error) {
                 mem = s.memStoreFor()
         }
         // Resolve the live model + think level so a model switch applies to
-        // brand-new sessions too (not just already-running engines).
+        // brand-new sessions too (not just already-running engines). The
+        // resolution folds the ACTIVE persona's Model in when the manual
+        // knob is untouched — persona settings are the defaults.
         modelCfg := s.proj.Config().Model()
-        if cfg, ok := s.stateStore().resolveModel(s.proj); ok {
+        if cfg, ok := s.effectiveModelConfig(); ok {
                 modelCfg = cfg
         }
         // engineOptions reads the mode store (WithBasePermissionMode needs the
@@ -450,11 +452,14 @@ func (s *Server) liveFor(sessionID string) (*liveEngine, error) {
                 engOpts = append(engOpts, agent.WithMemoryStore(mem))
         }
         // Capture the ACTIVE persona before the locked section: a freshly
-        // built engine must adopt its settings (model, permission mode) on
-        // creation, not only on the next switch — a user who switched to a
-        // persona yesterday and opens a new chat today expects the new
-        // session to run that persona's model and mode. The application
-        // itself runs AFTER s.mu releases (see the deferred func below): the
+        // built engine must adopt its settings (model, permission mode,
+        // memory-ops model) on creation, not only on the next switch — a
+        // user who configured a persona yesterday and opens a new chat
+        // today expects the new session to run that persona's settings.
+        // The DEFAULT persona included: its settings are real settings the
+        // editor writes, and skipping the apply was why fresh sessions
+        // fell back to the startup model. The application itself runs
+        // AFTER s.mu releases (see the deferred func below): the
         // permission-mode setter re-enters s.mu through applyToEngines, so
         // applying under the lock would self-deadlock.
         activePersona := ""
@@ -469,11 +474,13 @@ func (s *Server) liveFor(sessionID string) (*liveEngine, error) {
         // applyPersonaToEngines applies switches to already-live engines.
         var fresh *liveEngine
         defer func() {
-                if fresh == nil || activePersona == "" || activePersona == persona.DefaultPersonaID {
+                if fresh == nil || activePersona == "" {
                         return
                 }
-                // The default persona carries no overrides by definition —
-                // the engine's base config already IS its settings.
+                // SetPersona("") reverts to the default persona, so the
+                // always-run form is safe for every id — applyPersonaSettings
+                // applies the (possibly empty) overrides and restores the
+                // engine's base where the persona declares none.
                 _ = fresh.engine.SetPersona(activePersona)
         }()
 

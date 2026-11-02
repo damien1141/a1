@@ -148,3 +148,79 @@ var (
 	_ = fmt.Sprintf
 	_ = os.Getenv
 )
+
+// TestRunLaneUsesNamedSession pins the lane plumbing: RunLane drives the
+// BACKGROUND lane (a different --session), Run keeps the interactive "a1"
+// lane, and the lane flag is never empty.
+func TestRunLaneUsesNamedSession(t *testing.T) {
+	orig := Resolve
+	Resolve = func() (string, error) { return "/usr/bin/fake-bw", nil }
+	t.Cleanup(func() { Resolve = orig })
+
+	var seenSessions []string
+	fakeDaemon(t, func(_ string, args []string) ([]byte, error) {
+		i := indexOf(args, "--session")
+		require.GreaterOrEqual(t, i, 0)
+		seenSessions = append(seenSessions, args[i+1])
+		return []byte(`{"ok":true,"result":true}`), nil
+	})
+
+	_, err := RunLane(t.Context(), BackgroundSession, "", false, "return true")
+	require.NoError(t, err)
+	_, err = Run(t.Context(), "", false, "return true")
+	require.NoError(t, err)
+
+	require.Len(t, seenSessions, 2)
+	assert.Equal(t, BackgroundSession, seenSessions[0],
+		"background traffic must ride its own lane, never the user's page")
+	assert.Equal(t, Session, seenSessions[1],
+		"the interactive helper keeps the a1 lane")
+}
+
+// TestSpawnTrackingFollowsRuns pins the headless-spawn detection the
+// interactive browser path relies on: every run records the profile's
+// spawn mode, a close-all forgets everything (the daemons are gone), and
+// the default profile key normalizes "" and "default".
+func TestSpawnTrackingFollowsRuns(t *testing.T) {
+	orig := Resolve
+	Resolve = func() (string, error) { return "/usr/bin/fake-bw", nil }
+	t.Cleanup(func() { Resolve = orig })
+	ResetSpawnTracking()
+	t.Cleanup(ResetSpawnTracking)
+
+	fakeDaemon(t, func(_ string, _ []string) ([]byte, error) {
+		return []byte(`{"ok":true,"result":true}`), nil
+	})
+
+	// Nothing spawned yet: unknown, not "headless".
+	_, spawned := LastSpawnHeaded("")
+	require.False(t, spawned, "no spawn yet: the profile is unknown, not headless")
+
+	// A background headless run on the default profile marks it headless.
+	_, err := RunLane(t.Context(), BackgroundSession, "", false, "return true")
+	require.NoError(t, err)
+	headed, spawned := LastSpawnHeaded("")
+	assert.False(t, headed, "a headless spawn must be recorded as headless")
+	assert.True(t, spawned)
+	// "default" and "" normalize to the same key.
+	headed, spawned = LastSpawnHeaded(DefaultProfile)
+	assert.False(t, headed)
+	assert.True(t, spawned)
+
+	// A headed spawn on another profile records independently.
+	_, err = RunLane(t.Context(), Session, "work", true, "return true")
+	require.NoError(t, err)
+	headed, spawned = LastSpawnHeaded("work")
+	assert.True(t, headed)
+	assert.True(t, spawned)
+	// The default profile is still headless.
+	headed, _ = LastSpawnHeaded("")
+	assert.False(t, headed)
+
+	// Close-all forgets everything (fresh daemons next time).
+	require.NoError(t, Close(t.Context(), true, ""))
+	_, spawned = LastSpawnHeaded("")
+	assert.False(t, spawned, "close-all must drop spawn-mode knowledge")
+	_, spawned = LastSpawnHeaded("work")
+	assert.False(t, spawned)
+}

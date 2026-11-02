@@ -53,11 +53,18 @@ func (s *Server) broadcastState() {
 // branchName is best-effort: a missing repo or detached HEAD yields "".
 func (s *Server) stateView() statePayload {
         snap := s.stateStore().snapshot()
-        mode := s.modeStore().mode()
         st := statePayload{
-                Model:         snap.Model,
+                // Effective model: the manual knob when set, otherwise the
+                // ACTIVE persona's Model — persona settings are the default
+                // selection, so the chip names what a new session would
+                // actually run instead of an empty "default" placeholder.
+                Model:         s.effectiveModelName(),
                 Think:         snap.Think,
-                Mode:          string(mode),
+                // Effective mode: the persona's explicit PermissionMode when
+                // set, otherwise the surface's raw mode — the same layer
+                // engines fold in applyPersonaSettings, so the pill and the
+                // gate can never disagree.
+                Mode:          s.effectivePermissionMode(),
                 AgentsEnabled: snap.AgentsEnabled,
                 // Effective memory: the active persona's explicit
                 // memory_enabled when set, otherwise the global toggle —
@@ -69,9 +76,9 @@ func (s *Server) stateView() statePayload {
         if s.proj != nil && s.proj.Config() != nil {
                 cfg := s.proj.Config().Model()
                 st.ContextWindow = cfg.ContextWindow
-                if snap.Model != "" {
+                if st.Model != "" {
                         for _, m := range s.proj.Config().AllModels() {
-                                if m.Name == snap.Model {
+                                if m.Name == st.Model {
                                         st.ContextWindow = m.ContextWindow
                                         break
                                 }
@@ -232,7 +239,7 @@ func (s *Server) handleContext(w http.ResponseWriter, r *http.Request) {
                 return
         }
         window := 0
-        if cfg, ok := s.stateStore().resolveModel(s.proj); ok {
+        if cfg, ok := s.effectiveModelConfig(); ok {
                 window = cfg.ContextWindow
         }
         toolBytes, toolCount := 0, 0
@@ -609,8 +616,11 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, _ *http.Request) {
         for _, m := range llm.AllThinkModes() {
                 thinkLevels = append(thinkLevels, string(m))
         }
+        // The active mode is the EFFECTIVE one (persona override folded
+        // in), so the panel highlights what new sessions actually run —
+        // not the pre-persona base the raw store still holds.
+        cur := permission.Mode(s.effectivePermissionMode())
         modes := make([]modeEntry, 0, len(webPermissionModes))
-        cur := s.modeStore().mode()
         for _, m := range webPermissionModes {
                 modes = append(modes, modeEntry{
                         Mode:    string(m),
@@ -625,11 +635,14 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, _ *http.Request) {
         // the toggle re-render OFF right after a flip — while the footer
         // badge and the engines ran ON. effectiveMemoryEnabled is the same
         // resolver stateView() uses, so the panel, the footer, and the
-        // engine can never disagree about memory.
+        // engine can never disagree about memory. The model carries the
+        // same effective layer (knob → persona → "" default sentinel) for
+        // the same reason: the panel must highlight what the persona
+        // actually runs.
         snap := s.stateStore().snapshot()
         writeJSON(w, http.StatusOK, map[string]any{
                 "state": map[string]any{
-                        "model":         snap.Model,
+                        "model":         s.effectiveModelName(),
                         "think":         snap.Think,
                         "agentsEnabled": snap.AgentsEnabled,
                         "memoryEnabled": s.effectiveMemoryEnabled(snap.MemoryEnabled),
@@ -642,8 +655,12 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, _ *http.Request) {
         })
 }
 
-// handleSetModel swaps the active model. The new config is applied to every
-// live engine so the next turn uses it.
+// handleSetModel swaps the active model. WHERE the write lands depends on
+// the active persona, mirroring the memory toggle's ownership pattern: a
+// persona carrying an explicit Model owns the setting (the picker edits
+// the persona, persisted to the store), while a persona without one
+// inherits the per-run global knob. Either way the resolved model is
+// re-applied to every live engine so the next turn uses it.
 func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
         var body struct {
                 Name string `json:"name"`
@@ -663,6 +680,22 @@ func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
                 }
                 if !valid {
                         writeStatus(w, http.StatusBadRequest, "unknown model: "+name)
+                        return
+                }
+        }
+        if s.personaStore != nil {
+                if p, err := s.personaStore.ActivePersona(); err == nil && p.Model != "" {
+                        // The active persona owns its model: persist the pick
+                        // there instead of the per-run knob, so it survives
+                        // restarts and applies to every surface.
+                        if _, err := s.personaStore.SetSettings(p.ID, &name, nil, nil); err != nil {
+                                writeStatus(w, http.StatusInternalServerError, err.Error())
+                                return
+                        }
+                        s.applyPersonaToEngines()
+                        s.broadcastState()
+                        s.toast("", toastSuccess, "Model: "+defaultIfEmpty(name, "project default"), 2*time.Second)
+                        writeJSON(w, http.StatusOK, s.stateView())
                         return
                 }
         }
@@ -777,8 +810,10 @@ func (s *Server) handleSetMemory(w http.ResponseWriter, r *http.Request) {
 
 // applyModelToEngines re-applies the live model + think level to every
 // running engine. Engines created later pick the values up in liveFor.
+// The resolution folds the ACTIVE persona's Model in when the manual knob
+// is untouched, so a persona model edit reaches live engines too.
 func (s *Server) applyModelToEngines() {
-        cfg, ok := s.stateStore().resolveModel(s.proj)
+        cfg, ok := s.effectiveModelConfig()
         if !ok {
                 return
         }

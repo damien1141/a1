@@ -25,7 +25,7 @@ import (
         "github.com/damien1141/a1/internal/mcp"
         "github.com/damien1141/a1/internal/memstore"
         "github.com/damien1141/a1/internal/permission"
-        "github.com/damien1141/a1/internal/persona"
+        "github.com/damien1141/a1/internal/project/model"
         "github.com/damien1141/a1/internal/schedule"
         "github.com/damien1141/a1/internal/session"
         "github.com/damien1141/a1/internal/session/compaction"
@@ -187,6 +187,13 @@ type Engine struct {
         // override; restored when the next persona declares none.
         basePermissionMode permission.Mode
         hooks              llmclient.Hooks
+        // baseHooks is the hooks set the engine was constructed with (the
+        // surface wires model.HooksFor(mainModel)). A persona model swap
+        // replaces hooks with the override model's preset; reverting to the
+        // base model restores these — vendor-specific wire shapes must
+        // follow the model actually in use, not the one the surface booted
+        // with.
+        baseHooks           llmclient.Hooks
         gate               permission.Gate
         ask                permission.AskFunc
         question           tooldef.QuestionFunc
@@ -263,6 +270,7 @@ func NewEngine(model llm.ModelConfig, sess *Session, opts ...EngineOption) (*Eng
                 modelCfg:             model,
                 baseModelCfg:         model,
                 hooks:                cfg.hooks,
+                baseHooks:            cfg.hooks,
                 session:              sess,
                 gate:                 cfg.gate,
                 ask:                  cfg.ask,
@@ -434,6 +442,7 @@ func (engine *Engine) SetModelWithHooks(cfg llm.ModelConfig, hooks llmclient.Hoo
         engine.modelCfg = cfg
         engine.baseModelCfg = cfg
         engine.hooks = hooks
+        engine.baseHooks = hooks
         engine.resetWindowForModel(cfg)
         engine.rebindTools()
 }
@@ -594,17 +603,22 @@ func (engine *Engine) SetPersona(id string) error {
 // settings (Model, PermissionMode) that the engine has resolvers/setters
 // for. Safe to call when no persona store is attached.
 //
-// Semantics (this is the fix for "persona doesn't set the permission mode /
-// context window on switch"):
-//   - A persona override applies on EVERY switch to that persona.
-//   - A persona WITHOUT an override — and the default persona — restores the
-//     engine's base model + base mode captured at construction. Before this,
-//     the previous persona's model and gate leaked into the next persona
-//     (and into the default persona), because apply only ever moved forward.
+// Semantics:
+//   - A persona override applies on EVERY switch to that persona — the
+//     DEFAULT persona included. The persona editor offers the settings
+//     fields for every persona; "the default persona carries no overrides
+//     by definition" was true of the shipped defaultPersona() but not of
+//     what users configure, and the skip made default-persona settings
+//     silently dead (the "falls back to the startup model" report).
+//   - A persona WITHOUT an override — and the default persona with none
+//     configured — restores the engine's base model + base mode captured
+//     at construction, so the previous persona's settings never leak into
+//     the next persona.
 //   - A model change (override applied OR reverted to base) re-seeds the
-//     runtime context window via resetWindowForModel, so the footer's
-//     denominator follows the persona's provider (different providers have
-//     different context windows).
+//     runtime context window via resetWindowForModel and swaps the request
+//     hooks to the model actually in use (different providers need
+//     different wire shapes), so the footer's denominator and the client's
+//     request building both follow the persona's provider.
 //
 // Silently no-ops on resolver miss (resolver returns false) — a
 // misconfigured persona setting should never break the persona switch
@@ -629,18 +643,18 @@ func (engine *Engine) applyPersonaSettings() {
         if err != nil {
                 return
         }
-        // The default persona carries no overrides by definition — its
-        // effective settings are the base config.
-        isDefault := p.ID == persona.DefaultPersonaID
 
         // 2. Apply the model override, or revert to base when this persona
         //    doesn't name one. Both directions reset the runtime context
         //    window: the new model's provider may have a different window,
         //    and a stale denominator would mis-trigger (or skip) compaction.
-        if !isDefault && p.Model != "" {
+        //    Hooks follow the model in use — a persona model on another
+        //    provider needs that provider's wire shape, not the main one's.
+        if p.Model != "" {
                 if engine.personaModelResolver != nil {
                         if m, ok := engine.personaModelResolver(p.Model); ok {
                                 engine.modelCfg = m
+                                engine.hooks = model.HooksFor(m.Name)
                                 engine.resetWindowForModel(m)
                         }
                         // Resolver miss → keep the previous modelCfg. The user
@@ -649,6 +663,7 @@ func (engine *Engine) applyPersonaSettings() {
                 }
         } else if engine.modelCfg.Name != engine.baseModelCfg.Name {
                 engine.modelCfg = engine.baseModelCfg
+                engine.hooks = engine.baseHooks
                 engine.resetWindowForModel(engine.baseModelCfg)
         }
 
@@ -658,7 +673,7 @@ func (engine *Engine) applyPersonaSettings() {
         if engine.permissionModeSetter == nil {
                 return
         }
-        if !isDefault && p.PermissionMode != "" {
+        if p.PermissionMode != "" {
                 engine.permissionModeSetter(permission.Mode(p.PermissionMode))
                 return
         }

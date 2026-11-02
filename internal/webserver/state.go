@@ -1,6 +1,7 @@
 package webserver
 
 import (
+        "strings"
         "sync"
 
         "github.com/damien1141/a1/internal/llm"
@@ -115,12 +116,20 @@ func (s *serverState) setPersona(id string) string {
 }
 
 // resolveModel returns the ModelConfig the server should hand to a new
-// engine: the project config's match for s.model, or the project default
-// when no model has been chosen yet.
+// engine. Resolution order:
+//
+//  1. The manual knob (s.model) — an explicit pick from the settings
+//     panel — with the live think level layered on top.
+//  2. fallback (the ACTIVE persona's Model, wired by the Server's
+//     effectiveModel* helpers): an empty knob means "follow the persona",
+//     which is what makes persona settings the DEFAULT selection. Before
+//     this layer existed, the empty knob resolved straight to the project
+//     default — the "falls back to the startup model" report.
+//  3. The project's default model.
 //
 // This lives here rather than in liveFor so the same lookup serves the
 // settings GET endpoint (which lists models + the active one).
-func (s *serverState) resolveModel(proj *project.Project) (llm.ModelConfig, bool) {
+func (s *serverState) resolveModel(proj *project.Project, fallback string) (llm.ModelConfig, bool) {
         if proj == nil {
                 return llm.ModelConfig{}, false
         }
@@ -133,6 +142,9 @@ func (s *serverState) resolveModel(proj *project.Project) (llm.ModelConfig, bool
         name := s.model
         think := s.think
         s.mu.RUnlock()
+        if name == "" {
+                name = strings.TrimSpace(fallback)
+        }
         if name == "" {
                 def := cfg.Model()
                 def.Think.Mode = think

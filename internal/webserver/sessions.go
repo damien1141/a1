@@ -91,7 +91,10 @@ func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
         // Remove the jsonl file(s): the plain-layout session's transcript, and
         // the pre-migration shadow file a vault session may still carry (the
         // vault delete above does not touch disk). Matching mirrors
-        // sessionIDFromFilename: <timestamp>_<id>.jsonl, id last.
+        // sessionIDFromFilename: <timestamp>_<id>.jsonl with the id after the
+        // FIRST underscore — the timestamp never contains one, while session
+        // ids may (LastIndexByte silently never matched those, leaving the
+        // file on disk after a "successful" delete).
         if err := deleteSessionFiles(s.proj.SessionDir(), id); err != nil {
                 writeStatus(w, http.StatusInternalServerError, "delete session file: "+err.Error())
                 return
@@ -116,7 +119,7 @@ func deleteSessionFiles(dir, id string) error {
                         continue
                 }
                 name := strings.TrimSuffix(e.Name(), ".jsonl")
-                idx := strings.LastIndexByte(name, '_')
+                idx := strings.IndexByte(name, '_')
                 if idx < 0 || name[idx+1:] != id {
                         continue
                 }

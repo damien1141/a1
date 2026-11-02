@@ -3,6 +3,7 @@ package webserver
 import (
         "encoding/json"
         "fmt"
+        "io"
         "net/http"
         "net/http/httptest"
         "os"
@@ -188,11 +189,25 @@ func TestRegenerateReplacesLastTurnOnPath(t *testing.T) {
 
 func TestRegenerateRefusesWhenTurnInFlight(t *testing.T) {
         // A script that never finishes: the first round hangs until the test
-        // ends, holding the turn mutex.
+        // cancels it, holding the turn mutex.
+        //
+        // The handler DRAINS THE REQUEST BODY before parking. net/http only
+        // starts the background read — the machinery that cancels r.Context()
+        // when the client goes away — once the request body is consumed
+        // (registerOnHitEOF in server.go). A handler that parks with the body
+        // unread can never notice a closed connection, httptest.Server.Close
+        // then blocks on its outstanding handler forever, and the whole
+        // webserver suite dies with it.
         hanging := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                _, _ = io.Copy(io.Discard, r.Body)
                 <-r.Context().Done()
         }))
+        // Deferred LIFO: CloseClientConnections force-drops the stream
+        // connection (dropping it also cancels the parked handler via the
+        // background read), then Close — which waits for active connections
+        // and outstanding handlers — completes.
         defer hanging.Close()
+        defer hanging.CloseClientConnections()
         _, ts := newTurnsFixture(t, hanging)
 
         sessionID := startSession(t, ts, "slow one")
@@ -200,9 +215,18 @@ func TestRegenerateRefusesWhenTurnInFlight(t *testing.T) {
         time.Sleep(300 * time.Millisecond)
 
         resp := postJSON(t, ts, "/api/regenerate", fmt.Sprintf(`{"sessionId":%q}`, sessionID))
-        defer func() { _ = resp.Body.Close() }()
         assert.Equal(t, http.StatusConflict, resp.StatusCode,
                 "a re-run must fail fast while a turn streams, not queue behind it")
+        _ = resp.Body.Close()
+
+        // Stop the hanging turn before teardown: the turn context is
+        // deliberately detached from the prompt request (it lives until
+        // /api/cancel), and an unstopped turn would keep retrying the stream
+        // against the hanging server — re-dialing connections the deferred
+        // close can no longer reach.
+        cancel := postJSON(t, ts, "/api/cancel", fmt.Sprintf(`{"sessionId":%q}`, sessionID))
+        require.Equal(t, http.StatusOK, cancel.StatusCode, "cancel must be accepted")
+        _ = cancel.Body.Close()
 }
 
 func TestEditUserMessageForksBranch(t *testing.T) {

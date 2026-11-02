@@ -9,6 +9,7 @@ import (
         "github.com/damien1141/a1/internal/debuglog"
         llmclient "github.com/damien1141/a1/internal/llm/client"
         "github.com/damien1141/a1/internal/memfsck"
+        "github.com/damien1141/a1/internal/project/model"
         "github.com/damien1141/a1/internal/session"
 )
 
@@ -142,21 +143,42 @@ func (engine *Engine) runMemfsckAtSessionStart() {
 // memoryConsolidationClient returns the client memory-consolidation
 // traffic uses (Bet 06): the persona's dedicated MemoryModel when
 // configured — an 8B model doing memory ops frees the main LLM and cuts
-// latency — else the engine's main client. The dedicated client reuses
-// the engine's provider config with the persona's model name swapped
-// in, and carries no tools (consolidation is a pure text op).
+// latency — else the engine's main client. The dedicated client carries no
+// tools (consolidation is a pure text op).
+//
+// The persona is read through the STORE, not session.activePersona(): the
+// default persona is a real persona here. Its MemoryModel is a legitimate
+// setting — the persona editor offers the dropdown for every persona — and
+// the activePersona() gate (which reports false for the default) silently
+// ignored it, routing consolidation AND the web GUI's smart session names
+// to the main model even when a memory-ops model was configured.
+//
+// The model resolves through the catalog (personaModelResolver) first: the
+// memory model may live on a different provider than the main model (a
+// local 8B against a hosted frontier model), and swapping only the name
+// into the MAIN model's config would call the wrong endpoint with the
+// wrong key. A catalog miss falls back to the legacy name-swap so a
+// memory model outside the catalog still routes somewhere sane.
 func (engine *Engine) memoryConsolidationClient() *llmclient.Client {
-        if engine == nil || engine.session == nil {
+        if engine == nil {
                 return engine.client
         }
-        if p, ok := engine.session.activePersona(); ok && p.MemoryModel != "" {
-                if p.MemoryModel != engine.modelCfg.Name {
-                        cfg := engine.modelCfg
-                        cfg.Name = p.MemoryModel
-                        return llmclient.NewClient(cfg, engine.hooks, nil, "")
+        pstore := engine.personaStore()
+        if pstore == nil {
+                return engine.client
+        }
+        p, err := pstore.ActivePersona()
+        if err != nil || p.MemoryModel == "" || p.MemoryModel == engine.modelCfg.Name {
+                return engine.client
+        }
+        if engine.personaModelResolver != nil {
+                if m, ok := engine.personaModelResolver(p.MemoryModel); ok {
+                        return llmclient.NewClient(m, model.HooksFor(m.Name), nil, "")
                 }
         }
-        return engine.client
+        cfg := engine.modelCfg
+        cfg.Name = p.MemoryModel
+        return llmclient.NewClient(cfg, engine.hooks, nil, "")
 }
 
 // OpsClient exposes the memory-ops client to surfaces outside the engine

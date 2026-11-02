@@ -134,11 +134,16 @@ export interface PersonaInput {
   prompt: string;
   // Tri-state over the wire: undefined = keep stored value, true/false = set.
   overrideSystemPrompt?: boolean;
-  // Per-persona settings. The editor sends all three explicitly; "" clears
+  // Per-persona settings. The editor sends all of them explicitly; "" clears
   // an override (back to the global default). undefined = keep stored.
   model?: string;
   permissionMode?: string;
   memoryEnabled?: boolean;
+  // Explicit "inherit the global memory toggle": clears the persona's
+  // memory_enabled override. Needed because memoryEnabled: undefined and
+  // null both mean "keep stored" on the wire — a tri-state editor cannot
+  // express "remove the override" without this flag.
+  clearMemoryEnabled?: boolean;
   memoryModel?: string;
 }
 

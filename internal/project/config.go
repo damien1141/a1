@@ -226,6 +226,13 @@ type BrowserConfig struct {
         // "http://127.0.0.1:8885". Empty → no proxy. Set at launch time, so the
         // browser must be closed and reopened for a change to take effect.
         Proxy string `yaml:"proxy,omitempty"`
+        // Headless overrides the display probe for the interactive browser:
+        // true forces an invisible daemon even on a desktop (CI, shared
+        // machines); false forces a visible window even where DISPLAY/
+        // WAYLAND_DISPLAY were not inherited (tmux over SSH). nil → detect
+        // (headed when a graphical session is reachable). The A1_BROWSER_HEADLESS
+        // env var still wins over this for per-invocation control.
+        Headless *bool `yaml:"headless,omitempty"`
 }
 
 // UIConfig controls transcript presentation.
@@ -423,6 +430,7 @@ func parseConfigFile(path string) (*Config, error) {
                 cfg.Browser = BrowserConfig{
                         Profiles: append([]string(nil), raw.Browser.Profiles...),
                         Proxy:    strings.TrimSpace(raw.Browser.Proxy),
+                        Headless: raw.Browser.Headless,
                 }
         }
         if raw.UI != nil {
@@ -567,6 +575,7 @@ type jevConfig struct {
 type browserConfig struct {
         Profiles []string `yaml:"profiles"`
         Proxy    string   `yaml:"proxy,omitempty"`
+        Headless *bool    `yaml:"headless,omitempty"`
 }
 
 type uiConfig struct {

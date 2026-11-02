@@ -83,3 +83,44 @@ func TestSetSettings_NotFound(t *testing.T) {
 	_, err := store.SetSettings("no-such-id", &model, nil, nil)
 	require.Error(t, err)
 }
+
+// TestClearMemoryEnabled pins the tri-state escape hatch: SetSettings can
+// set memory_enabled exactly (on or off) but cannot express "remove the
+// override" — JSON null and absent both unmarshal to a nil *bool — so
+// ClearMemoryEnabled reverts the persona to inheriting the global toggle.
+func TestClearMemoryEnabled(t *testing.T) {
+	dir := t.TempDir()
+	s := NewStore(dir)
+	p, err := s.Create("worker", "work persona", "")
+	require.NoError(t, err)
+
+	// No override to start with.
+	got, err := s.Get(p.ID)
+	require.NoError(t, err)
+	require.Nil(t, got.MemoryEnabled)
+
+	// Set it off, then on — the pointer contract.
+	off := false
+	_, err = s.SetSettings(p.ID, nil, nil, &off)
+	require.NoError(t, err)
+	got, _ = s.Get(p.ID)
+	require.NotNil(t, got.MemoryEnabled)
+	assert.False(t, *got.MemoryEnabled)
+
+	// Clear: back to inherit, and the clear survives a reload from disk.
+	cleared, err := s.ClearMemoryEnabled(p.ID)
+	require.NoError(t, err)
+	assert.Nil(t, cleared.MemoryEnabled)
+	got, _ = s.Get(p.ID)
+	assert.Nil(t, got.MemoryEnabled)
+
+	fresh := NewStore(dir)
+	got, err = fresh.Get(p.ID)
+	require.NoError(t, err)
+	assert.Nil(t, got.MemoryEnabled,
+		"the cleared override must persist as inherit across store reloads")
+
+	// Unknown persona is an error, not a silent no-op.
+	_, err = s.ClearMemoryEnabled("no-such-persona")
+	require.Error(t, err)
+}

@@ -26,17 +26,18 @@ interface FormState {
   prompt: string;
   overrideSystemPrompt: boolean;
   // Per-persona runtime overrides. Empty strings mean "inherit the global
-  // config"; memoryEnabled is the explicit per-persona toggle.
+  // config"; memoryEnabled is TRI-STATE: 'inherit' follows the global
+  // settings toggle, 'on'/'off' pin the persona either way.
   model: string;
   permissionMode: string;
-  memoryEnabled: boolean;
+  memoryEnabled: 'inherit' | 'on' | 'off';
   // memoryModel is the second model that runs the small background jobs —
   // memory consolidation and smart session names. Empty = use the main
   // model. Pointing it at a cheap local 8B model frees the main LLM.
   memoryModel: string;
 }
 
-const blankForm: FormState = { name: '', tagline: '', emoji: '🧭', hue: 200, prompt: '', overrideSystemPrompt: false, model: '', permissionMode: '', memoryEnabled: false, memoryModel: '' };
+const blankForm: FormState = { name: '', tagline: '', emoji: '🧭', hue: 200, prompt: '', overrideSystemPrompt: false, model: '', permissionMode: '', memoryEnabled: 'inherit', memoryModel: '' };
 
 // Permission modes offered per persona — same set the web modes API serves,
 // minus headless-strict (that one is for unattended runs, not personas).
@@ -103,7 +104,7 @@ export function PersonaManager({ onClose, onSwitched }: Props) {
     setIsNew(false);
     setEditing(true);
     setError('');
-    setForm({ name: p.name, tagline: p.tagline, emoji: p.emoji, hue: p.hue, prompt: p.prompt, overrideSystemPrompt: !!p.overrideSystemPrompt, model: p.model ?? '', permissionMode: p.permissionMode ?? '', memoryEnabled: !!p.memoryEnabled, memoryModel: p.memoryModel ?? '' });
+    setForm({ name: p.name, tagline: p.tagline, emoji: p.emoji, hue: p.hue, prompt: p.prompt, overrideSystemPrompt: !!p.overrideSystemPrompt, model: p.model ?? '', permissionMode: p.permissionMode ?? '', memoryEnabled: p.memoryEnabled === undefined ? 'inherit' : (p.memoryEnabled ? 'on' : 'off'), memoryModel: p.memoryModel ?? '' });
   };
 
   const startNew = () => {
@@ -131,10 +132,15 @@ export function PersonaManager({ onClose, onSwitched }: Props) {
         // "keep stored", which would make the toggle impossible to turn off.
         overrideSystemPrompt: form.overrideSystemPrompt,
         // Settings ride the same update: "" clears an override so the
-        // persona falls back to the global config value.
+        // persona falls back to the global config value. The memory toggle
+        // is tri-state: on/off pin it on the persona, inherit clears the
+        // override entirely (clearMemoryEnabled) so the global setting
+        // rules — the old binary form silently pinned "off" on every save,
+        // turning memory off for personas that were set to inherit.
         model: form.model,
         permissionMode: form.permissionMode,
-        memoryEnabled: form.memoryEnabled,
+        memoryEnabled: form.memoryEnabled === 'inherit' ? undefined : form.memoryEnabled === 'on',
+        clearMemoryEnabled: form.memoryEnabled === 'inherit',
         memoryModel: form.memoryModel,
       };
       let savedId = selected;
@@ -390,28 +396,33 @@ export function PersonaManager({ onClose, onSwitched }: Props) {
             A cheap local model here does the small write-backs (remembering, titling sessions) without spending the main model's context.
           </span>
         </label>
-        <div class={`flex items-start gap-2.5 px-2 py-1.5 rounded-sm border transition-colors ${form.memoryEnabled ? 'bg-seal-light border-seal/40' : 'bg-paper border-hairline'}`}>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={form.memoryEnabled}
-            onClick={() => setForm({ ...form, memoryEnabled: !form.memoryEnabled })}
-            class={`relative flex-shrink-0 mt-0.5 rounded-full transition-colors duration-fast ${form.memoryEnabled ? 'bg-seal' : 'bg-hairline'}`}
-            style={{ width: '2rem', height: '1.125rem' }}
-          >
-            <span
-              class={`absolute top-0.5 left-0.5 rounded-full shadow-sm transition-transform duration-fast ${form.memoryEnabled ? 'translate-x-3.5 bg-paper' : 'bg-paper dark:bg-ink-light'}`}
-              style={{ width: '0.875rem', height: '0.875rem' }}
-            />
-          </button>
-          <label class="min-w-0 flex-1 cursor-pointer" onClick={() => setForm({ ...form, memoryEnabled: !form.memoryEnabled })}>
+        <div class={`flex items-start gap-2.5 px-2 py-1.5 rounded-sm border transition-colors ${form.memoryEnabled !== 'inherit' ? 'bg-seal-light border-seal/40' : 'bg-paper border-hairline'}`}>
+          <div class="flex flex-col gap-1 min-w-0 flex-1">
             <span class="block text-xs font-medium text-ink">Memory</span>
+            <div class="flex gap-1" role="radiogroup" aria-label="Persona memory">
+              {([['inherit', 'Inherit'], ['on', 'On'], ['off', 'Off']] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={form.memoryEnabled === value}
+                  onClick={() => setForm({ ...form, memoryEnabled: value })}
+                  class={`px-2.5 py-1 rounded-sm text-xs transition-colors ${
+                    form.memoryEnabled === value ? 'bg-seal text-on-seal' : 'bg-paper-sunk text-ink-light hover:bg-seal-light hover:text-seal'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <span class="block text-[11px] text-ink-muted leading-snug mt-0.5">
-              {form.memoryEnabled
+              {form.memoryEnabled === 'inherit'
+                ? 'Inherit: follows the global memory toggle from the settings panel.'
+                : form.memoryEnabled === 'on'
                 ? 'On: this persona writes to and recalls its own semantic memory bank automatically.'
                 : 'Off: this persona runs without semantic memory — no auto-injection, no auto-writes.'}
             </span>
-          </label>
+          </div>
         </div>
       </div>
       <div class="flex items-center gap-2 pt-1">
