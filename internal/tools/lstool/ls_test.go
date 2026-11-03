@@ -101,3 +101,23 @@ func TestLs_PlainStringPath(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out.Content, "x.txt")
 }
+
+// The schema must not declare path required: an empty path lists the cwd, and
+// a Required the implementation disproves is exactly what the executor's
+// empty-arguments guard would trip over — ls {} would start failing after
+// working forever. Pins both halves: the declaration and the behavior it
+// describes.
+func TestLs_PathOptional(t *testing.T) {
+	def := LsTool()
+	require.NotNil(t, def.Definition.Params)
+	require.Empty(t, def.Definition.Params.Required,
+		"path resolves to the cwd when empty; declaring it required is a lie the guard would enforce")
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "here.txt"), []byte("x"), 0o644))
+	t.Chdir(root)
+
+	out, err := runLs(t.Context(), json.RawMessage(`{}`))
+	require.NoError(t, err, "ls with no arguments must keep listing the cwd")
+	require.Contains(t, out.Content, "here.txt")
+}

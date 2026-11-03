@@ -110,10 +110,16 @@ func TestBudgetToolExtensionEcho(t *testing.T) {
 
 func TestBudgetToolBadArgs(t *testing.T) {
         engine := newContractTestEngine(t)
-        for _, args := range []string{`{"rounds":0}`, `{"rounds":-3}`, `{}`, `{invalid`} {
+        for _, args := range []string{`{"rounds":0}`, `{"rounds":-3}`, `{invalid`} {
                 msg := runToolCall(t, engine.executor, "budget", args)
                 assert.Contains(t, msg.Content, "budget: arguments must be", "args %s refused", args)
         }
+        // {} is refused one layer up, by the executor's empty-arguments guard:
+        // same outcome — no budget held — with the guard naming the missing
+        // "rounds" and the shape to re-issue.
+        msg := runToolCall(t, engine.executor, "budget", `{}`)
+        assert.Contains(t, msg.Content, "empty arguments", "the guard refuses the fieldless call")
+        assert.Contains(t, msg.Content, `"rounds"`)
         assert.Equal(t, 0, engine.TurnBudgetCeiling(), "refused declarations hold no budget")
 }
 

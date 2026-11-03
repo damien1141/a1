@@ -4,6 +4,7 @@ import (
         "context"
 
         "github.com/damien1141/a1/internal/llm"
+        "github.com/damien1141/a1/internal/session/compaction"
         "github.com/damien1141/a1/internal/util"
 )
 
@@ -14,6 +15,35 @@ import (
 // below the halving floor) and the original error must surface instead of
 // looping. See doc/context-folding-math.md §5.
 const maxConsecutiveOverflowRecoveries = 3
+
+// suspectedOverflowMinTokens is the estimate floor under which an opaque
+// provider 400 is not treated as a probable context overflow: a session this
+// small compacts to nearly the same size (keepRecentMin alone is 2000), so
+// recovery could not shrink it anyway, and force-folding it would destroy
+// history for what is almost certainly an unrelated request error. Above it,
+// "long session, unexplained 400" is overwhelmingly a request-size problem
+// the configured window doesn't know about.
+const suspectedOverflowMinTokens = 8192
+
+// contextCouldBeOverflow reports whether the session is large enough that an
+// unexplained provider 400 could plausibly be a request-size problem. It
+// gates the suspected-overflow recovery path (llm.IsSuspectedOverflow):
+// without it, one opaque 400 on a fresh session would force-compact a short
+// history for nothing. The estimate uses the growth gate's bytes/4 ruler
+// (compaction.EstimateContextTokens); the window comparison adds the "at
+// least half the configured window" case so a small-window model with a
+// proportionally large session still qualifies.
+func (engine *Engine) contextCouldBeOverflow() bool {
+        if engine == nil || engine.session == nil {
+                return false
+        }
+        est := compaction.EstimateContextTokens(engine.session.PathEntries())
+        if est >= suspectedOverflowMinTokens {
+                return true
+        }
+        w := engine.ContextWindow()
+        return w > 0 && est >= w/2
+}
 
 // WindowProber discovers a context window for a model from its endpoint.
 // Production uses the llama.cpp / ollama local probe (llm.ProbeContextWindow);

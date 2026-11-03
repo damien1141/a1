@@ -30,6 +30,15 @@ func useProjectWithPermissions(t *testing.T, permissionsYAML string) {
 	require.NoError(t, err)
 	require.NoError(t, proj.LoadConfig())
 	project.SetDefaultProject(proj)
+	// The seam itself must hold for anything below to mean anything:
+	// GetDefaultProject hands bashSandboxProfile the project above with
+	// its config loaded. It once re-discovered a config-less twin
+	// instead — every profile came back nil, the nil-asserting yolo/off
+	// cases stayed green while testing nothing, and only a host with a
+	// sandbox backend (where the guard test demands a real profile)
+	// could notice.
+	require.NotNil(t, project.GetDefaultProject().Config(),
+		"default-project seam must expose the installed project's config")
 	t.Cleanup(func() { project.SetDefaultProject(nil) })
 }
 

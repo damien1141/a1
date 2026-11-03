@@ -3,6 +3,7 @@ package llm
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -10,6 +11,31 @@ import (
 // maxAPIErrorBodyChars caps the raw-body fallback in FormatAPIError so a
 // non-JSON error page can never flood the terminal or the session history.
 const maxAPIErrorBodyChars = 2000
+
+// APIError is a non-2xx provider response. FormatAPIError returns one, so
+// the status code and the extracted message survive as data — callers that
+// must branch on them (overflow recovery) no longer re-parse the formatted
+// string. Error() keeps the exact "<provider> API error (<status>):
+// <message>" rendering these errors always had.
+type APIError struct {
+	Provider string
+	Status   int
+	Message  string
+}
+
+func (e *APIError) Error() string {
+	return fmt.Sprintf("%s API error (%d): %s", e.Provider, e.Status, e.Message)
+}
+
+// APIErrorOf unwraps err to its *APIError, reporting whether it is one.
+// Wrapped chains (fmt.Errorf("%w")) are followed.
+func APIErrorOf(err error) (*APIError, bool) {
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		return apiErr, true
+	}
+	return nil, false
+}
 
 // FormatAPIError builds a compact, human-readable error for a non-2xx
 // provider response: "<provider> API error (<status>): <message>". Provider
@@ -27,7 +53,7 @@ func FormatAPIError(provider string, status int, body []byte) error {
 	if msg == "" {
 		msg = "empty error response"
 	}
-	return fmt.Errorf("%s API error (%d): %s", provider, status, msg)
+	return &APIError{Provider: provider, Status: status, Message: msg}
 }
 
 // apiErrorMessage extracts the human-readable message from a provider error

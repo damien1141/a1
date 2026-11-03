@@ -564,3 +564,212 @@ func TestExecutorUsesResultDetailWhenArgsGiveNone(t *testing.T) {
 	})
 	assert.Equal(t, "from the tool", last.Detail)
 }
+
+// readRegisteredRequiredTool is the registry fixture for the empty-arguments
+// guard: a tool shaped like read — one required parameter, a handler that must
+// never see a fully-empty call.
+func readRegisteredRequiredTool(ran *atomic.Int32) tools.Registry {
+	return tools.Registry{
+		"read": {
+			Definition: llm.ToolDefinition{
+				Name: "read",
+				Params: &llm.FunctionParameters{
+					Type: "object",
+					Properties: llm.Object{
+						"path": llm.Object{"type": "string"},
+					},
+					Required: []string{"path"},
+				},
+			},
+			Run: func(context.Context, json.RawMessage) (tools.Result, error) {
+				ran.Add(1)
+				return tools.Result{Content: "file body"}, nil
+			},
+		},
+	}
+}
+
+// The wire occasionally delivers a tool call with literally {} as its
+// arguments — a model at the edge of its context, or a gateway collapsing
+// arguments it could not parse. The guard must refuse the call before
+// execution and answer with a message the model can correct against: the
+// missing parameter's name and the shape to re-issue.
+func TestExecutorRefusesEmptyArgumentsObject(t *testing.T) {
+	var ran atomic.Int32
+	ex := NewExecutor(readRegisteredRequiredTool(&ran), permission.AllowAll{}, nil, nil, nil)
+
+	var statuses []session.ToolStatus
+	msgs, _, _ := ex.Run(t.Context(), []llm.ToolCall{{
+		ID:       "c1",
+		Function: llm.Function{Name: "read", Arguments: `{}`},
+	}}, func(td session.ToolData) bool {
+		statuses = append(statuses, td.Run.Status)
+		return true
+	})
+
+	assert.Equal(t, int32(0), ran.Load(), "the tool must not run on empty arguments")
+	require.Len(t, msgs, 1)
+	assert.Contains(t, msgs[0].Content, "empty arguments")
+	assert.Contains(t, msgs[0].Content, `"path"`)
+	assert.Contains(t, msgs[0].Content, "not executed")
+	assert.Contains(t, msgs[0].Content, `{"path": <value>}`, "the message shows the shape to re-issue")
+	assert.Contains(t, statuses, session.ToolError)
+	assert.NotContains(t, statuses, session.ToolDone)
+}
+
+// Blank arguments — the model emitted no argument string at all — are the
+// same degenerate call and must be refused identically, without the tool's
+// own "unexpected end of JSON input" parse error standing in for an answer.
+func TestExecutorRefusesBlankArguments(t *testing.T) {
+	var ran atomic.Int32
+	ex := NewExecutor(readRegisteredRequiredTool(&ran), permission.AllowAll{}, nil, nil, nil)
+
+	msgs, _, _ := ex.Run(t.Context(), []llm.ToolCall{{
+		ID:       "c1",
+		Function: llm.Function{Name: "read", Arguments: ``},
+	}}, func(session.ToolData) bool { return true })
+
+	assert.Equal(t, int32(0), ran.Load())
+	require.Len(t, msgs, 1)
+	assert.Contains(t, msgs[0].Content, "empty arguments (none)")
+	assert.Contains(t, msgs[0].Content, `"path"`)
+}
+
+// null arguments decode to an empty object for every practical purpose; the
+// guard treats them as empty too.
+func TestExecutorRefusesNullArguments(t *testing.T) {
+	var ran atomic.Int32
+	ex := NewExecutor(readRegisteredRequiredTool(&ran), permission.AllowAll{}, nil, nil, nil)
+
+	msgs, _, _ := ex.Run(t.Context(), []llm.ToolCall{{
+		ID:       "c1",
+		Function: llm.Function{Name: "read", Arguments: `null`},
+	}}, func(session.ToolData) bool { return true })
+
+	assert.Equal(t, int32(0), ran.Load())
+	require.Len(t, msgs, 1)
+	assert.Contains(t, msgs[0].Content, `"path"`)
+}
+
+// A call that carries any field at all passes the guard even when required
+// fields are missing: mode-dispatched tools accept shapes their schema cannot
+// express (read with mode=ls lists the cwd with no path), so only the fully
+// empty call is refused upstream. The tool reports its own error in its own
+// voice.
+func TestExecutorRunsNonEmptyArgumentsDespiteMissingRequired(t *testing.T) {
+	var ran atomic.Int32
+	var sawArgs string
+	reg := tools.Registry{
+		"read": {
+			Definition: llm.ToolDefinition{
+				Name: "read",
+				Params: &llm.FunctionParameters{
+					Type: "object",
+					Properties: llm.Object{
+						"path": llm.Object{"type": "string"},
+					},
+					Required: []string{"path"},
+				},
+			},
+			Run: func(_ context.Context, input json.RawMessage) (tools.Result, error) {
+				ran.Add(1)
+				sawArgs = string(input)
+				return tools.Result{Content: "ran anyway"}, nil
+			},
+		},
+	}
+	ex := NewExecutor(reg, permission.AllowAll{}, nil, nil, nil)
+
+	msgs, _, _ := ex.Run(t.Context(), []llm.ToolCall{{
+		ID:       "c1",
+		Function: llm.Function{Name: "read", Arguments: `{"mode":"ls"}`},
+	}}, func(session.ToolData) bool { return true })
+
+	assert.Equal(t, int32(1), ran.Load(), "a non-empty object reaches the tool")
+	assert.Equal(t, `{"mode":"ls"}`, sawArgs)
+	require.Len(t, msgs, 1)
+	assert.Equal(t, "ran anyway", msgs[0].Content)
+}
+
+// A tool that declares no required parameters keeps accepting {} — the guard
+// is scoped to calls that cannot be real attempts.
+func TestExecutorRunsEmptyArgumentsWhenNothingRequired(t *testing.T) {
+	var ran atomic.Int32
+	reg := tools.Registry{
+		"context": {
+			Definition: llm.ToolDefinition{
+				Name: "context",
+				Params: &llm.FunctionParameters{
+					Type:       "object",
+					Properties: llm.Object{},
+				},
+			},
+			Run: func(context.Context, json.RawMessage) (tools.Result, error) {
+				ran.Add(1)
+				return tools.Result{Content: "ok"}, nil
+			},
+		},
+	}
+	ex := NewExecutor(reg, permission.AllowAll{}, nil, nil, nil)
+
+	msgs, _, _ := ex.Run(t.Context(), []llm.ToolCall{{
+		ID:       "c1",
+		Function: llm.Function{Name: "context", Arguments: `{}`},
+	}}, func(session.ToolData) bool { return true })
+
+	assert.Equal(t, int32(1), ran.Load())
+	require.Len(t, msgs, 1)
+	assert.Equal(t, "ok", msgs[0].Content)
+}
+
+// Several required parameters are all named in the refusal, so a multi-field
+// tool (edit's path + old_str + new_str) corrects in one round.
+func TestExecutorRefusalNamesEveryRequiredParameter(t *testing.T) {
+	var ran atomic.Int32
+	reg := tools.Registry{
+		"edit": {
+			Definition: llm.ToolDefinition{
+				Name: "edit",
+				Params: &llm.FunctionParameters{
+					Type: "object",
+					Properties: llm.Object{
+						"path":    llm.Object{"type": "string"},
+						"old_str": llm.Object{"type": "string"},
+						"new_str": llm.Object{"type": "string"},
+					},
+					Required: []string{"path", "old_str", "new_str"},
+				},
+			},
+			Run: func(context.Context, json.RawMessage) (tools.Result, error) {
+				ran.Add(1)
+				return tools.Result{Content: "edited"}, nil
+			},
+		},
+	}
+	ex := NewExecutor(reg, permission.AllowAll{}, nil, nil, nil)
+
+	msgs, _, _ := ex.Run(t.Context(), []llm.ToolCall{{
+		ID:       "c1",
+		Function: llm.Function{Name: "edit", Arguments: `{}`},
+	}}, func(session.ToolData) bool { return true })
+
+	assert.Equal(t, int32(0), ran.Load())
+	require.Len(t, msgs, 1)
+	assert.Contains(t, msgs[0].Content, `"path", "old_str", "new_str"`)
+}
+
+// emptyToolArgs is the guard's one judgment: blank and object-less calls are
+// empty; anything with a field, or a non-object argument the tool will parse
+// (or reject) itself, is not.
+func TestEmptyToolArgs(t *testing.T) {
+	assert.True(t, emptyToolArgs(json.RawMessage(``)))
+	assert.True(t, emptyToolArgs(json.RawMessage(`   `)))
+	assert.True(t, emptyToolArgs(json.RawMessage(`{}`)))
+	assert.True(t, emptyToolArgs(json.RawMessage(` { } `)))
+	assert.True(t, emptyToolArgs(json.RawMessage(`null`)))
+	assert.False(t, emptyToolArgs(json.RawMessage(`{"mode":"ls"}`)))
+	assert.False(t, emptyToolArgs(json.RawMessage(`{"path":""}`)))
+	assert.False(t, emptyToolArgs(json.RawMessage(`"plain string"`)))
+	assert.False(t, emptyToolArgs(json.RawMessage(`[1,2]`)))
+	assert.False(t, emptyToolArgs(json.RawMessage(`not json`)))
+}

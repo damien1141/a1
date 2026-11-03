@@ -528,3 +528,131 @@ func TestRunCompact_ForceCompactsWhenHistoryExists(t *testing.T) {
         require.True(t, sawStart, "must emit CompactionStarted")
         require.True(t, sawComplete, "must emit CompactionComplete")
 }
+
+// opaqueThenOKServer fails the first streaming chat with the generic 400 a
+// reason-swallowing gateway answers — "Provider returned error", no numbers,
+// no overflow phrasing — then serves the non-stream compact summary and
+// streams a final reply. This is the wire shape that used to brick long
+// sessions: IsContextOverflow has nothing to match, so recovery never fired
+// and every retry re-sent the same oversized history.
+func opaqueThenOKServer(streamHits *atomic.Int32) *httptest.Server {
+        return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                var body map[string]any
+                _ = json.NewDecoder(r.Body).Decode(&body)
+                if stream, _ := body["stream"].(bool); stream {
+                        n := streamHits.Add(1)
+                        if n == 1 {
+                                w.Header().Set("Content-Type", "application/json")
+                                w.WriteHeader(http.StatusBadRequest)
+                                _, _ = w.Write([]byte(`{"error":{"message":"Provider returned error"}}`))
+                                return
+                        }
+                        w.Header().Set("Content-Type", "text/event-stream")
+                        _, _ = fmt.Fprint(w, sseTextChunk("recovered"))
+                        _, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+                        return
+                }
+                // Compaction Compact() is non-streaming chat.
+                w.Header().Set("Content-Type", "application/json")
+                _ = json.NewEncoder(w).Encode(map[string]any{
+                        "choices": []any{map[string]any{
+                                "message": map[string]any{"role": "assistant", "content": "prior work summarized"},
+                        }},
+                })
+        }))
+}
+
+// TestLoopOpaque400RecoversViaCompaction pins the suspected-overflow path: a
+// long session (48K est — far past the 8192 floor, far under the configured
+// 200K window, exactly the shape a gateway with a lower hidden limit bricks)
+// gets the same force-compact-and-retry recovery a proven overflow gets. The
+// user sees a compaction instead of a permanent "Provider returned error".
+func TestLoopOpaque400RecoversViaCompaction(t *testing.T) {
+        var streamHits atomic.Int32
+        server := opaqueThenOKServer(&streamHits)
+        defer server.Close()
+
+        sess, err := NewSession(WithCwd(t.TempDir()))
+        require.NoError(t, err)
+        require.NoError(t, sess.Append(
+                llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 12000}},
+                llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 24000}},
+                llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 36000}},
+                llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 50000}},
+        ))
+
+        engine, err := NewEngine(
+                llm.ModelConfig{Name: "fake", BaseURL: server.URL, APIKey: "x", ContextWindow: 200_000},
+                sess,
+                WithGate(permission.AllowAll{}),
+                WithTools([]tools.Tool{}),
+        )
+        require.NoError(t, err)
+
+        var lastErr error
+        var finalText string
+        var sawCompact bool
+        for ev, err := range engine.Loop(t.Context(), "continue", LoopOpts{}) {
+                if err != nil {
+                        lastErr = err
+                        break
+                }
+                switch e := ev.(type) {
+                case session.CompactionStarted:
+                        sawCompact = true
+                case session.AssistantMessageUpdate:
+                        if e.Message.State == session.StateComplete {
+                                finalText = e.Message.FlatText()
+                        }
+                }
+        }
+        require.NoError(t, lastErr, "an opaque 400 on a large session must recover, not brick")
+        require.True(t, sawCompact, "expected the suspected-overflow path to emit CompactionStarted")
+        require.Equal(t, int32(2), streamHits.Load(), "opaque 400, then one retry stream")
+        require.Equal(t, "recovered", finalText)
+}
+
+// TestLoopOpaque400SmallSessionSurfaces pins the size gate: an opaque 400 on
+// a session too small to be a context problem must NOT compact — a fold
+// could not shrink it, and the error is almost certainly an unrelated
+// request bug. It surfaces unrecovered after a single stream attempt.
+func TestLoopOpaque400SmallSessionSurfaces(t *testing.T) {
+        var streamHits atomic.Int32
+        server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                if r.URL.Path != "/chat/completions" {
+                        http.NotFound(w, r)
+                        return
+                }
+                streamHits.Add(1)
+                w.Header().Set("Content-Type", "application/json")
+                w.WriteHeader(http.StatusBadRequest)
+                _, _ = w.Write([]byte(`{"error":{"message":"Provider returned error"}}`))
+        }))
+        defer server.Close()
+
+        sess, err := NewSession(WithCwd(t.TempDir()))
+        require.NoError(t, err)
+        engine, err := NewEngine(
+                llm.ModelConfig{Name: "fake", BaseURL: server.URL, APIKey: "x", ContextWindow: 200_000},
+                sess,
+                WithGate(permission.AllowAll{}),
+                WithTools([]tools.Tool{}),
+        )
+        require.NoError(t, err)
+
+        var lastErr error
+        var sawCompact bool
+        for ev, err := range engine.Loop(t.Context(), "go", LoopOpts{}) {
+                if err != nil {
+                        lastErr = err
+                        break
+                }
+                if _, ok := ev.(session.CompactionStarted); ok {
+                        sawCompact = true
+                }
+        }
+        require.Error(t, lastErr, "a small session must not attempt recovery")
+        require.False(t, sawCompact, "nothing was large enough to fold")
+        require.Equal(t, int32(1), streamHits.Load(), "one stream attempt, no retry")
+        require.True(t, llm.IsSuspectedOverflow(lastErr), "the opaque error surfaces unchanged")
+}

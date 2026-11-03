@@ -1311,7 +1311,23 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
 
                         msg, completeEvent, err := engine.streamTurn(ctx, yield, msgs)
                         if err != nil {
-                                if llm.IsContextOverflow(err) && overflowStreak < maxConsecutiveOverflowRecoveries {
+                                overflow := llm.IsContextOverflow(err)
+                                // Opaque 400/413 (doc/context-folding-math.md §5):
+                                // a gateway that answers "Provider returned error"
+                                // swallowed the upstream reason, so no overflow
+                                // pattern can match. In a session this large the
+                                // cause is almost always a request-size limit the
+                                // configured window doesn't know about (a proxy
+                                // cap, an upstream truncation) — without recovery
+                                // here, every later turn re-sends the same
+                                // oversized history and fails identically: the
+                                // session is bricked. Treat it as a probable
+                                // overflow and let compaction try; the original
+                                // error still surfaces when shrinking doesn't help.
+                                suspected := !overflow &&
+                                        llm.IsSuspectedOverflow(err) &&
+                                        engine.contextCouldBeOverflow()
+                                if (overflow || suspected) && overflowStreak < maxConsecutiveOverflowRecoveries {
                                         // Learn the real window when the provider states
                                         // it; that is ground truth and persists. Otherwise
                                         // halve the retry window (turn-local) so the
@@ -1322,7 +1338,18 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
                                                 recoveryWindow = limit
                                         } else if recoveryWindow <= 0 {
                                                 engine.ensureWindow(ctx)
-                                                recoveryWindow = engine.ContextWindow()
+                                                if suspected {
+                                                        // The request was built under the engine
+                                                        // window and the endpoint refused it
+                                                        // anyway, so that window is wrong for this
+                                                        // endpoint. Halve immediately: the recovery
+                                                        // compaction then keeps real headroom
+                                                        // instead of re-deriving the same
+                                                        // too-large settings and hoping.
+                                                        recoveryWindow = max(engine.ContextWindow()/2, llm.ContextWindowFloor())
+                                                } else {
+                                                        recoveryWindow = engine.ContextWindow()
+                                                }
                                         } else {
                                                 recoveryWindow = max(recoveryWindow/2, llm.ContextWindowFloor())
                                         }

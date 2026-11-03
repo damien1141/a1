@@ -1,6 +1,8 @@
 package llm
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -102,4 +104,25 @@ func TestFormatAPIErrorCapsRawFallback(t *testing.T) {
 
 	msg := err.Error()
 	assert.Equal(t, "LLM API error (502): "+strings.Repeat("x", maxAPIErrorBodyChars)+"…", msg)
+}
+
+// TestAPIErrorOf pins the structured surface of FormatAPIError: the status
+// and the extracted message survive as data (overflow recovery branches on
+// them), wrapped chains resolve, and ordinary errors do not.
+func TestAPIErrorOf(t *testing.T) {
+	err := FormatAPIError("LLM", 400, []byte(`{"error":{"message":"Provider returned error"}}`))
+	apiErr, ok := APIErrorOf(err)
+	require.True(t, ok)
+	assert.Equal(t, "LLM", apiErr.Provider)
+	assert.Equal(t, 400, apiErr.Status)
+	assert.Equal(t, "Provider returned error", apiErr.Message)
+
+	_, ok = APIErrorOf(fmt.Errorf("turn: %w", err))
+	assert.True(t, ok, "a wrapped APIError still resolves")
+
+	_, ok = APIErrorOf(errors.New("boom"))
+	assert.False(t, ok, "an ordinary error is not an APIError")
+
+	_, ok = APIErrorOf(nil)
+	assert.False(t, ok)
 }

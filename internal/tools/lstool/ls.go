@@ -38,7 +38,7 @@ func LsTool() tooldef.Tool {
 				Properties: llm.Object{
 					"path": llm.Object{
 						"type":        "string",
-						"description": "Directory to list. Example: . or src",
+						"description": "Directory to list. Defaults to the current working directory. Example: . or src",
 					},
 					"limit": llm.Object{
 						"type":        "integer",
@@ -49,7 +49,10 @@ func LsTool() tooldef.Tool {
 						"description": "Max directory depth to expand. Example: 2 (default: 3)",
 					},
 				},
-				Required: []string{"path"},
+				// path stays deliberately optional: an empty path resolves to the
+				// cwd. The declaration used to say otherwise, and a schema the
+				// implementation disproves is exactly what an empty-arguments guard
+				// at the executor would trip over.
 			},
 			Readable: true,
 		},

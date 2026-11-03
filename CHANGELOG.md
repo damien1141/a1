@@ -10,6 +10,35 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- **The executor refuses tool calls that arrive with no arguments.** Long
+  sessions occasionally put a literally empty argument object on the wire —
+  a `read {}` that executes, fails the tool's own "path is required" guard,
+  and renders as a `✗ {} ▼` row naming nothing. The empty call comes from
+  the model side (a model at the edge of a huge or just-compacted context,
+  or a gateway collapsing arguments it could not parse) — every
+  harness-internal path was verified to preserve arguments verbatim — but
+  the harness answered it badly: a round was burned to rediscover the bare
+  tool error, and that error gave the model nothing to correct against, so
+  a model that believes it sent the arguments retries identically and the
+  error rows accumulate. A guard in the executor now refuses the call
+  before permission and execution whenever the arguments are blank, null,
+  or `{}` and the tool declares required parameters; the refusal names
+  every required parameter and shows the shape to re-issue ("tool 'read'
+  was called with empty arguments ({}) and was not executed — it requires
+  \"path\". Re-issue the call with its arguments as one JSON object, e.g.
+  {\"path\": <value>}"), and the raw arguments land in the debuglog so the
+  next report carries wire evidence. Non-empty arguments always pass:
+  mode-dispatched tools accept shapes their schema cannot express (`read`
+  with `mode=ls` lists the cwd with no path), and a non-object argument
+  stays the tool's own parse error to report in its own voice. `ls`
+  stopped declaring `path` required alongside this: an empty path
+  resolves to the cwd, and a schema the implementation disproves is
+  exactly what the new guard would have tripped on. Pinned by executor
+  tests (empty object, blank, and null refused without running; a
+  non-empty object and a nothing-required tool pass through; every
+  required parameter named in the refusal) and an ls test holding both
+  halves of that schema honesty.
+
 - **Yolo mode turns the bash sandbox off.** Containment exists to
   substitute for human approval, and yolo withdraws approval wholesale —
   walls standing in for prompts nobody is sending just get in the way
@@ -210,6 +239,56 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
     contracts can declare them as done-criteria.
 
 ### Fixed
+
+- **`SetDefaultProject` installs the project it is given.** The test seam
+  reset the init `Once` without guarding the discovery path, so the first
+  `GetDefaultProject` after a `Set` re-discovered a config-less twin and
+  silently discarded the installed one — every `Config()`-reading consumer
+  saw nil. Downstream, `bashSandboxProfile` compiled no containment
+  profile on any host: the nil-asserting yolo/off tests stayed green (a
+  broken seam produces nil without exercising any suppression logic), and
+  only a Landlock-capable machine — where the interactive guard test
+  demands a real profile — could catch it, because a container whose
+  syscall filter answers ENOSYS for `landlock_create_ruleset` takes the
+  `!Supported()` exit and masks every symptom. The trap was even
+  documented as a workaround in browsertool's test helper, without the
+  seam itself ever being fixed. The Once body now checks before it
+  discovers: an installed project wins, `SetDefaultProject(nil)` still
+  restores lazy discovery, and production (which never Sets) behaves
+  identically. The bashtool fixture now asserts the seam itself so
+  nil-asserting tests can never again pass on a broken one,
+  `TestDefaultProjectSeam` pins the contract at the source, and the
+  browsertool helper keeps its discover-then-load shape with its comment
+  updated to the fixed reality.
+
+- **Long sessions no longer brick behind an unexplained 400.** A gateway
+  that swallows the upstream failure reason answers
+  `400 {"error":{"message":"Provider returned error"}}` — no overflow
+  phrasing, no numbers — so `IsContextOverflow` never matched, overflow
+  recovery never fired, and every later turn re-sent the same oversized
+  history to the same refusal: the session was permanently stuck.
+  `FormatAPIError` now returns a typed `*llm.APIError` (provider, status,
+  message; `Error()` renders byte-identically to before), and a new
+  `IsSuspectedOverflow` classifies the unexplained refusals: a 413 always
+  (a too-large condition by definition), a 400 only when the body
+  explains nothing ("Provider returned error", a bare "Bad Request" —
+  anchored full matches, so an informative message can never land there).
+  The engine runs the same force-compact-and-retry recovery a proven
+  overflow gets, gated by a size check (estimate ≥ 8192 tokens, or ≥ half
+  the window) so a small session never folds for an unrelated request
+  bug, and the first suspected recovery halves the turn-local window
+  immediately — the request was built under the engine window and the
+  endpoint refused it anyway, so that window is wrong for this endpoint.
+  A suspected overflow never teaches the persistent window (an
+  unexplained 400 is not ground truth; a transient gateway blip must not
+  under-fold every later turn), and when shrinking doesn't help the
+  original error surfaces unchanged. Request-size 413 texts ("request
+  body too large", "payload too large") are now recognized as proven
+  overflows rather than suspicions. Pinned end to end: the classifier
+  table, the typed-error unwrapping (wrapped chains resolve), and two
+  Loop tests — a 48K-estimate session behind an opaque gateway recovers
+  via compaction and answers; a small session surfaces the error after
+  one attempt with no fold.
 
 - **The compaction scrollback contract is pinned at the session layer.**
   `Manager.FullBranch` returns the full leaf-to-root branch (header

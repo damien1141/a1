@@ -28,10 +28,11 @@ import (
 
 // installConfigProject writes a config.yaml with the given browser section
 // under a temp HOME, re-discovers the project singleton under that HOME,
-// and loads the config onto the LIVE instance. SetDefaultProject alone is
-// not enough here: it resets the init once, so the next GetDefaultProject
-// re-discovers a config-less project and silently discards the installed
-// one — every Config()-reading consumer would see nil.
+// and loads the config onto the LIVE instance — the same discover-then-load
+// shape the harness boot uses, exercised against the one instance the lazy
+// path caches. (SetDefaultProject works too since the seam was fixed — an
+// installed project now wins over re-discovery — but this pattern also
+// covers the lazy-discovery path itself.)
 func installConfigProject(t *testing.T, browserYAML string) {
         t.Helper()
         home := t.TempDir()

@@ -535,6 +535,43 @@ func (e *Executor) runOneChecked(
                 }
         }
 
+        // Degenerate-call guard: a call whose arguments carry no fields at all —
+        // blank, or {} — against a tool that declares required parameters cannot be
+        // a real attempt. Long sessions surface exactly this from the wire (a model
+        // at the edge of its context, or a gateway collapsing arguments it failed
+        // to parse), and before this guard the executor ran it anyway: a round was
+        // burned to rediscover "path is required", and the bare tool error told the
+        // model nothing it could correct against — some models genuinely believe
+        // they sent the arguments, so the retry is identical and the rows
+        // accumulate. Refuse before permission and execution, name every required
+        // parameter, and show the shape to re-issue; the corrective round is the
+        // recovery. Non-empty arguments always pass: mode-dispatched tools accept
+        // shapes their schema cannot express (read with mode=ls lists the cwd with
+        // no path), and a non-object argument is the tool's own parse error to
+        // report in its own voice.
+        if params := tool.Definition.Params; params != nil && len(params.Required) > 0 && emptyToolArgs(args) {
+                quoted := make([]string, 0, len(params.Required))
+                for _, name := range params.Required {
+                        quoted = append(quoted, fmt.Sprintf("%q", name))
+                }
+                raw := strings.TrimSpace(string(args))
+                if raw == "" {
+                        raw = "none"
+                }
+                errText := fmt.Sprintf(
+                        "tool '%s' was called with empty arguments (%s) and was not executed — it requires %s. "+
+                                "Re-issue the call with its arguments as one JSON object, e.g. {\"%s\": <value>}",
+                        call.Function.Name,
+                        raw,
+                        strings.Join(quoted, ", "),
+                        params.Required[0],
+                )
+                debuglog.Logf("executor: refused empty-arguments call %s raw=%q", call.Function.Name, string(args))
+                _ = emit(session.ToolData{Run: e.toolRun(call, session.ToolError, detail, errText, "")})
+                e.ext.EmitToolExecutionEnd(call.Function.Name, call.ID, true)
+                return e.toolMessage(call.ID, errText, nil), false, ""
+        }
+
         if msg, rejected := e.checkPermission(ctx, call, args, detail, emit); rejected {
                 e.ext.EmitToolExecutionEnd(call.Function.Name, call.ID, true)
                 return msg, false, ""
@@ -1026,6 +1063,23 @@ func (*Executor) toolMessage(id, content string, images []llm.Image) llm.Message
                 Content:    content,
                 Images:     images,
         }
+}
+
+// emptyToolArgs reports whether a tool call's arguments carry no fields at
+// all: blank, null, or a JSON object with zero keys. Anything else returns
+// false — including an object that is missing required fields (the guard
+// above explains why those must pass) and a non-object argument (the tool's
+// own parse error to report, in its own voice).
+func emptyToolArgs(args json.RawMessage) bool {
+        trimmed := strings.TrimSpace(string(args))
+        if trimmed == "" {
+                return true
+        }
+        var fields map[string]json.RawMessage
+        if err := json.Unmarshal([]byte(trimmed), &fields); err != nil {
+                return false
+        }
+        return len(fields) == 0
 }
 
 // askHandoff routes a tool-reported handoff state through the permission

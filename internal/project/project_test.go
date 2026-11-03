@@ -24,6 +24,42 @@ func discoverInTempHome(t *testing.T) *Project {
         return p
 }
 
+// TestDefaultProjectSeam pins the SetDefaultProject/GetDefaultProject
+// contract every tool test injects configs through: an installed project
+// is handed out untouched — loaded config intact — and installing nil
+// restores lazy discovery. The seam once reset the init Once without
+// guarding the discovery path, so the first Get after a Set re-discovered
+// a config-less twin and silently discarded the installed one; downstream,
+// bashSandboxProfile saw Config()==nil and compiled no containment profile
+// on any host, and only a Landlock-capable machine (where the guard test
+// demands a real profile) could catch it.
+func TestDefaultProjectSeam(t *testing.T) {
+        home := t.TempDir()
+        t.Setenv("HOME", home)
+        t.Setenv("USERPROFILE", home)
+        cfgDir := filepath.Join(home, ".a1")
+        require.NoError(t, os.MkdirAll(cfgDir, 0o755))
+        require.NoError(t, os.WriteFile(filepath.Join(cfgDir, "config.yaml"),
+                []byte("models:\n  - name: seam-model\n    api_key: sk-seam\n"), 0o644))
+
+        installed, err := Discover("")
+        require.NoError(t, err)
+        require.NoError(t, installed.LoadConfig())
+        t.Cleanup(func() { SetDefaultProject(nil) })
+
+        // The installed project survives the next Get, config and all.
+        SetDefaultProject(installed)
+        got := GetDefaultProject()
+        require.Same(t, installed, got, "Get must return the installed project, not a re-discovered twin")
+        require.NotNil(t, got.Config(), "the installed project keeps its loaded config")
+
+        // Installing nil restores lazy discovery, and discovery caches.
+        SetDefaultProject(nil)
+        lazy := GetDefaultProject()
+        require.NotNil(t, lazy)
+        require.Same(t, lazy, GetDefaultProject(), "lazy discovery caches the singleton")
+}
+
 func TestDiscoverCreatesGlobalDirs(t *testing.T) {
         p := discoverInTempHome(t)
 

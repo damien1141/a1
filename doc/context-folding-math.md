@@ -135,6 +135,21 @@ When the stream errors with a context overflow mid-turn:
    fails closed"). The counter resets after any successful stream round,
    because a success proves the context now fits. A recovery that cannot
    shrink anything surfaces the original error.
+5. **Opaque 400/413 (suspected overflow).** Some gateways swallow the
+   upstream reason and answer `400 {"error":{"message":"Provider returned
+   error"}}` — nothing `IsContextOverflow` can match, so recovery never
+   fires and every retry re-sends the same oversized history: the session
+   bricks. `IsSuspectedOverflow` classifies these (a 413 always — a
+   too-large condition by definition; a 400 only when the body explains
+   nothing), and the engine runs the same force-compact-and-retry when
+   the session is large enough that a fold could plausibly help (est ≥
+   8192, or ≥ W/2). The first suspected recovery halves the turn-local
+   window immediately — the request was built under W and the endpoint
+   refused it anyway, so W is wrong for that endpoint. A suspected
+   overflow never teaches the persistent window: an unexplained 400 is
+   not ground truth, and a transient gateway blip must not under-fold
+   every later turn. When shrinking does not help, the original error
+   surfaces unchanged.
 
 ## 6. Worked example — 64K llama.cpp, continuous work
 
