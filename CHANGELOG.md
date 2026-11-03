@@ -8,6 +8,42 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed
+
+- **Yolo mode turns the bash sandbox off.** Containment exists to
+  substitute for human approval, and yolo withdraws approval wholesale —
+  walls standing in for prompts nobody is sending just get in the way
+  (writes outside the workspace an inspection workflow needs,
+  no_new_privs on the child, network egress cut). Three pieces had to
+  agree, or one of them would lie about walls the others never raised:
+  - **The gate stops claiming containment.** `sandboxEnforcing` returns
+    false for a yolo policy, so checkBash's containment branch never
+    answers with a "sandboxed: writes confined" note on a run that
+    executes untcontained. The decision is unchanged — yolo folded the
+    would-be Ask to Allow anyway — what changes is the gate no longer
+    misreports the mechanism. Switching out of yolo re-arms containment
+    immediately (every mode switch rebuilds the gate).
+  - **The bash tool compiles no profile** for foreground and background
+    shells alike; without the background half, a detached command
+    launched from a yolo turn would have been the one place the sandbox
+    kept enforcing.
+  - **The live mode reaches the tool.** The executor attaches the session
+    gate's mode to the tool context (`tooldef.WithPermissionMode`, a
+    string on purpose — tooldef sits below permission in the import
+    graph), so a shift-tab cycle or a web dropdown flip is honored
+    mid-session without a config rewrite; the config file's
+    `permissions.mode` stays the fallback for engine-less invocations.
+
+  What still fires in yolo is the regex deny list (sudo, rm -rf,
+  curl|sh) — yolo is deliberately a mode rather than an allow-all flag,
+  and the deny rules live in the gate, not the sandbox. The web mode
+  switcher's yolo line now says so ("no prompts, no bash sandbox —
+  dangerous, denied tools stay denied"), and the persona editor's mode
+  picker matches. Pinned by tests on both sides of the agreement:
+  `sandboxEnforcing`/checkBash notes in permission, profile suppression
+  (context mode, config mode, interactive still compiles, off stays off)
+  in bashtool.
+
 ### Added
 
 - **`judge` classifies files without loading them — `files` glob mode.**
@@ -1365,6 +1401,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   cannot blow the budget. File edits still open automatically — a diff is the
   one thing that must not be missed — and a user's own expand/collapse choice on
   any row still wins for the rest of the session.
+
+### Removed
+
+- **The legacy `judge:` config section and its web-panel twin.** The
+  config page carried two panels for one idea: "Judge" edited the pre-JEV
+  `judge:` section — an Ollama-only fallback that only ever fed the judge
+  tool — while "JEV decision model" edits the `jev:` section every
+  decision consumer reads: fetch routing, evidence verdicts, compaction
+  boundaries, the bash risk guard, and the judge tool itself. The
+  duplicate is gone — panel, YAML section, and the tool's fallback path.
+  Configure the decision model in one place (`jev:`, or the
+  TYPESAFE_API_KEY environment fallback). A leftover `judge:` section in
+  config.yaml is ignored, and the next save from the web editor drops it;
+  the judge tool answers with the configuration error naming `jev:` when
+  nothing resolves.
 
 ### Security
 

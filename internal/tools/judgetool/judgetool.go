@@ -5,11 +5,9 @@
 // The tool routes through the configured decision model (the jev: section
 // of config.yaml — hosted api or local ollama — or the TYPESAFE_API_KEY
 // fallback) via internal/llm/jev, which owns the noul/choice/score
-// question primitives and their validation spine. When no jev: provider
-// resolves, the legacy judge: section (a local Ollama model tag) is served
-// by the same jev OllamaClient, so old configs keep working. Neither
-// resolving is a configuration error, not a silent no-op: the model called
-// the tool and deserves an answer that says why there is none.
+// question primitives and their validation spine. Nothing resolving is a
+// configuration error, not a silent no-op: the model called the tool and
+// deserves an answer that says why there is none.
 //
 // The files mode is the point of the tool: "does this file contain a
 // todo?" is a classification, and classification is cheap. The agent
@@ -34,7 +32,6 @@ import (
 	"github.com/damien1141/a1/internal/debuglog"
 	"github.com/damien1141/a1/internal/llm"
 	"github.com/damien1141/a1/internal/llm/jev"
-	"github.com/damien1141/a1/internal/project"
 	"github.com/damien1141/a1/internal/tools/tooldef"
 )
 
@@ -125,7 +122,7 @@ func JudgeTool() tooldef.Tool {
 		Run: func(ctx context.Context, input json.RawMessage) (tooldef.Result, error) {
 			r := newJudgeRunner()
 			if r == nil {
-				return tooldef.Result{}, errors.New("no decision model configured: set the jev: section in config.yaml (provider: api or ollama), the legacy judge: section (a local ollama model tag), or export TYPESAFE_API_KEY")
+				return tooldef.Result{}, errors.New("no decision model configured: set the jev: section in config.yaml (provider: api or ollama) or export TYPESAFE_API_KEY")
 			}
 			return runJudge(r, ctx, input)
 		},
@@ -144,38 +141,17 @@ type judgeInput struct {
 type judgeRunner struct {
 	asker   jev.Asker
 	timeout time.Duration
-	// source labels the backend in the result ("jev" for the configured
-	// provider, "judge:" for the legacy section) so the model — and the
-	// human reading the transcript — can tell which config answered.
-	source string
 }
 
 // newJudgeRunner resolves the backend per call: the jev: section (or
-// TYPESAFE_API_KEY) first, then the legacy judge: section, else nil. Nil
-// is the caller's cue to answer with the configuration error; building
-// per call means a config edit applies to the next judgment without a
-// rebuild.
+// TYPESAFE_API_KEY), else nil. Nil is the caller's cue to answer with the
+// configuration error; building per call means a config edit applies to
+// the next judgment without a rebuild.
 func newJudgeRunner() *judgeRunner {
-	if jev.Configured() {
-		return &judgeRunner{asker: jev.NewConfiguredAsker(), timeout: jev.EffectiveTimeout(judgeCallTimeout), source: "jev"}
-	}
-	proj := project.GetDefaultProject()
-	if proj == nil {
+	if !jev.Configured() {
 		return nil
 	}
-	cfg := proj.Config()
-	if cfg == nil {
-		return nil
-	}
-	model := strings.TrimSpace(cfg.Judge.Model)
-	if model == "" {
-		return nil
-	}
-	return &judgeRunner{
-		asker:   jev.NewOllamaClient(jev.OllamaConfig{BaseURL: strings.TrimSpace(cfg.Judge.OllamaBaseURL), Model: model}),
-		timeout: jev.EffectiveTimeout(judgeCallTimeout),
-		source:  "judge:",
-	}
+	return &judgeRunner{asker: jev.NewConfiguredAsker(), timeout: jev.EffectiveTimeout(judgeCallTimeout)}
 }
 
 // runJudge is the tool body against an injected runner, so tests script
@@ -228,12 +204,12 @@ func (r *judgeRunner) judgeState(ctx context.Context, state string, questions je
 		return tooldef.Result{}, fmt.Errorf("judge: %w", err)
 	}
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "%d answers via %s\n\n", len(resp.Answers), r.source)
+	fmt.Fprintf(&sb, "%d answers via jev\n\n", len(resp.Answers))
 	writeAnswers(&sb, resp)
 	return tooldef.Result{
 		Content: sb.String(),
 		Detail:  "judge",
-		Summary: fmt.Sprintf("%d answers via %s", len(resp.Answers), r.source),
+		Summary: fmt.Sprintf("%d answers via jev", len(resp.Answers)),
 		Output:  sb.String(),
 	}, nil
 }
@@ -281,7 +257,7 @@ func (r *judgeRunner) judgeFiles(ctx context.Context, in judgeInput, questions j
 	wg.Wait()
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "%d files × %d questions via %s\n\n", len(paths), len(questions), r.source)
+	fmt.Fprintf(&sb, "%d files × %d questions via jev\n\n", len(paths), len(questions))
 	relBase := displayBase(ctx)
 	for _, v := range verdicts {
 		sb.WriteString(relPath(relBase, v.path))
@@ -300,7 +276,7 @@ func (r *judgeRunner) judgeFiles(ctx context.Context, in judgeInput, questions j
 		fmt.Fprintf(&sb, "(matched %d files; judged the first %d — raise limit to see more)\n", matched, limit)
 	}
 
-	summary := fmt.Sprintf("%d files · %d questions · %s", len(paths), len(questions), r.source)
+	summary := fmt.Sprintf("%d files · %d questions · jev", len(paths), len(questions))
 	return tooldef.Result{Content: sb.String(), Detail: "judge " + in.Files, Summary: summary, Output: sb.String()}, nil
 }
 

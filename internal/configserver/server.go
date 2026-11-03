@@ -33,7 +33,6 @@ type ConfigDoc struct {
         Permissions    *PermDoc           `yaml:"permissions,omitempty"     json:"permissions,omitempty"`
         Agents         *AgentsDoc         `yaml:"agents,omitempty"          json:"agents,omitempty"`
         SemanticSearch *SemanticSearchDoc `yaml:"semantic_search,omitempty" json:"semanticSearch,omitempty"`
-        Judge          *JudgeDoc          `yaml:"judge,omitempty"           json:"judge,omitempty"`
         Jev            *JevDoc            `yaml:"jev,omitempty"             json:"jev,omitempty"`
         Browser        *BrowserDoc        `yaml:"browser,omitempty"         json:"browser,omitempty"`
         UI             *UIDoc             `yaml:"ui,omitempty"              json:"ui,omitempty"`
@@ -101,14 +100,9 @@ type SemanticSearchDoc struct {
         EmbeddingModel string `yaml:"embedding_model" json:"embeddingModel"`
 }
 
-// JudgeDoc describes judge settings.
-type JudgeDoc struct {
-        Model         string `yaml:"model"           json:"model"`
-        OllamaBaseURL string `yaml:"ollama_base_url" json:"ollamaBaseUrl"`
-}
-
-// JevDoc describes the decision-model backend shared by the fetch engine
-// classifier and the evidence verdict gate. Provider selects "api"
+// JevDoc describes the decision-model backend shared by the judge tool,
+// the fetch engine classifier, the evidence verdict gate, compaction
+// boundaries, and the bash risk guard. Provider selects "api"
 // (TypeSafe System One) or "ollama" (a local model); empty keeps JEV off
 // unless the TYPESAFE_API_KEY environment fallback applies.
 type JevDoc struct {

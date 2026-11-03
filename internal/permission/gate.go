@@ -680,13 +680,18 @@ func (g *StaticGate) checkBash(ctx context.Context, req Request) (Decision, stri
         // Containment substitutes for approval: when OS-level sandboxing is
         // enforcing, an Ask-eligible command is already contained — writes land
         // inside the workspace/caches or fail, network egress follows the
-        // policy toggle, and the deny list has already fired above. Three
+        // policy toggle, and the deny list has already fired above. Four
         // contracts still win over containment: readonly sessions ("this
         // session writes nothing" — a writable sandbox violates it),
         // headless-strict sessions (Ask≡Deny is the whole mode; an unattended
-        // run must not discover an approval authority in the sandbox), and an
+        // run must not discover an approval authority in the sandbox), an
         // explicit BashDefault=Deny (the operator said no — containment does
-        // not overrule a stated default).
+        // not overrule a stated default), and yolo (which suppresses
+        // enforcement at the source in sandboxEnforcing, so the branch below
+        // never sees it — a sandbox that substitutes for prompts is noise in
+        // the one mode that withdrew prompting, and bashtool's profile
+        // compiler agrees or the note here would describe a wall that is not
+        // there).
         if g.sandboxed &&
                 g.Policy.Mode != ModeReadonly &&
                 g.Policy.Mode != ModeHeadlessStrict &&
@@ -732,8 +737,16 @@ func PinSandboxSupportedForTest(supported bool) (restore func()) {
 }
 
 // sandboxEnforcing decides whether the policy's sandbox setting yields
-// enforcement on this host.
+// enforcement on this host. Yolo suppresses it regardless of setting or
+// host: containment substitutes for the approval yolo withdrew, so on a
+// yolo host the walls are scaffolding around an open door — and the bash
+// tool's profile compiler (bashtool.bashSandboxProfile) makes the same
+// call on the execution side, so the gate's view and the exec's view
+// cannot drift apart. Every other mode defers to the setting and host.
 func sandboxEnforcing(p Policy) bool {
+        if p.Mode == ModeYolo {
+                return false
+        }
         switch strings.ToLower(strings.TrimSpace(p.Sandbox)) {
         case "off", "false", "no":
                 return false

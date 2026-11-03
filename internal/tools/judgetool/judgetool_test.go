@@ -52,10 +52,10 @@ func (f *fakeAsker) calls() int {
 	return len(f.states)
 }
 
-// testRunner wraps a scripted asker with a short timeout and a stable source
-// label, so runJudge tests never touch process-wide configuration.
+// testRunner wraps a scripted asker with a short timeout, so runJudge
+// tests never touch process-wide configuration.
 func testRunner(a jev.Asker) *judgeRunner {
-	return &judgeRunner{asker: a, timeout: time.Second, source: "test"}
+	return &judgeRunner{asker: a, timeout: time.Second}
 }
 
 func TestJudgeTool_Definition(t *testing.T) {
@@ -117,11 +117,11 @@ func TestRunJudge_StateSuccess(t *testing.T) {
 	out, err := runJudge(testRunner(asker), t.Context(), raw)
 	require.NoError(t, err)
 
-	assert.Contains(t, out.Content, "2 answers via test")
+	assert.Contains(t, out.Content, "2 answers via jev")
 	assert.Contains(t, out.Content, "todo: yes (p 0.91, conf 0.80)")
 	assert.Contains(t, out.Content, "layer: api")
 	assert.Equal(t, "judge", out.Detail)
-	assert.Equal(t, "2 answers via test", out.Summary)
+	assert.Equal(t, "2 answers via jev", out.Summary)
 	assert.Equal(t, out.Content, out.Output)
 
 	// A JSON state stays structured on the wire: the decision model reads
@@ -275,14 +275,14 @@ func TestRunJudge_FilesMode(t *testing.T) {
 	require.NoError(t, err)
 
 	// Header counts every judged path; the binary is judged-then-skipped.
-	assert.Contains(t, out.Content, "3 files × 1 questions via test")
+	assert.Contains(t, out.Content, "3 files × 1 questions via jev")
 	assert.Contains(t, out.Content, "a.go")
 	assert.Contains(t, out.Content, "todo: yes (p 0.90, conf 0.60)")
 	assert.Contains(t, out.Content, "b.md")
 	assert.Contains(t, out.Content, "img.dat")
 	assert.Contains(t, out.Content, "skipped: binary file")
 	assert.Equal(t, "judge *.go, *.md, *.dat", out.Detail)
-	assert.Equal(t, "3 files · 1 questions · test", out.Summary)
+	assert.Equal(t, "3 files · 1 questions · jev", out.Summary)
 
 	// Only the two text files reached the decision model.
 	assert.Equal(t, 2, asker.calls(), "binary file must not be asked")
@@ -317,7 +317,7 @@ func TestRunJudge_FilesLimitCapsFanOut(t *testing.T) {
 	out, err := runJudge(testRunner(asker), ctx, raw)
 	require.NoError(t, err)
 
-	assert.Contains(t, out.Content, "2 files × 1 questions via test")
+	assert.Contains(t, out.Content, "2 files × 1 questions via jev")
 	assert.Contains(t, out.Content, "(matched 3 files; judged the first 2 — raise limit to see more)")
 	assert.Equal(t, 2, asker.calls())
 }

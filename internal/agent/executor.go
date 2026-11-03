@@ -455,6 +455,17 @@ func (e *Executor) runOneChecked(
 ) (llm.Message, bool, string) {
         ctx = tools.WithCwd(ctx, e.cwd)
         ctx = tooldef.WithImageEnabled(ctx, e.imageEnabled)
+        // The live permission mode rides the context for the same reason the
+        // cwd does: the gate below is the authority for this call, and tools
+        // that behave mode-sensitively (bash containment turns off under
+        // yolo) must see the mode that actually gated them — not whatever the
+        // config file said at load, which a shift-tab cycle or a web dropdown
+        // has long since superseded. ModeOf unwraps SessionAllowGate; a gate
+        // with no mode (AllowAll) attaches nothing and tools fall back to
+        // the config's mode.
+        if mode := permission.ModeOf(e.gate); mode != "" {
+                ctx = tooldef.WithPermissionMode(ctx, string(mode))
+        }
         // Attached here rather than per-engine so the asker rides the same context
         // the tool already receives. A nil asker is not stored by WithQuestionFunc,
         // and the tool then fails closed with an explicit message.

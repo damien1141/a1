@@ -45,7 +45,7 @@ const PERMISSION_MODES: Array<{ value: string; label: string }> = [
   { value: 'interactive', label: 'Interactive — prompts before anything risky' },
   { value: 'readonly', label: 'Read-only — no writes or bash' },
   { value: 'autopilot', label: 'Autopilot — allowlisted tools run free' },
-  { value: 'yolo', label: 'YOLO — no prompts at all (dangerous)' },
+  { value: 'yolo', label: 'YOLO — no prompts, no bash sandbox (dangerous)' },
 ];
 
 export function PersonaManager({ onClose, onSwitched }: Props) {

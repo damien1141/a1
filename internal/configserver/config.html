@@ -1217,29 +1217,8 @@
       <section class="panel">
         <div class="panel-head">
           <div>
-            <div class="panel-title" data-i18n="judgeHeading">Judge</div>
-            <p class="panel-help" data-i18n="judgeHelp">The code tool's judge mode: local judgment and evaluation via Ollama.</p>
-          </div>
-        </div>
-        <div class="panel-body settings-fields" id="judgeFields">
-          <div class="field field-full">
-            <label class="field-label" for="judgeOllamaBaseUrl" data-i18n="judgeOllamaBaseUrlLabel">Ollama base URL</label>
-            <div class="field-help" data-i18n="judgeOllamaBaseUrlHelp">Local Ollama API endpoint used for judgment.</div>
-            <input id="judgeOllamaBaseUrl" type="text" data-i18n-placeholder="judgeOllamaBaseUrlPlaceholder" placeholder="http://localhost:11434" autocomplete="off">
-          </div>
-          <div class="field field-full">
-            <label class="field-label" for="judgeModel" data-i18n="judgeModelLabel">Judge model</label>
-            <div class="field-help" data-i18n="judgeModelHelp">Ollama model used for local judgment/evaluation.</div>
-            <input id="judgeModel" type="text" data-i18n-placeholder="judgeModelPlaceholder" placeholder="llama3.2" autocomplete="off">
-          </div>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <div>
             <div class="panel-title" data-i18n="jevHeading">JEV decision model</div>
-            <p class="panel-help" data-i18n="jevHelp">The decision backend behind fetch engine routing and the evidence verdict gate — one question, one fast structured answer, never prose. Off by default; every miss falls back to the built-in heuristics.</p>
+            <p class="panel-help" data-i18n="jevHelp">The decision backend behind the judge tool, fetch engine routing, the evidence verdict gate, compaction boundaries, and the bash risk guard — one question, one fast structured answer, never prose. Off by default; every miss falls back to the built-in heuristics.</p>
           </div>
         </div>
         <div class="panel-body settings-fields" id="jevFields">
@@ -1680,16 +1659,8 @@ const I18N = {
     semanticEmbeddingModelLabel: "Embedding model",
     semanticEmbeddingModelHelp: "Ollama model that produces embeddings.",
     semanticEmbeddingModelPlaceholder: "e.g. nomic-embed-text",
-    judgeHeading: "Judge",
-    judgeHelp: "The code tool's judge mode: local judgment and evaluation via Ollama.",
-    judgeOllamaBaseUrlLabel: "Ollama base URL",
-    judgeOllamaBaseUrlHelp: "Local Ollama API endpoint used for judgment.",
-    judgeOllamaBaseUrlPlaceholder: "http://localhost:11434",
-    judgeModelLabel: "Judge model",
-    judgeModelHelp: "Ollama model used for local judgment/evaluation.",
-    judgeModelPlaceholder: "llama3.2",
     jevHeading: "JEV decision model",
-    jevHelp: "The decision backend behind fetch engine routing and the evidence verdict gate — one question, one fast structured answer, never prose. Off by default; every miss falls back to the built-in heuristics.",
+    jevHelp: "The decision backend behind the judge tool, fetch engine routing, the evidence verdict gate, compaction boundaries, and the bash risk guard — one question, one fast structured answer, never prose. Off by default; every miss falls back to the built-in heuristics.",
     jevProviderLabel: "Provider",
     jevProviderHelp: "Where decision questions are asked. Without a provider, the TYPESAFE_API_KEY environment variable still enables the hosted API.",
     jevProviderOff: "Off",
@@ -1872,16 +1843,8 @@ const I18N = {
     semanticEmbeddingModelLabel: "嵌入模型",
     semanticEmbeddingModelHelp: "用于生成嵌入的 Ollama 模型。",
     semanticEmbeddingModelPlaceholder: "例如 nomic-embed-text",
-    judgeHeading: "Judge",
-    judgeHelp: "code 工具的 judge 模式：基于 Ollama 的本地判断/评估。",
-    judgeOllamaBaseUrlLabel: "Ollama 地址",
-    judgeOllamaBaseUrlHelp: "用于本地判断的 Ollama API endpoint。",
-    judgeOllamaBaseUrlPlaceholder: "http://localhost:11434",
-    judgeModelLabel: "判断模型",
-    judgeModelHelp: "用于本地判断/评估的 Ollama 模型。",
-    judgeModelPlaceholder: "llama3.2",
     jevHeading: "JEV 决策模型",
-    jevHelp: "fetch 引擎路由与证据裁决门背后的决策后端——一个问题，一个快速结构化答案，从不生成正文。默认关闭；任何未命中都回退到内置启发式。",
+    jevHelp: "judge 工具、fetch 引擎路由、证据裁决门、压缩边界与 bash 风险防护背后的决策后端——一个问题，一个快速结构化答案，从不生成正文。默认关闭；任何未命中都回退到内置启发式。",
     jevProviderLabel: "提供方",
     jevProviderHelp: "决策问题的去向。未选择时，TYPESAFE_API_KEY 环境变量仍可启用托管 API。",
     jevProviderOff: "关闭",
@@ -1946,7 +1909,6 @@ const dirty = {
   skillPath: false,
   bash: false,
   semantic: false,
-  judge: false,
   jev: false,
   browser: false,
 };
@@ -2652,10 +2614,6 @@ async function load(messageKey, expectedVersion) {
     $("semanticEmbeddingModel").value = semantic.embeddingModel || "";
     $("semanticFields").hidden = !$("semanticEnabled").checked;
 
-    const judge = doc.judge || {};
-    $("judgeOllamaBaseUrl").value = judge.ollamaBaseUrl || "";
-    $("judgeModel").value = judge.model || "";
-
     // JEV decision model (jev: section). Both model inputs paint the same
     // jev.model key — the provider selects whose meaning applies.
     const jev = doc.jev || {};
@@ -2726,10 +2684,6 @@ function buildPayload() {
       ollamaBaseUrl: $("semanticOllamaBaseUrl").value.trim() || null,
       embeddingModel: $("semanticEmbeddingModel").value.trim() || null,
     } : (orig && orig.semanticSearch != null ? orig.semanticSearch : null),
-    judge: dirty.judge ? {
-      model: $("judgeModel").value.trim() || null,
-      ollamaBaseUrl: $("judgeOllamaBaseUrl").value.trim() || null,
-    } : (orig && orig.judge != null ? orig.judge : null),
     jev: dirty.jev ? {
       provider: $("jevProvider").value || null,
       apiKey: $("jevApiKey").value.trim() || null,
@@ -2824,9 +2778,6 @@ $("semanticEnabled").addEventListener("change", () => {
 });
 $("semanticOllamaBaseUrl").addEventListener("input", () => markDirty("semantic"));
 $("semanticEmbeddingModel").addEventListener("input", () => markDirty("semantic"));
-
-$("judgeOllamaBaseUrl").addEventListener("input", () => markDirty("judge"));
-$("judgeModel").addEventListener("input", () => markDirty("judge"));
 
 // JEV decision model — provider select drives the conditional fields; the
 // two model inputs both write the shared jev.model key on save (whichever

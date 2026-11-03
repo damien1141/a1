@@ -28,7 +28,6 @@ type Config struct {
         Permissions    permission.Policy
         Agents         AgentsConfig
         SemanticSearch SemanticSearchConfig
-        Judge          JudgeConfig
         Jev            jev.Settings
         Browser        BrowserConfig
         UI             UIConfig
@@ -211,12 +210,6 @@ type SemanticSearchConfig struct {
         Enabled        bool   `yaml:"enabled"`
         OllamaBaseURL  string `yaml:"ollama_base_url"`
         EmbeddingModel string `yaml:"embedding_model"`
-}
-
-// JudgeConfig controls the local judgment/evaluation tool.
-type JudgeConfig struct {
-        Model         string `yaml:"model"`
-        OllamaBaseURL string `yaml:"ollama_base_url"`
 }
 
 // BrowserConfig controls browser tool behavior and profiles.
@@ -410,12 +403,6 @@ func parseConfigFile(path string) (*Config, error) {
                         EmbeddingModel: strings.TrimSpace(raw.SemanticSearch.EmbeddingModel),
                 }
         }
-        if raw.Judge != nil {
-                cfg.Judge = JudgeConfig{
-                        Model:         strings.TrimSpace(raw.Judge.Model),
-                        OllamaBaseURL: strings.TrimSpace(raw.Judge.OllamaBaseURL),
-                }
-        }
         if raw.Jev != nil {
                 cfg.Jev = jev.Settings{
                         Provider:      strings.ToLower(strings.TrimSpace(raw.Jev.Provider)),
@@ -509,7 +496,6 @@ type fileConfig struct {
         Permissions    *permConfig           `yaml:"permissions"`
         Agents         *agentsConfig         `yaml:"agents"`
         SemanticSearch *semanticSearchConfig `yaml:"semantic_search"`
-        Judge          *judgeConfig          `yaml:"judge"`
         Jev            *jevConfig            `yaml:"jev"`
         Browser        *browserConfig        `yaml:"browser"`
         UI             *uiConfig             `yaml:"ui"`
@@ -554,13 +540,9 @@ type webConfig struct {
         AutoNameSessions *bool `yaml:"auto_name_sessions"`
 }
 
-type judgeConfig struct {
-        Model         string `yaml:"model"`
-        OllamaBaseURL string `yaml:"ollama_base_url"`
-}
-
-// jevConfig mirrors the jev: block — the decision-model backend for the
-// fetch engine classifier and the evidence verdict gate. Pointer fields
+// jevConfig mirrors the jev: block — the decision-model backend shared
+// by the judge tool, fetch routing, evidence verdicts, compaction
+// boundaries, and the bash risk guard. Pointer fields
 // on fileConfig distinguish "no jev: section" (env fallback applies) from
 // a present one. Provider is normalized to lowercase at parse.
 type jevConfig struct {
