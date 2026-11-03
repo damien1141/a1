@@ -215,8 +215,10 @@ func runBash(ctx context.Context, input json.RawMessage) (tooldef.Result, error)
 	// (workspace, caches, network toggle); nil leaves the exec untouched.
 	prof := bashSandboxProfile(ctx)
 	if prof != nil {
+		// startLocked already prefixes enforcement failures with "sandbox:" and
+		// names the failing anchor; re-wrapping here printed "sandbox: sandbox: …".
 		if serr := sandbox.Start(c, prof); serr != nil {
-			return tooldef.Result{}, fmt.Errorf("sandbox: %w", serr)
+			return tooldef.Result{}, serr
 		}
 		err = c.Wait()
 	} else {

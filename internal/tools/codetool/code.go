@@ -29,7 +29,7 @@
 //	property    — property-test skeleton generator (propertytool)
 //	runtime     — go test runtime failure inspector (runtimetool)
 //	build       — build the project (buildtool)
-//	judge       — local LLM judgment via Ollama (judgetool)
+//	judge       — decision-model (JEV) classification of state or files (judgetool)
 //	errtrans    — translate error text to a diagnosis (errortrans)
 //	error       — match error text against known patterns for a fix (errortool)
 //	stack       — parse a stack trace into file:line frames with source context (stacktool)
@@ -78,7 +78,8 @@ Code facts (path/glob/limit): api exported surface | deadcode unused symbols |
   nplusone N+1 queries | vuln govulncheck | token token-count
 Tests/build: coverage | testimpact tests to run | property skeletons
 Writes: scaffold templates | migration API migration
-judge: local LLM judgment (Ollama).`
+judge: decision-model (JEV) classification of state or files (see the
+  judge tool's schema for questions/state/files).`
 
 // codeModes is the list of accepted mode values. Listed here for the
 // schema's enum field so the LLM gets a constrained choice instead of a

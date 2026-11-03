@@ -52,7 +52,7 @@ func replayEntry(snap Snapshot, entry SessionMessageEntry, detail ToolDetail) Sn
                         ToolUseID: msg.ToolCallID,
                         Status:    ToolDone,
                         Output:    msg.Content,
-                        Sources:   entry.Sources,
+                        Sources:   entry.ToolSources,
                 }})
         }
         return snap

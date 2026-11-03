@@ -3,7 +3,9 @@
 package sandbox
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"runtime"
@@ -118,7 +120,10 @@ func applyLandlock(p *Profile) error {
 	addRule := func(path string, access uint64) error {
 		f, err := os.OpenFile(path, unix.O_PATH|unix.O_CLOEXEC, 0)
 		if err != nil {
-			return err
+			// Path context matters: a bare errno ("no such file or directory")
+			// names nothing, and on this path it names the difference between a
+			// broken anchor and a broken machine.
+			return fmt.Errorf("open rule anchor %s: %w", path, err)
 		}
 		defer f.Close()
 		rule := unix.LandlockPathBeneathAttr{
@@ -136,7 +141,7 @@ func applyLandlock(p *Profile) error {
 			uintptr(unsafe.Pointer(&rule)),
 			0, 0, 0, // flags must be 0
 		); errno != 0 {
-			return errno
+			return fmt.Errorf("add landlock rule for %s: %w", path, errno)
 		}
 		return nil
 	}
@@ -147,6 +152,14 @@ func applyLandlock(p *Profile) error {
 	}
 	for _, dir := range p.ReadWrite {
 		if err := addRule(dir, readWriteBits(abi)); err != nil {
+			// A directory that vanished between Compile and Start (or whose
+			// path got swapped for a file) grants nothing — there is nothing
+			// there to write to. Compile already filters missing candidates;
+			// this covers the race without making a missing cache fatal to the
+			// whole command.
+			if anchorMissing(err) {
+				continue
+			}
 			return err
 		}
 	}
@@ -165,4 +178,20 @@ func applyLandlock(p *Profile) error {
 		return errno
 	}
 	return nil
+}
+
+// anchorMissing reports whether err is the "this path is not there" family:
+// the anchor directory vanished (ENOENT) or one of its path components is a
+// file (ENOTDIR). Compile drops candidates that do not exist, but a
+// directory can disappear between Compile and Start; such an anchor grants
+// nothing — the directory isn't there to write to — so the rule is skipped
+// instead of killing the start. Every other error (EACCES, EPERM, EINVAL,
+// EBADF…) stays fatal: those mean the sandbox itself is misbehaving, and
+// failing loudly beats failing contained-but-silently.
+func anchorMissing(err error) bool {
+	if errors.Is(err, fs.ErrNotExist) {
+		return true
+	}
+	var errno unix.Errno
+	return errors.As(err, &errno) && errno == unix.ENOTDIR
 }

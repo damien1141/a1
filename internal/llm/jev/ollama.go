@@ -1,10 +1,12 @@
 package jev
 
 import (
+        "bytes"
         "context"
         "encoding/json"
         "errors"
         "fmt"
+        "io"
         "maps"
         "net"
         "net/http"
@@ -18,27 +20,40 @@ import (
         "github.com/damien1141/a1/internal/util"
 )
 
-// The Ollama provider: a local chat model standing in for the hosted
-// decision model. The questions are the same noul/choice/score primitives;
-// the difference is the wire. System One answers structurally (the response
-// schema is the contract); a chat model answers textually, so the contract
-// moves into the prompt and the parse:
+// The Ollama provider: a local server answering System One questions. The
+// questions are the same noul/choice/score primitives on every wire; which
+// wire answers them depends on the server:
 //
-//   - `format: "json"` turns on Ollama's constrained decoding, so the reply
-//     is guaranteed parseable JSON — no fence-stripping gymnastics in the
-//     common case (a defensive strip still runs for servers/models that
-//     ignore the format).
-//   - temperature 0 and thinking off: a decision must be reproducible, and
-//     a reasoning preamble is latency with no verdict in it.
-//   - num_predict capped: the reply is a few dozen tokens of JSON; a model
-//     that starts rambling gets cut off instead of burning the timeout.
+//   - Native (Ollama >= 0.35): the server implements System One itself.
+//     POST /v1/systemone takes the same {model, state, questions} request
+//     the hosted provider sends (no API key — it is local), and answers
+//     under the same response schema, so the server is the contract. This
+//     wire is tried first.
+//   - Chat fallback (any Ollama): a plain chat model standing in for the
+//     decision model. The contract moves into the prompt and the parse:
 //
-// Validation is the same spine the TypeSafe wire enforces (see
-// wireAnswer.answer): every asked question answered, the choice drawn from
-// the question's own alternatives, the score inside the rubric range,
-// confidence present for choice/score. Anything else is an error, and the
-// wired call sites fall back to their deterministic paths — a bad local
-// model can never do worse than no JEV at all.
+//       - `format: "json"` turns on Ollama's constrained decoding, so the
+//         reply is guaranteed parseable JSON — no fence-stripping gymnastics
+//         in the common case (a defensive strip still runs for servers and
+//         models that ignore the format).
+//       - temperature 0 and thinking off: a decision must be reproducible,
+//         and a reasoning preamble is latency with no verdict in it.
+//       - num_predict capped: the reply is a few dozen tokens of JSON; a
+//         model that starts rambling gets cut off instead of burning the
+//         timeout.
+//
+// A 404 from the native endpoint means the server predates it (Ollama <
+// 0.35); the call falls back to the chat wire, so an existing setup keeps
+// working byte-for-byte. Any other native failure is an error, not a
+// fallback: the endpoint exists and is broken, and a chat retry would mask
+// the breakage.
+//
+// Validation is the same spine on both wires (see wireAnswer.answer): every
+// asked question answered, the choice drawn from the question's own
+// alternatives, the score inside the rubric range, confidence present for
+// choice/score. Anything else is an error, and the wired call sites fall
+// back to their deterministic paths — a bad local model can never do worse
+// than no JEV at all.
 
 // ollamaDecisionSystem is the system prompt that turns a chat model into a
 // decision model for the length of one call.
@@ -79,11 +94,17 @@ type OllamaConfig struct {
         HTTPClient *http.Client
 }
 
-// OllamaClient asks System One questions to a local Ollama model. It is
-// safe for concurrent use.
+// OllamaClient asks System One questions to a local Ollama server: the
+// native endpoint when the server has it, the chat emulation otherwise. It
+// is safe for concurrent use.
 type OllamaClient struct {
         client *ollama.Client
-        model  string
+        // httpClient and baseURL back the native /v1/systemone call, which
+        // the vendored api client (v0.34.4) predates; the chat fallback
+        // keeps using the api client.
+        httpClient *http.Client
+        baseURL    *url.URL
+        model      string
 }
 
 // NewOllamaClient resolves cfg against the environment (base URL falls
@@ -95,8 +116,10 @@ func NewOllamaClient(cfg OllamaConfig) *OllamaClient {
         }
         base := resolveOllamaBaseURL(cfg.BaseURL)
         return &OllamaClient{
-                client: ollama.NewClient(base, httpClient),
-                model:  strings.TrimSpace(cfg.Model),
+                client:     ollama.NewClient(base, httpClient),
+                httpClient: httpClient,
+                baseURL:    base,
+                model:      strings.TrimSpace(cfg.Model),
         }
 }
 
@@ -140,10 +163,12 @@ func mustParseURL(raw string) *url.URL {
         return u
 }
 
-// SystemOneWithOptions asks the questions to the local model and parses
-// the reply under the same validation spine as the TypeSafe wire. Per-call
-// Options.Model overrides the configured tag; the TypeSafe-only Header and
-// ExtraBody overrides have no Ollama meaning and are ignored.
+// SystemOneWithOptions asks the questions to the local server and parses
+// the reply under the same validation spine as the TypeSafe wire: the
+// native /v1/systemone endpoint when the server has it (Ollama >= 0.35),
+// else the chat emulation. Per-call Options.Model overrides the configured
+// tag; the TypeSafe-only Header and ExtraBody overrides have no Ollama
+// meaning and are ignored.
 func (c *OllamaClient) SystemOneWithOptions(
         ctx context.Context,
         state any,
@@ -163,6 +188,203 @@ func (c *OllamaClient) SystemOneWithOptions(
                 model = override
         }
 
+        resp, handled, err := c.systemOneNative(ctx, model, state, encoded)
+        if handled {
+                return resp, err
+        }
+        return c.systemOneChat(ctx, model, state, encoded)
+}
+
+// systemOneNative calls the native /v1/systemone endpoint. handled reports
+// whether the call settled the decision: true for a parsed answer or a hard
+// error, false only for a 404 — the server predates the endpoint, and the
+// caller falls back to the chat wire.
+func (c *OllamaClient) systemOneNative(
+        ctx context.Context,
+        model string,
+        state any,
+        encoded map[string]any,
+) (Response, bool, error) {
+        payload, err := json.Marshal(map[string]any{
+                "model":     model,
+                "state":     state,
+                "questions": encoded,
+        })
+        if err != nil {
+                return Response{}, true, fmt.Errorf("encode systemone request: %w", err)
+        }
+        endpoint := c.baseURL.JoinPath(systemOnePath)
+        req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(payload))
+        if err != nil {
+                return Response{}, true, err
+        }
+        req.Header.Set("Content-Type", "application/json")
+
+        httpResp, err := util.DoWithRetry(c.httpClient, req)
+        if err != nil {
+                return Response{}, true, fmt.Errorf("ollama systemone: %w", err)
+        }
+        defer httpResp.Body.Close()
+        raw, err := io.ReadAll(httpResp.Body)
+        if err != nil {
+                return Response{}, true, fmt.Errorf("read systemone response: %w", err)
+        }
+        if httpResp.StatusCode == http.StatusNotFound {
+                return Response{}, false, nil
+        }
+        if httpResp.StatusCode < http.StatusOK || httpResp.StatusCode >= http.StatusMultipleChoices {
+                msg := errorMessage(raw)
+                if msg == "" {
+                        msg = truncateBody(string(raw))
+                }
+                if msg == "" {
+                        msg = "empty error response"
+                }
+                return Response{}, true, fmt.Errorf("ollama systemone API error (%d): %s", httpResp.StatusCode, msg)
+        }
+
+        var wire systemOneResponse
+        if err := json.Unmarshal(raw, &wire); err != nil {
+                return Response{}, true, fmt.Errorf("ollama systemone response is not valid JSON: %w", err)
+        }
+        answers, err := convertSystemOneAnswers(wire.Answers, encoded)
+        if err != nil {
+                return Response{}, true, err
+        }
+        resp := Response{
+                Model:   wire.Model,
+                Usage:   wire.Usage,
+                Answers: answers,
+                RawBody: json.RawMessage(raw),
+        }
+        if err := resp.validate(encoded); err != nil {
+                return Response{}, true, err
+        }
+        return resp, true, nil
+}
+
+// systemOneResponse is the native endpoint's reply: the hosted wire's
+// shape. Legend and probabilities are kept when the server sends them; the
+// validation spine does not depend on them.
+type systemOneResponse struct {
+        Model   string                     `json:"model"`
+        Usage   Usage                      `json:"usage"`
+        Answers map[string]systemOneAnswer `json:"answers"`
+}
+
+// systemOneAnswer is one answer object in the native reply. Pointers
+// distinguish "absent" from zero, exactly like the hosted and chat wires:
+// an answer that omits the field its type requires is rejected instead of
+// decoding as a confident zero.
+type systemOneAnswer struct {
+        Type          string             `json:"type"`
+        Noul          *float64           `json:"noul"`
+        Choice        *string            `json:"choice"`
+        Score         *float64           `json:"score"`
+        Confidence    *float64           `json:"confidence"`
+        Legend        map[string]any     `json:"legend"`
+        Probabilities map[string]float64 `json:"probabilities"`
+}
+
+// convertSystemOneAnswers checks the native reply against the questions
+// actually asked: every asked question present with a type-valid value.
+func convertSystemOneAnswers(reply map[string]systemOneAnswer, encoded map[string]any) (map[string]Answer, error) {
+        answers := make(map[string]Answer, len(encoded))
+        for name, question := range encoded {
+                asked, _ := question.(map[string]any)
+                want, _ := asked["type"].(string)
+                raw, ok := reply[name]
+                if !ok {
+                        return nil, fmt.Errorf("ollama systemone response left question %q unanswered", name)
+                }
+                answer, err := raw.answer(name, want, asked)
+                if err != nil {
+                        return nil, err
+                }
+                answers[name] = answer
+        }
+        return answers, nil
+}
+
+// answer converts one native answer into an Answer. The question's type is
+// authoritative: an echoed type that contradicts it is an error, an absent
+// one is inferred from the question. Unknown question types are errors on
+// this wire — the server may answer them, but their answer shape is
+// unverified, and refusing beats guessing (the hosted wire remains the
+// passthrough for exotic types).
+func (a systemOneAnswer) answer(name, want string, asked map[string]any) (Answer, error) {
+        missing := func(field string) (Answer, error) {
+                return Answer{}, fmt.Errorf("ollama systemone answer for question %q has no %q", name, field)
+        }
+        bad := func(format string, args ...any) (Answer, error) {
+                return Answer{}, fmt.Errorf("ollama systemone answer for question %q: %s", name, fmt.Sprintf(format, args...))
+        }
+        if a.Type != "" && a.Type != want {
+                return bad("has type %q, want %q", a.Type, want)
+        }
+
+        answer := Answer{Type: want}
+        switch want {
+        case AnswerNoul:
+                if a.Noul == nil {
+                        return missing("noul")
+                }
+                if *a.Noul < 0 || *a.Noul > 1 {
+                        return bad("noul %g is outside 0..1", *a.Noul)
+                }
+                answer.Noul = *a.Noul
+                // Confidence is optional for a noul on the other wires; an
+                // omitted one reads as zero there, so it does here too.
+                if a.Confidence != nil {
+                        answer.Confidence = *a.Confidence
+                }
+        case AnswerChoice:
+                switch {
+                case a.Choice == nil || *a.Choice == "":
+                        return missing("choice")
+                case a.Confidence == nil:
+                        return missing("confidence")
+                }
+                if !choiceInCriteria(*a.Choice, asked) {
+                        return bad("choice %q is not one of the named alternatives", *a.Choice)
+                }
+                if *a.Confidence < 0 || *a.Confidence > 1 {
+                        return bad("confidence %g is outside 0..1", *a.Confidence)
+                }
+                answer.Choice, answer.Confidence, answer.Probabilities = *a.Choice, *a.Confidence, a.Probabilities
+        case AnswerScore:
+                switch {
+                case a.Score == nil:
+                        return missing("score")
+                case a.Confidence == nil:
+                        return missing("confidence")
+                }
+                levels := scoreLevels(asked)
+                // A fractional position is a valid verdict — the hosted wire
+                // pins interpolated rubric levels — but it still has to land
+                // inside the rubric.
+                if *a.Score < 0 || *a.Score > float64(levels-1) {
+                        return bad("score %g is outside the rubric range 0..%d", *a.Score, levels-1)
+                }
+                if *a.Confidence < 0 || *a.Confidence > 1 {
+                        return bad("confidence %g is outside 0..1", *a.Confidence)
+                }
+                answer.Score, answer.Confidence = *a.Score, *a.Confidence
+                answer.Legend, answer.Probabilities = a.Legend, a.Probabilities
+        default:
+                return bad("question type %q is not a noul, choice, or score", want)
+        }
+        return answer, nil
+}
+
+// systemOneChat emulates the decision contract over a plain chat model —
+// the wire for servers without the native endpoint.
+func (c *OllamaClient) systemOneChat(
+        ctx context.Context,
+        model string,
+        state any,
+        encoded map[string]any,
+) (Response, error) {
         req := &ollama.ChatRequest{
                 Model: model,
                 Messages: []ollama.Message{
@@ -183,7 +405,7 @@ func (c *OllamaClient) SystemOneWithOptions(
         }
 
         var reply ollama.ChatResponse
-        err = c.client.Chat(ctx, req, func(resp ollama.ChatResponse) error {
+        err := c.client.Chat(ctx, req, func(resp ollama.ChatResponse) error {
                 reply = resp
                 return nil
         })

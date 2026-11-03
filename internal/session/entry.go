@@ -64,7 +64,7 @@ type SessionMessageEntry struct {
         SessionBaseEntry
         Message llm.Message `json:"message"`
         Usage   llm.Usage   `json:"usage,omitempty"`
-        // Sources carries the ranked source cards a search-mode fetch produced
+        // ToolSources carries the ranked source cards a search-mode fetch produced
         // for this tool result — UI metadata the model-facing Message content
         // has no field for. It rides the entry so the web transcript can
         // re-render source pills after a reload (the live ToolRun.Sources the
@@ -72,7 +72,7 @@ type SessionMessageEntry struct {
         // entry. JSONL decode ignores unknown fields and omits empty ones, so
         // old binaries and old files interoperate in both directions, and the
         // vault stores the entry JSON byte-faithfully — no vault change needed.
-        Sources []ToolSource `json:"sources,omitempty"`
+        ToolSources []ToolSource `json:"tool_sources,omitempty"`
 }
 
 // GetType implements MessageEntry.

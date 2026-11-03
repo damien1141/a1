@@ -111,7 +111,7 @@ func TestPrepareCompactStripsPreviousEvidenceRecord(t *testing.T) {
         }
         settings := Settings{keepRecentTokens: 10}
 
-        prep, err := PrepareCompact(entries, settings)
+        prep, err := PrepareCompact(t.Context(), entries, settings)
         require.NoError(t, err)
 
         assert.Equal(t, "narrative before\n\nnarrative after", prep.PreviousSummary)

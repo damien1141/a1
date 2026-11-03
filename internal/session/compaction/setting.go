@@ -26,6 +26,19 @@ type Settings struct {
         // fires. Compaction runs only when context exceeds this fraction AND has
         // grown by at least GrowthThreshold since the last compaction.
         FloorFraction float64
+        // boundaryClassifier, when set, lets the decision model refine where
+        // the cut lands: candidate boundaries near the positional cut are
+        // classified as clean or not, and the cut moves to the nearest clean
+        // one. Nil (the default) keeps the purely positional behavior.
+        boundaryClassifier BoundaryClassifier
+}
+
+// WithBoundaryClassifier returns settings with the semantic boundary
+// classifier attached (nil clears it). A value method on purpose: callers
+// chain it after SettingsFor without mutating the shared default.
+func (s Settings) WithBoundaryClassifier(clf BoundaryClassifier) Settings {
+        s.boundaryClassifier = clf
+        return s
 }
 
 // Default fractions for window-aware settings (SettingsFor). Each scales the

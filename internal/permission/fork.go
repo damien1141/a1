@@ -14,14 +14,18 @@ package permission
 // it performs inside the branch.
 func ForkChildGate(parent *StaticGate, mode Mode) *StaticGate {
 	child := &StaticGate{
-		Policy:     parent.Policy,
-		Workspace:  parent.Workspace,
-		bashAllow:  parent.bashAllow,
-		bashDeny:   parent.bashDeny,
-		contracts:  parent.contracts,
-		recovery:   parent.recovery,
-		resolver:   parent.resolver,
-		trajectory: forkTrajectory(parent.trajectory),
+		Policy:    parent.Policy,
+		Workspace: parent.Workspace,
+		bashAllow: parent.bashAllow,
+		bashDeny:  parent.bashDeny,
+		contracts: parent.contracts,
+		recovery:  parent.recovery,
+		resolver:  parent.resolver,
+		// The risk classifier crosses the boundary with the child: a
+		// spawned branch with BashDefault=Allow is exactly where a
+		// novel destructive command would otherwise run unchallenged.
+		riskClassifier: parent.riskClassifier,
+		trajectory:     forkTrajectory(parent.trajectory),
 	}
 	child.Policy.Mode = mode
 	// A child branch never inherits the parent's session-wide overrides:

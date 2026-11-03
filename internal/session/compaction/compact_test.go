@@ -41,7 +41,7 @@ func TestPrepareCompact_AlreadyCompacted_ReturnsEmptyPreparation(t *testing.T) {
 	}
 	settings := Settings{keepRecentTokens: 100}
 
-	prep, err := PrepareCompact(entries, settings)
+	prep, err := PrepareCompact(t.Context(), entries, settings)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, prep)
@@ -59,7 +59,7 @@ func TestPrepareCompact_SessionNeedsMigration_ReturnsError(t *testing.T) {
 	}
 	settings := Settings{keepRecentTokens: 100}
 
-	prep, err := PrepareCompact(entries, settings)
+	prep, err := PrepareCompact(t.Context(), entries, settings)
 
 	assert.Error(t, err)
 	assert.Nil(t, prep)
@@ -74,7 +74,7 @@ func TestPrepareCompact_NoPreviousCompaction_SplitsByKeepRecentTokens(t *testing
 	}
 	settings := Settings{keepRecentTokens: 25}
 
-	prep, err := PrepareCompact(entries, settings)
+	prep, err := PrepareCompact(t.Context(), entries, settings)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, prep)
@@ -100,7 +100,7 @@ func TestPrepareCompact_UnderTokenLimit_ReturnsEmptyPreparation(t *testing.T) {
 	}
 	settings := Settings{keepRecentTokens: 100}
 
-	prep, err := PrepareCompact(entries, settings)
+	prep, err := PrepareCompact(t.Context(), entries, settings)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, prep)
@@ -127,7 +127,7 @@ func TestPrepareCompact_WithPreviousCompaction_SetsSummaryAndPreserveData(t *tes
 	// summarized and the previous summary is carried for the update prompt.
 	settings := Settings{keepRecentTokens: 20}
 
-	prep, err := PrepareCompact(entries, settings)
+	prep, err := PrepareCompact(t.Context(), entries, settings)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, prep)
@@ -147,7 +147,7 @@ func TestPrepareCompact_MidTurnCut_SplitsTurnPrefix(t *testing.T) {
 	}
 	settings := Settings{keepRecentTokens: 20}
 
-	prep, err := PrepareCompact(entries, settings)
+	prep, err := PrepareCompact(t.Context(), entries, settings)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, prep)
@@ -173,7 +173,7 @@ func TestCompact_TruncatedSummary_ReturnsError(t *testing.T) {
 	}
 	settings := Settings{reverseTokens: 16384, keepRecentTokens: 25}
 
-	prep, err := PrepareCompact(entries, settings)
+	prep, err := PrepareCompact(t.Context(), entries, settings)
 	require.NoError(t, err)
 	require.Equal(t, 16384, prep.ReserveTokens)
 

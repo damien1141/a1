@@ -54,6 +54,14 @@ func findCutPoint(
         // overflow-recovery window halving takes over from there.
         cutIndex = capKeptZone(messageEntries, endIndex, cutIndex, cutPoints, settings.MaxKeptTokens())
 
+        return cutPointResultAt(messageEntries, cutIndex, startIndex)
+}
+
+// cutPointResultAt builds the result for a chosen cut index, classifying
+// whether the cut falls at a turn boundary (a user message) or inside a
+// turn. Shared by the positional pass and the semantic refinement so both
+// classify a chosen index the same way.
+func cutPointResultAt(messageEntries []session.MessageEntry, cutIndex, startIndex int) CutPointResult {
         // Entry at the cut point;
         // used to tell if we cut at a user message (a turn boundary).
         cutEntry := messageEntries[cutIndex]

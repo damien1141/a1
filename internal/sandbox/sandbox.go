@@ -42,6 +42,14 @@ type Profile struct {
 // minus any directory that falls under an APPA sensitive-path deny prefix
 // (the manifest never widens what the policy denies). network follows the
 // policy's trust: false keeps egress denied — containment first.
+//
+// Only directories that exist on this machine make the manifest. A Landlock
+// rule anchors on an O_PATH fd of its directory, and opening a missing path
+// fails: one absent candidate (~/.cargo on a Rust-free box,
+// ~/.a1/browser-profiles before the first browser spawn) would otherwise
+// kill EVERY sandboxed start with ENOENT — total bash failure on machines
+// that simply never touched that toolchain. A missing directory grants
+// nothing anyway; dropping it keeps the manifest buildable everywhere.
 func Compile(workspace string, network bool, denyPrefixes []string) Profile {
 	home, _ := os.UserHomeDir()
 	candidates := []string{workspace, os.TempDir()}
@@ -82,7 +90,21 @@ func Compile(workspace string, network bool, denyPrefixes []string) Profile {
 			rw = append(rw, dir)
 		}
 	}
-	return Profile{ReadWrite: rw, Network: network}
+	// Existence filter, applied last so the deny/clean/dedupe pipeline above
+	// stays untouched: a candidate that is not a directory on this machine
+	// cannot anchor a rule, and a failed anchor is fatal to the whole start.
+	// The workspace and temp dir always exist in practice; home caches and
+	// ~/.a1 subdirs are created lazily by their toolchains and may never have
+	// been. Dropped here rather than skipped at syscall time so the profile
+	// is an honest manifest (and seatbelt renders only real subpaths too).
+	existing := make([]string, 0, len(rw))
+	for _, dir := range rw {
+		if !dirExists(dir) {
+			continue
+		}
+		existing = append(existing, dir)
+	}
+	return Profile{ReadWrite: existing, Network: network}
 }
 
 func underAnyPrefix(dir string, prefixes []string) bool {
@@ -129,6 +151,15 @@ func containsDir(dirs []string, dir string) bool {
 		}
 	}
 	return false
+}
+
+// dirExists reports whether path is a directory that can be statted. A rule
+// anchor needs an O_PATH open (or a real subpath under seatbelt); a path
+// that fails this check would fail that one too, so Compile drops it up
+// front instead of letting the failure land mid-start.
+func dirExists(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && st.IsDir()
 }
 
 // Start starts cmd under the profile when enforcement is active for this

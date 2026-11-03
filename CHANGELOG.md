@@ -10,6 +10,59 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **`judge` classifies files without loading them — `files` glob mode.**
+  `code mode=judge` (and the `judge` tool) accepts a `files` glob plus the
+  usual questions: the tool expands the glob (20 files default, 100 cap),
+  truncates each file's head to 24KB, skips binaries, and asks the
+  decision model per file in one concurrent batch (4 at a time). The
+  result is one verdict with confidence per file — a classification
+  question like "which of these contain a TODO?" costs one sub-cent
+  round trip instead of dozens of reads filling the context. The system
+  prompt routes classification questions over files to it (answers
+  reported as given; grep/read fallback when no decision model is
+  configured), and the judge mode's docs no longer claim Ollama-only —
+  it routes through whatever jev provider is configured (api or
+  ollama).
+
+- **Compaction cuts at semantic boundaries when a decision model is
+  configured.** The positional cut knows token budgets, not tasks — it
+  would land between a tool call and its result and let the mid-turn
+  turn-prefix summary patch the orphan afterwards (a second summarizer
+  call running in parallel with the history summary). Now the candidate
+  boundaries nearest the positional cut (±3, subject to the kept-zone
+  constraints) are classified — "does the work just before this
+  boundary reach a natural completion?" — and the cut moves to the
+  closest clean one, nearest first, ties preferring the older boundary
+  (more context kept). Fail-open by construction: no classifier, a
+  classifier error, or nothing classified clean leaves the positional
+  cut exactly as it was — the refinement can never block, delay beyond
+  its own timeout, or break compaction. A refined clean boundary also
+  eliminates the turn-prefix summary: one summarizer call instead of
+  two.
+
+- **`permissions.bash_risk_guard` — the decision model as a second net
+  for the bash ambiguity zone.** Off by default. When enabled and a
+  decision model is configured, bash commands that match neither the
+  allow nor the deny list and that containment does not answer are
+  classified before execution (one round trip, two questions:
+  destructive? cheaply reversible?). A ≥0.70-confidence
+  destructive-and-irreversible verdict tightens the decision — Ask with
+  the verdict annotated in interactive mode, Deny in autonomous modes
+  (the sub-agent hole: ChildPolicy's BashDefault=Allow used to run
+  novel destructive commands — `git push --force`, `find / -delete` —
+  silently). The contract is fail-closed toward today's behavior:
+  nothing maps to Allow, every miss (unset, unconfigured, errored,
+  timed out, low confidence, half-answered) is exactly the decision
+  today's policy would have made, yolo skips the classifier entirely,
+  and forked child gates inherit the guard. Setting the flag without a
+  decision model debuglogs that the guard is inactive; a classifier
+  miss debuglogs the miss. Mid-session deconfiguration is pinned by
+  tests at both new jev call sites (here and compaction): the asker
+  re-resolves its provider per call, so removing the `jev:` section
+  surfaces `ErrNotConfigured` on the next classification — a miss
+  folded into the fallback, never a stale verdict from the dead
+  provider.
+
 - **Persona settings are the defaults everywhere.** The active persona's
   Model, PermissionMode, MemoryModel, and memory toggle now define what a
   new session actually runs and what every selector shows — the "falls back
@@ -121,6 +174,64 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
     contracts can declare them as done-criteria.
 
 ### Fixed
+
+- **The compaction scrollback contract is pinned at the session layer.**
+  `Manager.FullBranch` returns the full leaf-to-root branch (header
+  excluded, oldest first) with no compaction cut applied — the UI
+  scrollback view — while `BuildContext` remains the only view that stops
+  at the newest compaction's retained tail, so the model context is cut
+  but the transcript never is. `Session.AllEntries` (the web transcript's
+  replay source) now delegates to it instead of duplicating the walk, so
+  the pinned primitive and the production path are one implementation.
+  The tool-result source cards ride the entry as `ToolSources`
+  (`"tool_sources"` on the JSONL line — renamed from the mismatched
+  `"sources"` the acceptance suite pins as the wire contract) and
+  `ReplaySnapshot` restores them onto the replayed `ToolRun` together
+  with the name carried from the tool_use block.
+
+- **Concurrent job-meta writes could splice into unreadable JSON.**
+  `store.writeMeta` wrote every version to the same fixed `meta.json.tmp`
+  path; two truncate+write cycles sharing that path interleave into
+  valid-JSON-prefix-plus-stale-tail bytes, and `readMeta` fails with
+  "invalid character ... after top-level value" — a corrupted job. Each
+  write now gets a unique `CreateTemp` name (O_EXCL, same directory, so
+  the rename stays atomic): a reader sees one whole version or another,
+  never a splice. The requeue test that exposed it also models process
+  death properly now — it releases only the NEW manager's runner, so the
+  abandoned manager's goroutine stays parked like a real dead process's
+  would instead of waking to race the completion persist.
+
+- **Gate and browser tests are deterministic on every host.** Two
+  environment leaks made the suite machine-dependent: on a Wayland
+  desktop the browser tests' "no display" simulation cleared only
+  `DISPLAY`, so the leaked `WAYLAND_DISPLAY` kept the probe headed and
+  the expected headless downgrade landed (and was reported) as a visible
+  window — both browser tests now pin both display vars; and on a
+  Landlock host the real sandbox probe folded every unpinned Ask
+  expectation into a sandboxed Allow ("containment substitutes for
+  approval"), flipping the webserver's mode-folding and policy-fallback
+  contracts to green-light `pip install` — the webserver package now
+  pins the probe via `permission.PinSandboxSupportedForTest` in a
+  `TestMain`, mirroring the permission package's own pin, with the
+  containment path itself still tested where it belongs.
+
+- **Sandboxed bash died on machines missing a single cache directory —
+  the "commands aren't executing" regression.** `sandbox.Compile` listed
+  RW anchors without checking they exist, and a Landlock path-beneath
+  rule anchors on an `O_PATH` open of its directory: one absent candidate
+  (`~/.cargo` on a Rust-free box, `~/.a1/browser-profiles` before the
+  first browser spawn, `~/.bun/install/cache` without bun) failed the open
+  and killed the whole start — every sandboxed bash call errored with
+  ENOENT while the permission gate had already auto-allowed it (the host
+  supports Landlock), so commands simply never executed. Compile now
+  drops candidates that aren't existing directories (seatbelt renders
+  only real subpaths too), and `applyLandlock` skips an RW anchor that
+  vanishes between Compile and Start — ENOENT/ENOTDIR are skippable
+  because a missing directory grants nothing; EACCES/EPERM/EBADF stay
+  fatal so a misbehaving sandbox fails loud instead of silently
+  contained. Rule failures now name their anchor ("open rule anchor
+  /home/x/.cargo: no such file or directory") instead of a bare errno,
+  and bashtool no longer double-prefixes them ("sandbox: sandbox: …").
 
 - **Smart titles ran on the main model.** `memoryConsolidationClient`
   consulted `session.activePersona()`, which reports false for the default

@@ -17,8 +17,9 @@ import (
 const (
         // ProviderAPI is the hosted TypeSafe System One decision model.
         ProviderAPI = "api"
-        // ProviderOllama is a local Ollama chat model interrogated with the
-        // same questions under a strict JSON contract (see ollama.go).
+        // ProviderOllama is the local Ollama backend: the native
+        // /v1/systemone endpoint on Ollama >= 0.35, with a chat-model
+        // emulation standing in on older servers (see ollama.go).
         ProviderOllama = "ollama"
 )
 
@@ -48,7 +49,9 @@ type Settings struct {
         // Model names the decision model: the alias on the api provider, the
         // local model tag on the ollama provider. Falls back to
         // TYPESAFE_DEFAULT_MODEL / DefaultModel on api; required on ollama
-        // (pulling a local model is a user decision, never a default).
+        // (pulling a local model is a user decision, never a default). On
+        // Ollama >= 0.35 prefer a decision model (d1:3b, nimble); older
+        // servers need a chat model that can hold the JSON contract.
         Model string `yaml:"model,omitempty"    json:"model,omitempty"`
         // OllamaBaseURL targets the local Ollama server; falls back to the
         // OLLAMA_HOST environment variable and then http://127.0.0.1:11434.

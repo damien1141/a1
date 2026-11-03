@@ -11,7 +11,7 @@ import (
 
 // TestToolResultSourcesSurviveReload pins the source-pill reload contract:
 // the ranked Sources a search-mode fetch produced ride the persisted tool
-// result entry ("sources" on the JSONL line), and a reloaded session's
+// result entry ("tool_sources" on the JSONL line), and a reloaded session's
 // ReplaySnapshot restores them onto the ToolRun — the live SSE stream
 // already mirrors them, but without the persisted copy every reload
 // dropped the pills.

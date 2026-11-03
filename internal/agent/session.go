@@ -348,17 +348,11 @@ func (s *Session) RewindTo(entryID string) error {
 // newest compaction marker; the web transcript renders this instead, so a
 // compacted session still shows its early messages above the cut marker
 // and the user can scroll the whole conversation after compaction.
+// Delegates to Manager.FullBranch — the session-layer primitive the
+// scrollback contract tests pin — so the walk has exactly one
+// implementation.
 func (s *Session) AllEntries() []session.MessageEntry {
-        leaf := s.manager.LeafID()
-        if leaf == "" {
-                return nil
-        }
-        entries := s.manager.GetBranch(leaf)
-        // GetBranch walks newest-first; reverse into transcript order.
-        for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
-                entries[i], entries[j] = entries[j], entries[i]
-        }
-        return entries
+        return s.manager.FullBranch()
 }
 
 // PathEntries returns the current leaf-to-root session entries for compaction.

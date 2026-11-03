@@ -63,8 +63,13 @@ func TestBrowserCommand_ToastsOutcome(t *testing.T) {
         bus := controller.NewBus(nil)
         ctx := NewContext(bus, nil)
 
-        // Test env has no DISPLAY by default: the open lands headless, and the
-        // toast must SAY so (the legible-downgrade contract).
+        // Pin the display env instead of assuming the test runner has none:
+        // on a Wayland desktop WAYLAND_DISPLAY leaks in (and a user shell may
+        // export A1_BROWSER_HEADLESS), either of which flips the expected
+        // headless landing into a visible-window one.
+        t.Setenv("DISPLAY", "")
+        t.Setenv("WAYLAND_DISPLAY", "")
+        t.Setenv("A1_BROWSER_HEADLESS", "")
         require.True(t, r.DispatchSlash("/browser open https://example.com", ctx))
         toasts := drainToasts(t, bus)
         require.Len(t, toasts, 1, "exactly one toast per command run")

@@ -21,6 +21,7 @@ import (
         "github.com/damien1141/a1/internal/job"
         "github.com/damien1141/a1/internal/llm"
         llmclient "github.com/damien1141/a1/internal/llm/client"
+        "github.com/damien1141/a1/internal/llm/jev"
         "github.com/damien1141/a1/internal/llm/skills"
         "github.com/damien1141/a1/internal/mcp"
         "github.com/damien1141/a1/internal/memstore"
@@ -1622,6 +1623,15 @@ func (engine *Engine) runCompact(
                 window = engine.ContextWindow()
         }
         settings := compaction.SettingsFor(window)
+        // Semantic boundary refinement (fail-open): when a decision model
+        // is configured, compaction asks it to move the cut to the nearest
+        // clean task boundary instead of the first positional one — a
+        // clean boundary also avoids the mid-turn turn-prefix summary, so
+        // a refined compaction is one summarizer call instead of two.
+        // Unconfigured or failing, the positional cut stands.
+        if jev.Configured() {
+                settings = settings.WithBoundaryClassifier(compaction.NewJevBoundaryClassifier())
+        }
         if engine.client == nil {
                 return false, nil
         }
@@ -1662,7 +1672,7 @@ func (engine *Engine) runCompact(
         if !force && !safety && !gated {
                 return false, nil
         }
-        prep, err := compaction.PrepareCompact(engine.session.PathEntries(), settings)
+        prep, err := compaction.PrepareCompact(ctx, engine.session.PathEntries(), settings)
         if err != nil {
                 return false, err
         }

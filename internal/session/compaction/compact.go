@@ -46,7 +46,12 @@ type CompactionPreparation struct {
 // PrepareCompact analyzes pathEntries and settings to decide what to
 // summarize and what to keep. It returns an empty preparation when the
 // session was already compacted.
+//
+// ctx bounds the semantic boundary classification, when settings carries
+// a boundary classifier; without one, PrepareCompact is pure and ctx is
+// unused.
 func PrepareCompact(
+        ctx context.Context,
         pathEntries []session.MessageEntry,
         settings Settings,
 ) (*CompactionPreparation, error) {
@@ -69,6 +74,10 @@ func PrepareCompact(
         start := preCompactionIndex + 1
         end := len(pathEntries)
         cutPoint := findCutPoint(pathEntries, start, end, settings)
+        // Semantic refinement (fail-open): with a classifier attached, the cut
+        // moves to the nearest clean boundary; every miss leaves the positional
+        // cut exactly as computed above.
+        cutPoint = refineCutPoint(ctx, pathEntries, start, end, settings, cutPoint)
 
         firstKeptEntry := pathEntries[cutPoint.firstKeptEntryIndex]
         if firstKeptEntry.GetID() == "" {

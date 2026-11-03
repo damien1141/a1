@@ -199,6 +199,11 @@ func TestBrowserOpen_ReportsWindowMode(t *testing.T) {
         browserMu.Unlock()
 
         t.Setenv("A1_BROWSER_HEADLESS", "")
+        // Pin BOTH display vars, not just DISPLAY: the headless half below
+        // simulates "no display", and on a Wayland desktop (WAYLAND_DISPLAY
+        // set, DISPLAY often empty) the probe would otherwise stay headed and
+        // the expected downgrade would land as a visible-window launch.
+        t.Setenv("WAYLAND_DISPLAY", "")
         installConfigProject(t, "")
 
         // Headed: a display exists.

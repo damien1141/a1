@@ -152,6 +152,16 @@ type Policy struct {
 	// "" or "deny" (default) contains egress — containment first;
 	// "allow" is the opt-out for builds that fetch dependencies.
 	SandboxNetwork string
+
+	// BashRiskGuard runs the decision-model risk classifier on bash
+	// commands that match neither the allow nor the deny list and that
+	// containment does not answer (the ambiguity zone). A confident
+	// destructive+irreversible verdict tightens the decision — Ask with
+	// the verdict annotated in interactive mode, Deny in autonomous
+	// modes; every miss leaves the policy default untouched. Off by
+	// default: the guard costs a classification round trip per ambiguous
+	// command and blocks on a classifier's judgment, so operators opt in.
+	BashRiskGuard bool
 }
 
 // DefaultPolicy returns the interactive defaults from task-002.

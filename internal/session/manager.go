@@ -160,6 +160,39 @@ func (sm *Manager) BuildContext() []MessageEntry {
         return buildSessionContext(sm.entries, *sm.leafID, sm.byIDs)
 }
 
+// FullBranch returns the path of entries from the current leaf back to the
+// session root, oldest first, session header excluded — the UI scrollback
+// view. Unlike BuildContext it does not stop at the newest compaction:
+// pre-compaction messages stay reachable so the transcript keeps the whole
+// history, and ReplaySnapshot renders the cut itself as a marker row. The
+// model context (BuildContext) is the only view that drops the summarized
+// tail.
+func (sm *Manager) FullBranch() []MessageEntry {
+        sm.mu.Lock()
+        defer sm.mu.Unlock()
+
+        if sm.leafID == nil {
+                return nil
+        }
+        up := make([]MessageEntry, 0, 16)
+        current, ok := sm.byIDs[*sm.leafID]
+        for ok && current != nil {
+                if current.GetType() != EntrySession {
+                        up = append(up, current)
+                }
+                parent := current.GetParent()
+                if parent == nil {
+                        break
+                }
+                current, ok = sm.byIDs[*parent]
+        }
+        full := make([]MessageEntry, len(up))
+        for i := range up {
+                full[i] = up[len(up)-1-i]
+        }
+        return full
+}
+
 // Append adds a message as a new leaf and returns its entry ID.
 func (sm *Manager) Append(msg llm.Message) (string, error) {
         sm.mu.Lock()
@@ -182,7 +215,7 @@ func (sm *Manager) Append(msg llm.Message) (string, error) {
 }
 
 // AppendToolResult appends a tool-result message carrying UI metadata that
-// does not fit llm.Message — today, the ranked Sources a search-mode fetch
+// does not fit llm.Message — today, the ranked ToolSources a search-mode fetch
 // produced, which the web transcript replays as source pills. Nil sources
 // behaves exactly like Append.
 func (sm *Manager) AppendToolResult(msg llm.Message, sources []ToolSource) (string, error) {
@@ -196,9 +229,9 @@ func (sm *Manager) AppendToolResult(msg llm.Message, sources []ToolSource) (stri
                         ParentID:  sm.leafID,
                         Timestamp: time.Now(),
                 },
-                Message: msg,
-                Usage:   msg.Usage,
-                Sources: sources,
+                Message:    msg,
+                Usage:      msg.Usage,
+                ToolSources: sources,
         }
         if err := sm.appendEntry(entry); err != nil {
                 return "", err

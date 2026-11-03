@@ -4,6 +4,146 @@ Working backlog. Everything here is user-reported unless noted. Each item ships
 with tests. See [CHANGELOG.md](CHANGELOG.md) for what already landed and
 [doc/history-*.md](doc/) for the archived work logs.
 
+## Active: JEV extensions — file-ops scale, compaction boundary, bash risk guard (2026-11-02) — LANDED, AWAITING USER VERIFY
+
+User question: which of the sketched JEV extension concepts were worth
+building (b risk gating, c routing + context management, d scale file
+operations). Plan approved as scoped ("I really like your suggestions on
+all of them — lets do it!"): d in full, c's compaction half only
+(intent→cheapest-model routing dropped — wrong tool for a classifier),
+b last under a fail-closed contract. All three landed:
+
+- **(d) judgetool files mode** — `judge` with a `files` glob classifies
+      per file without loading them into context: glob expansion
+      (limit 20 default / 100 cap), per-file head truncation (24KB),
+      binary detection (NUL in the first 8KB → skipped with a note),
+      concurrency 4, one verdict with confidence per file in a single
+      result. The system prompt routes classification questions over
+      files to it (answers reported as given; grep/read fallback when
+      no decision model is configured); codetool's judge-mode docs no
+      longer claim Ollama-only — it routes through the configured jev
+      provider (api or ollama). Stale judgetool tests rewritten against
+      the runner-injected asker: state mode (structured + plain),
+      quoted-JSON questions, model override, files mode (binary skip,
+      limit cap, no-match), error paths, parseQuestions.
+- **(c, compaction half) semantic boundary refinement** — when a
+      decision model is configured, compaction asks it which candidate
+      cut points near the positional cut are clean fold points: one
+      round trip, one self-contained noul question per candidate (the
+      excerpts and roles travel with the question). The cut moves to
+      the nearest clean boundary within ±3 candidates, subject to the
+      kept-zone constraints (INV5 ceiling for older moves, half-recent
+      floor for newer). Fail-open by construction: unconfigured,
+      error, or nothing classified clean all leave the positional cut
+      untouched. A clean boundary also kills the mid-turn turn-prefix
+      summary — one summarizer call instead of two.
+- **(b) bash risk guard** — `permissions.bash_risk_guard` (off by
+      default) runs the decision model on bash commands the regex
+      lists miss and containment doesn't answer (the ambiguity zone).
+      One round trip, two noul questions (destructive? cheaply
+      reversible?); a ≥0.70-confidence destructive+irreversible
+      verdict tightens to Ask (interactive, verdict annotated in the
+      prompt) or Deny (autonomous modes — the sub-agent hole where
+      ChildPolicy's BashDefault=Allow ran novel destructive commands
+      like `git push --force` silently). Nothing maps to Allow; every
+      miss (unset, unconfigured, errored, timed out, low confidence,
+      half-answered) is exactly today's behavior; yolo skips the
+      classifier entirely; forked child gates inherit it.
+- **Audit round** — all seven jev call sites re-audited; the five
+      pre-existing ones (fetch classify, evidence verdict, judgetool
+      both modes, engine compaction wiring) already follow the
+      discipline (nil when unconfigured, error → fall through +
+      debuglog). The risk guard's two gaps closed: its error path now
+      debuglogs the miss (same as fetch/evidence), and
+      bash_risk_guard set without a provider debuglogs that the guard
+      is inactive instead of looking like a classifier that never
+      misses. Mid-session deconfiguration pinned by tests at both new
+      sites: the asker re-resolves the provider per call, so removing
+      the jev: section surfaces ErrNotConfigured on the next
+      classification — a miss folded into the fallback, never a stale
+      verdict from the dead provider.
+
+- [x] d: judgetool files mode + rewritten tests + prompt/codetool
+      routing (commit 021f7be).
+- [x] c: boundary.go + boundary_jev.go, refine tests (move, error
+      fallback, no-clean fallback, unknown index, nearest, tie prefers
+      older, ceiling filter, no-classifier), classifier tests
+      (confidence floor, error, self-contained questions, no-candidates
+      no-call, mid-session deconfiguration) (commit 6f641a1).
+- [x] b: risk.go + risk_jev.go, gate mapping tests (interactive Ask,
+      autonomous Deny, yolo skip, miss fall-through table, ambiguity
+      zone only, containment first, fork inheritance, empty mode),
+      verdict mapping tests, wiring matrix (flag w/o provider, flag +
+      provider, no flag), mid-session deconfiguration (commit c4bf28a
+      + audit fix).
+- [x] audit: debuglog on the risk miss path, inactive-guard note,
+      deconfiguration tests at both new sites, missing debuglog import
+      fixed (the interrupted commit didn't compile).
+- [x] full suite green (127 packages ok, zero failures), go vet clean
+      on every touched package.
+- [x] CHANGELOG entries.
+
+User gates: `make test` on the real tree. Live checks — files mode:
+with jev configured, ask "which of the Go files under internal/tools
+contain a TODO?" and watch it route through judge with a files glob;
+compaction: a long tool-heavy session with jev on, debuglog should
+show boundary refinement moving cuts (and only genuine misses log
+"boundary classifier unavailable, positional cut stands"); risk guard:
+`permissions.bash_risk_guard: true` with jev on, ask for a novel
+destructive command in autopilot → Deny with "risk model:" in the
+reason; with jev off → debuglog "the guard is inactive" and unchanged
+behavior.
+
+## Active: sandboxed bash dies on machines missing a cache dir (2026-11-02) — LANDED, AWAITING USER VERIFY
+
+User report: "bash commands arent executing again- I think theres somehting
+wrong with the sandbox". Same symptom class as the EBADFD round (every bash
+call dies at sandbox start), new root cause — and a verification-env lesson:
+
+- **Root cause: `sandbox.Compile` listed RW anchors that don't exist.** A
+      Landlock path-beneath rule anchors on an `O_PATH` open of its
+      directory; opening a missing path fails, and ONE failure killed the
+      whole `applyLandlock` — so a single absent candidate (~/.cargo on a
+      Rust-free machine, ~/.a1/browser-profiles before the first browser
+      spawn, ~/.bun/install/cache without bun) made EVERY sandboxed bash
+      start fail with ENOENT. The permission gate had already auto-allowed
+      the call (`sandbox.Supported()` is true on real hardware), so the
+      visible symptom was exactly "commands never execute". The sandbox
+      container here has no Landlock (ENOSYS probe) and the enforcement
+      test honestly skips — the real-hardware path only runs on the user's
+      machine. Protocol audit against kernel source ruled the syscall
+      layer clean (5.13+ `copy_min_struct_from_user` tolerates the 48-byte
+      x/sys v0.49.0 `LandlockRulesetAttr` — zero tail; the packed
+      path-beneath layout matches field-for-field), which pointed at the
+      environment-dependent anchor opens.
+- **Fix, three layers:** (1) `Compile` drops candidates that are not
+      existing directories — portable, so seatbelt also renders only real
+      subpaths; the workspace and temp dir still always make the manifest.
+      (2) `applyLandlock` skips an RW anchor that vanishes between Compile
+      and Start: ENOENT/ENOTDIR are skippable (a missing directory grants
+      nothing), while EACCES/EPERM/EBADF stay fatal — a misbehaving
+      sandbox must fail loud, never silently contained. (3) Rule failures
+      name their anchor ("open rule anchor /home/x/.cargo: no such file
+      or directory") instead of a bare errno, and bashtool stopped
+      double-prefixing startLocked's errors ("sandbox: sandbox: …").
+- Tests: `TestCompileDropsMissingCandidates` (every surviving RW anchor
+      exists on disk; missing .cargo / ~/.a1 subdirs drop),
+      `TestCompileKeepsWorkspaceWhenCachesMissing` (empty home still
+      yields workspace+temp, len 2), `TestAnchorMissing` (linux-tagged:
+      ENOENT/ENOTDIR + wrapped PathError variants skippable; EACCES,
+      EPERM, EBADF, non-errno fatal). Suites green in the verify tree:
+      sandbox, bashtool, permission, agent, webserver; darwin + windows
+      cross-compile of sandbox/bashtool; whole repo builds (prompt stub +
+      template as in prior sessions — the two agent persona-prompt tests
+      assert "You are A1" and need the stub's marker string).
+
+User gates: `make test` on the real tree — note the containment round-trip
+(`TestStartSandboxedContainsWritesOutsideRW`) actually RUNS on Landlock
+hardware (it skips in containers); live check — start a TUI, ask for a
+plain `ls`, bash should execute sandboxed. If a start still fails the error
+now names the exact anchor path and errno; `permissions.sandbox: off` in
+config.yaml remains the pressure valve.
+
 ## Active: smart titles + persona defaults + live TUI browser (2026-11-02) — LANDED, AWAITING USER VERIFY
 
 User directive: "smart titles in web gui dont get generated by the memory ops

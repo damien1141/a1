@@ -63,6 +63,42 @@ func TestCompileDedupesAndCleans(t *testing.T) {
 	}
 }
 
+// TestCompileDropsMissingCandidates pins the machine-dependence bug: a
+// Landlock rule anchors on an O_PATH open of its directory, and one missing
+// candidate used to fail that open and kill EVERY sandboxed start — total
+// bash failure on any machine that never touched a toolchain (.cargo on a
+// Rust-free box, .a1/browser-profiles before the first browser spawn).
+// Every RW anchor that survives Compile must now exist on disk.
+func TestCompileDropsMissingCandidates(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// Create exactly one of the home candidates; the rest stay missing.
+	require.NoError(t, os.Mkdir(filepath.Join(home, ".cache"), 0o755))
+	ws := t.TempDir()
+	p := Compile(ws, false, nil)
+	require.NotEmpty(t, p.ReadWrite, "workspace and temp survive")
+	for _, dir := range p.ReadWrite {
+		st, err := os.Stat(dir)
+		require.NoError(t, err, "every RW anchor must exist: %s", dir)
+		assert.True(t, st.IsDir(), "RW anchors are directories: %s", dir)
+	}
+	assert.Contains(t, p.ReadWrite, filepath.Join(home, ".cache"), "the existing cache is kept")
+	assert.NotContains(t, p.ReadWrite, filepath.Join(home, ".cargo"), "the missing cache is dropped")
+	assert.NotContains(t, p.ReadWrite, filepath.Join(home, ".a1", "browser-profiles"), "undone ~/.a1 subdirs are dropped")
+}
+
+// TestCompileKeepsWorkspaceWhenCachesMissing: an empty home (fresh machine)
+// still yields a usable profile — the workspace and the temp dir carry the
+// build's writes; caches appear as their toolchains get installed.
+func TestCompileKeepsWorkspaceWhenCachesMissing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // empty: every home candidate is missing
+	ws := t.TempDir()
+	p := Compile(ws, false, nil)
+	assert.Contains(t, p.ReadWrite, ws)
+	assert.Contains(t, p.ReadWrite, os.TempDir())
+	assert.Len(t, p.ReadWrite, 2, "workspace and temp, nothing else")
+}
+
 func TestSeatbeltProfileShape(t *testing.T) {
 	p := Profile{
 		ReadWrite: []string{"/ws", "/tmp"},

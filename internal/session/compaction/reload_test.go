@@ -40,14 +40,14 @@ func TestPrepareCompact_ReloadedSessionMatchesInMemory(t *testing.T) {
 	path, liveEntries := seedSession(t, 4)
 	settings := Settings{keepRecentTokens: 100}
 
-	inMemory, err := PrepareCompact(liveEntries, settings)
+	inMemory, err := PrepareCompact(t.Context(), liveEntries, settings)
 	require.NoError(t, err)
 	require.NotEmpty(t, inMemory.FirstKeptEntryId)
 
 	reloaded, err := session.OpenSession(path)
 	require.NoError(t, err)
 
-	afterReload, err := PrepareCompact(reloaded.BuildContext(), settings)
+	afterReload, err := PrepareCompact(t.Context(), reloaded.BuildContext(), settings)
 	require.NoError(t, err)
 
 	assert.Equal(t, inMemory.FirstKeptEntryId, afterReload.FirstKeptEntryId)

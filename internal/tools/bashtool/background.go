@@ -80,12 +80,14 @@ func startBackground(ctx context.Context, command string) (string, error) {
 
 	// Containment rides background shells too: a long-lived command is
 	// exactly the one worth walling. The goroutine below still owns Wait.
+	// startLocked already prefixes enforcement failures with "sandbox:" —
+	// no re-wrap here (it used to print "sandbox: sandbox: …").
 	if serr := sandbox.Start(c, bashSandboxProfile(bgCtx)); serr != nil {
 		bgMu.Lock()
 		delete(bgShells, sh.id)
 		bgMu.Unlock()
 		cancel()
-		return "", fmt.Errorf("sandbox: %w", serr)
+		return "", serr
 	}
 	go func() {
 		defer close(sh.exited)

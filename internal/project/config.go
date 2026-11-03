@@ -599,6 +599,7 @@ type permConfig struct {
         WorkspaceOnlyWrites *bool           `yaml:"workspace_only_writes"`
         AskTimeoutSec       *int            `yaml:"ask_timeout_sec"`
         DangerouslyAllowAll *bool           `yaml:"dangerously_allow_all"`
+        BashRiskGuard       *bool           `yaml:"bash_risk_guard"`
         Sandbox             *string         `yaml:"sandbox"`
         SandboxNetwork      *string         `yaml:"sandbox_network"`
         Bash                *bashConfig     `yaml:"bash"`
@@ -624,6 +625,9 @@ func applyPermissions(p *permission.Policy, raw *permConfig) {
         }
         if raw.DangerouslyAllowAll != nil {
                 p.DangerouslyAllowAll = *raw.DangerouslyAllowAll
+        }
+        if raw.BashRiskGuard != nil {
+                p.BashRiskGuard = *raw.BashRiskGuard
         }
         if raw.Sandbox != nil {
                 p.Sandbox = strings.ToLower(strings.TrimSpace(*raw.Sandbox))
