@@ -170,40 +170,11 @@ func (c *ComposerPane) Wire(
 	c.Chat.OnMentionChange = c.onMentionChange
 	c.Chat.OnSlashChange = c.onSlashChange
 	c.Chat.OnQuestionChange = c.onQuestionChange
-	c.Chat.OnHistoryNav = func(delta int) bool {
-		if c.Chat.MentionOpen || c.Chat.SlashOpen || c.Chat.QuestionOpen {
-			return false
-		}
-		if c.historyIdx == -1 {
-			// Not currently browsing history.
-			if c.draft == "" {
-				c.draft = c.Chat.Value
-			}
-			// Always allow vertical cursor movement within multi-line input first.
-			if canMoveCursor(c.Chat.Value, c.Chat.Cursor, delta) {
-				return false
-			}
-			// Cursor is at the top/bottom edge: switch to history navigation.
-			c.navigateHistory(delta)
-			return true
-		}
-		// Already browsing history.
-		// Allow cursor movement within the current history entry first.
-		if canMoveCursor(c.Chat.Value, c.Chat.Cursor, delta) {
-			return false
-		}
-		c.navigateHistory(delta)
-		// If we landed outside history (back to empty/new), restore the draft.
-		if c.historyIdx == -1 && c.draft != "" {
-			c.Chat.Value = c.draft
-			c.Chat.Cursor = len(c.draft)
-			c.draft = ""
-			if c.Chat.OnChange != nil {
-				c.Chat.OnChange(c.Chat.Value)
-			}
-		}
-		return true
-	}
+	// OnHistoryNav is called only at the composer's visual edges: ChatInput
+	// moves the caret across soft-wrapped display rows first (the readline
+	// contract), so by the time historyNav runs the caret is on the first row
+	// (Up) or the last row (Down) of whatever is on screen.
+	c.Chat.OnHistoryNav = c.historyNav
 	c.mention.OnAccept = c.acceptMention
 	c.slash.OnAccept = c.acceptSlash
 	c.question.OnAccept = c.acceptQuestion
@@ -375,6 +346,9 @@ func (c *ComposerPane) LoadHistory(entries []string) {
 	}
 	c.history = append([]string(nil), entries...)
 	c.historyIdx = -1
+	// A stashed draft from the previous session's browse would otherwise
+	// "restore" itself over fresh input on the next Down.
+	c.draft = ""
 }
 
 // SetHistoryStore sets a callback invoked after each successful input submission.
@@ -1278,23 +1252,60 @@ func (c *ComposerPane) pushHistory(text string) {
 	}
 }
 
+// historyNav handles Up/Down at the composer's visual edges, where ChatInput
+// has exhausted vertical caret movement and offers the key to history. Up
+// recalls the previous (older) entry, stashing the current input as the
+// draft; Down moves toward newer entries and restores the draft when it
+// falls off the newest. Down while not browsing is a hard no — never a wipe.
+func (c *ComposerPane) historyNav(delta int) bool {
+	if c.Chat.MentionOpen || c.Chat.SlashOpen || c.Chat.QuestionOpen {
+		return false
+	}
+	if delta < 0 {
+		// Up at the first row: recall the previous (older) entry. The
+		// current input is stashed as the draft so Down can bring it back.
+		if c.historyIdx == -1 {
+			c.draft = c.Chat.Value
+		}
+		c.navigateHistory(-1)
+		return true
+	}
+	// Down at the last row.
+	if c.historyIdx == -1 {
+		// Not browsing: there is nothing newer. A hard no — the old code
+		// cleared the composer here, so a stray Down wiped a half-typed
+		// prompt.
+		return false
+	}
+	c.navigateHistory(1)
+	// Fell off the newest entry: restore the stashed draft.
+	if c.historyIdx == -1 && c.draft != "" {
+		c.Chat.Value = c.draft
+		c.Chat.Cursor = len(c.draft)
+		c.draft = ""
+		if c.Chat.OnChange != nil {
+			c.Chat.OnChange(c.Chat.Value)
+		}
+	}
+	return true
+}
+
+// navigateHistory moves the browse index by delta and loads the entry. The
+// composer's OnHistoryNav only hands over at the visual edges, so a
+// delta>0-while-not-browsing call is unreachable in practice — but it stays
+// a no-op rather than a wipe: nothing in history navigation may destroy the
+// user's current input.
 func (c *ComposerPane) navigateHistory(delta int) {
 	if len(c.history) == 0 {
 		return
 	}
 	if c.historyIdx == -1 {
-		if delta < 0 {
-			c.draft = c.Chat.Value
-			c.historyIdx = len(c.history) - 1
-		} else {
-			c.Chat.Value = ""
-			c.Chat.Cursor = 0
-			c.draft = ""
-			if c.Chat.OnChange != nil {
-				c.Chat.OnChange("")
-			}
+		if delta > 0 {
+			// Down while not browsing is a no-op.
 			return
 		}
+		c.draft = c.Chat.Value
+		c.historyIdx = len(c.history) - 1
 	} else {
 		c.historyIdx += delta
 	}
@@ -1326,16 +1337,6 @@ func (c *ComposerPane) navigateHistory(delta int) {
 	if c.Chat.OnChange != nil {
 		c.Chat.OnChange(c.Chat.Value)
 	}
-}
-
-// canMoveCursor reports whether the cursor can still move vertically by delta
-// within the current input. It mirrors ChatInput.moveVert so ComposerPane can
-// defer to cursor movement before falling back to history navigation.
-func canMoveCursor(value string, cursor, delta int) bool {
-	if delta < 0 {
-		return chat.LineStart(value, cursor) > 0
-	}
-	return chat.LineEnd(value, cursor) < len(value)
 }
 
 func mentionNavKey(e xui.KeyEvent) bool {

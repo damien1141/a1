@@ -246,6 +246,11 @@ func newMemoryLoopEngine(t *testing.T, pstore *persona.Store, serverURL string, 
                 WithGate(permission.AllowAll{}),
                 WithTools([]tools.Tool{bash}),
                 WithEmbedder(memstore.FakeEmbedder{DimCount: 64}),
+                // The fake server is loopback, which the auto policy would
+                // read as a local endpoint and batch the outlet to every
+                // 10th turn. These tests pin the outlet mechanics, not the
+                // cadence policy — pin per-turn.
+                WithConsolidationInterval(1),
         )
         require.NoError(t, err)
         return eng
@@ -346,8 +351,8 @@ func TestLoopMemoryOutletFiresOnEarlyStop(t *testing.T) {
 
 // TestLoopMemoryInletInjectsIntoModelRequest proves the other half of the
 // loop wiring: a NEW session over the same persona store gets the stored
-// memory injected into the model's actual request payload, as a system
-// message immediately before the last user message.
+// memory injected into the model's actual request payload, inside the
+// persisted runtime rider immediately before the last user message.
 func TestLoopMemoryInletInjectsIntoModelRequest(t *testing.T) {
         root := t.TempDir()
         pstore := persona.NewStore(filepath.Join(root, "personas"))
@@ -395,10 +400,10 @@ func TestLoopMemoryInletInjectsIntoModelRequest(t *testing.T) {
         require.Equal(t, "what is my name again?", last.Content)
 
         prev := msgs[len(msgs)-2]
-        require.Equal(t, "system", prev.Role,
-                "the memory injection must sit immediately before the last user message")
+        require.Equal(t, "user", prev.Role,
+                "the memory injection rides the runtime rider immediately before the last user message")
         assert.Contains(t, prev.Content, "memories about the user",
                 "third-person framing")
         assert.Contains(t, prev.Content, "Solis",
-                "the stored fact must ride in the injected block")
+                "the stored fact must ride in the rider")
 }

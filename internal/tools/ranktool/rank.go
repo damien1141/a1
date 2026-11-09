@@ -40,7 +40,7 @@ func RankTool() tooldef.Tool {
 					"glob": llm.Object{
 						"type": "string",
 						"description": fmt.Sprintf(
-							"Glob filter for file names. Example: **/*.go (default: %s)",
+							"Glob filter for file names or slash paths. Example: **/*.go (default: %s)",
 							rankDefaultGlob,
 						),
 					},
@@ -143,8 +143,13 @@ func rankFiles(root, glob string, limit int) ([]fileScore, error) {
 			return nil
 		}
 
-		matched, err := filepath.Match(glob, filepath.Base(path))
-		if err != nil || !matched {
+		// One root-relative path per file feeds the path-aware glob;
+		// base names alone cannot express the documented **/*.go form.
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return nil
+		}
+		if !matchGlob(glob, filepath.ToSlash(rel), filepath.Base(path)) {
 			return nil
 		}
 
@@ -175,6 +180,49 @@ func shouldSkipDir(name string) bool {
 		return true
 	}
 	return false
+}
+
+// matchGlob reports whether glob matches the file at root-relative path rel
+// (slash-separated) with base name base. Single-segment patterns — no "/" and
+// no "**" — keep the historical base-name semantics so "*.go" and "Makefile"
+// still match at any depth. Anything else is matched against the full
+// relative path with "**" segment support: base names contain no "/", so the
+// old bare filepath.Match call could never match the documented "**/*.go"
+// example, and even against full paths filepath.Match has no "**" semantics.
+func matchGlob(glob, rel, base string) bool {
+	if !strings.Contains(glob, "/") && !strings.Contains(glob, "**") {
+		matched, err := filepath.Match(glob, base)
+		return err == nil && matched
+	}
+	return matchSegments(strings.Split(glob, "/"), strings.Split(rel, "/"))
+}
+
+// matchSegments matches a slash-split pattern against a slash-split path: a
+// "**" pattern segment stands for zero or more path segments, and every other
+// pattern segment matches exactly one path segment via filepath.Match on that
+// segment. So "**/*.go" matches both "main.go" (zero dirs) and
+// "cmd/app/main.go", "cmd/*.go" matches "cmd/main.go" only, and "internal/**"
+// matches everything under internal/.
+func matchSegments(pattern, segs []string) bool {
+	if len(pattern) == 0 {
+		return len(segs) == 0
+	}
+	if pattern[0] == "**" {
+		for i := 0; i <= len(segs); i++ {
+			if matchSegments(pattern[1:], segs[i:]) {
+				return true
+			}
+		}
+		return false
+	}
+	if len(segs) == 0 {
+		return false
+	}
+	matched, err := filepath.Match(pattern[0], segs[0])
+	if err != nil || !matched {
+		return false
+	}
+	return matchSegments(pattern[1:], segs[1:])
 }
 
 func scoreFile(root, path string, info os.FileInfo) (float64, []string) {

@@ -109,11 +109,19 @@ func TestBuildContextInjectsMemoryOnce(t *testing.T) {
         require.NoError(t, err)
         require.NoError(t, bank.Append(memory.EntryContext, "remember this"))
         sess.memoryBank = bank
+        require.NoError(t, sess.Append(llm.Message{Role: llm.RoleUser, Content: "hi"}))
 
         first := sess.BuildContext()
         require.True(t, len(first) > 0)
-        assert.Equal(t, llm.RoleSystem, first[0].Role)
-        assert.Contains(t, first[0].Content, "Current date and time")
+        // The clock no longer leads the context: a per-build system stamp
+        // re-billed the whole request as a cache write every round (see
+        // runtime_rider.go). BuildContext is now append-only history.
+        for _, m := range first {
+                assert.NotEqual(t, llm.RoleSystem, m.Role,
+                        "no system messages ride the context — runtime context rides the persisted rider")
+                assert.NotContains(t, m.Content, "Current date and time",
+                        "the clock lives in the runtime rider, not the context")
+        }
 
         // JSONL memory bank injection is now disabled — the semantic memory
         // inlet (engine.injectSemanticMemories) handles auto-injection with
@@ -130,22 +138,29 @@ func TestBuildContextInjectsMemoryOnce(t *testing.T) {
         assert.Equal(t, first, second)
 }
 
-// The clock stamp is regenerated per context build, so a session that stays
-// open across a turn boundary does not drift away from the wall clock. It
-// leads the message list so the date is the first thing the model reads.
-func TestBuildContextRefreshesDateStamp(t *testing.T) {
+// BuildContext is pure history now: no clock stamp, no weather, nothing
+// regenerated per build. The wall clock rides the runtime rider the engine
+// persists at each turn boundary (runtime_rider.go) — fresh bytes at the
+// tail, frozen once written — so consecutive builds of an unchanged
+// session are byte-identical, which is the property prefix caching bills
+// against. A session that stays open across a turn boundary still gets a
+// fresh clock: the next turn's rider carries it.
+func TestBuildContextIsByteStableAcrossBuilds(t *testing.T) {
         sess, err := NewSession(WithCwd(t.TempDir()))
         require.NoError(t, err)
         require.NoError(t, sess.Append(llm.Message{Role: llm.RoleUser, Content: "hi"}))
         sess.invalidateContextCache()
 
-        msgs := sess.BuildContext()
-        require.Len(t, msgs, 2, "clock stamp + the one user message")
-        assert.Equal(t, llm.RoleSystem, msgs[0].Role, "clock stamp must lead the context")
-        assert.Contains(t, msgs[0].Content, "Current date and time: ")
-        assert.Contains(t, msgs[0].Content, "ISO week ")
-        assert.Equal(t, llm.RoleUser, msgs[1].Role)
-        assert.Equal(t, "hi", msgs[1].Content)
+        first := sess.BuildContext()
+        require.Len(t, first, 1, "pure history: the one user message, nothing else")
+        assert.Equal(t, llm.RoleUser, first[0].Role)
+        assert.Equal(t, "hi", first[0].Content)
+
+        // A cache bust (what a tool-result append causes mid-turn) must not
+        // change a single byte: no re-stamping, no re-ordering.
+        sess.invalidateContextCache()
+        second := sess.BuildContext()
+        assert.Equal(t, first, second, "consecutive builds of an unchanged session must be byte-identical")
 }
 
 func TestBuildContextSkipsMemoryWhenBankEmpty(t *testing.T) {

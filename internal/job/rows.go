@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_schedule ON jobs(schedule_id) WHERE schedule_id != '';
+CREATE INDEX IF NOT EXISTS idx_jobs_parent ON jobs(parent_id) WHERE parent_id != '';
 `
 
 // EnsureJobRows creates the jobs table on the handle when missing. Called

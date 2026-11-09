@@ -1,0 +1,4 @@
+From: Heidi <heidi@example.dev>
+Subject: No date header here
+
+Some mailers omit Date; the file mtime is the honest fallback.

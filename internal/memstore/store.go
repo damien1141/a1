@@ -612,8 +612,12 @@ func (s *Store) selectBundle(scored []ScoredTrace, sessionVal float64) []ScoredT
 			if cand == nil {
 				break
 			}
+			// Replace the LAST non-positive slot: out is in descending
+			// activation order, so its final non-positive member is the
+			// weakest one — the override must cost the bundle's weakest
+			// slot, not displace the top scorer at rank 0.
 			replaced := false
-			for i := range out {
+			for i := len(out) - 1; i >= 0; i-- {
 				if !pos(out[i]) {
 					out[i] = *cand
 					replaced = true

@@ -29,6 +29,13 @@ type serverEvent struct {
         // Status is a one-line lifecycle note ("thinking…", "compacting…", "done").
         Status *statusPayload `json:"status,omitempty"`
 
+        // Marker is a persistent transcript row — the divider a compaction
+        // cut leaves behind. Unlike Status (a transient line the status pill
+        // overwrites), a Marker lands in the running transcript, because the
+        // reload path renders the stored compaction entry as a divider and the
+        // live view must draw the same cut or the two visibly disagree.
+        Marker *markerPayload `json:"marker,omitempty"`
+
         // Usage carries the turn's final token usage plus the engine's live
         // context window, so the browser can render "ctx N%/W" — including a
         // window the engine learned from a provider overflow error or probed
@@ -57,6 +64,7 @@ const (
         eventDone    eventKind = "done"
         eventToast   eventKind = "toast"
         eventState   eventKind = "state"
+        eventMarker  eventKind = "marker"
 )
 
 // deltaPayload carries streamed assistant text. Text and Reasoning are the two
@@ -123,6 +131,14 @@ type askPayload struct {
 
 // statusPayload is a transient lifecycle line for the status pill.
 type statusPayload struct {
+        Text string `json:"text"`
+}
+
+// markerPayload is a persistent transcript row. Text is byte-identical to
+// the divider the reload path renders for the same stored entry
+// (compactionDividerText), so a session watched live and the same session
+// reloaded show the same cut at the same place.
+type markerPayload struct {
         Text string `json:"text"`
 }
 

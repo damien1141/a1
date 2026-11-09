@@ -1,0 +1,6 @@
+From: Frank <frank@example.com>
+To: user@example.org
+Subject: Build is green
+Date: Sat, 7 Nov 2026 18:20:00 +0000
+
+All tests pass on the release branch.

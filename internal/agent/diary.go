@@ -7,6 +7,7 @@ import (
         "time"
 
         "github.com/damien1141/a1/internal/debuglog"
+        "github.com/damien1141/a1/internal/llm"
         llmclient "github.com/damien1141/a1/internal/llm/client"
         "github.com/damien1141/a1/internal/memfsck"
         "github.com/damien1141/a1/internal/project/model"
@@ -173,12 +174,12 @@ func (engine *Engine) memoryConsolidationClient() *llmclient.Client {
         }
         if engine.personaModelResolver != nil {
                 if m, ok := engine.personaModelResolver(p.MemoryModel); ok {
-                        return llmclient.NewClient(m, model.HooksFor(m.Name), nil, "")
+                        return llmclient.NewClient(m, model.HooksFor(m.Name), nil, "").SetKeyPool(engine.poolFor(m))
                 }
         }
         cfg := engine.modelCfg
         cfg.Name = p.MemoryModel
-        return llmclient.NewClient(cfg, engine.hooks, nil, "")
+        return llmclient.NewClient(cfg, engine.hooks, nil, "").SetKeyPool(engine.poolFor(cfg))
 }
 
 // OpsClient exposes the memory-ops client to surfaces outside the engine
@@ -187,4 +188,43 @@ func (engine *Engine) memoryConsolidationClient() *llmclient.Client {
 // main model's context.
 func (engine *Engine) OpsClient() *llmclient.Client {
         return engine.memoryConsolidationClient()
+}
+
+// opsBaseURL returns the endpoint background ops traffic (memory
+// consolidation, web session naming) actually hits: the persona's
+// memory model when one is routed (resolver or legacy name-swap),
+// else the main model. It mirrors memoryConsolidationClient's routing
+// without building a client.
+func (engine *Engine) opsBaseURL() string {
+        if engine == nil {
+                return ""
+        }
+        pstore := engine.personaStore()
+        if pstore == nil {
+                return engine.modelCfg.BaseURL
+        }
+        p, err := pstore.ActivePersona()
+        if err != nil || p.MemoryModel == "" || p.MemoryModel == engine.modelCfg.Name {
+                return engine.modelCfg.BaseURL
+        }
+        if engine.personaModelResolver != nil {
+                if m, ok := engine.personaModelResolver(p.MemoryModel); ok {
+                        return m.BaseURL
+                }
+        }
+        // Legacy name-swap: a memory model outside the catalog rides the
+        // main config's endpoint under a different name.
+        return engine.modelCfg.BaseURL
+}
+
+// LocalOpsEndpoint reports whether background ops LLM traffic (memory
+// consolidation, session naming) runs against a local server. On a
+// local server every different-prefix request evicts the conversation's
+// prompt cache — a 15K-token context re-prefills at ~600 tok/s for tens
+// of seconds — so surfaces gate opportunistic ops calls on this and the
+// engine batches consolidation (memory_outlet.go). A persona memory
+// model routed off the main endpoint reports false and keeps per-turn
+// behavior.
+func (engine *Engine) LocalOpsEndpoint() bool {
+        return llm.IsLocalBaseURL(engine.opsBaseURL())
 }

@@ -1,6 +1,7 @@
 package configserver
 
 import (
+        "bytes"
         "context"
         _ "embed"
         "encoding/json"
@@ -35,9 +36,9 @@ type ConfigDoc struct {
         SemanticSearch *SemanticSearchDoc `yaml:"semantic_search,omitempty" json:"semanticSearch,omitempty"`
         Jev            *JevDoc            `yaml:"jev,omitempty"             json:"jev,omitempty"`
         Browser        *BrowserDoc        `yaml:"browser,omitempty"         json:"browser,omitempty"`
+        Personal       *PersonalDoc       `yaml:"personal,omitempty"       json:"personal,omitempty"`
         UI             *UIDoc             `yaml:"ui,omitempty"              json:"ui,omitempty"`
         Web            *WebDoc            `yaml:"web,omitempty"             json:"web,omitempty"`
-        Weather        *WeatherDoc        `yaml:"weather,omitempty"         json:"weather,omitempty"`
         Personas       *PersonasDoc       `yaml:"personas,omitempty"        json:"personas,omitempty"`
         Tools          *ToolsDoc          `yaml:"tools,omitempty"           json:"tools,omitempty"`
         // Checks and Schedules have no editor form; they round-trip from the
@@ -50,15 +51,22 @@ type ConfigDoc struct {
 }
 
 // ModelDoc describes a single model entry.
+// ModelDoc describes a single model entry. APIKeys round-trips the
+// credential pool (extra keys beyond api_key); it is declared here for the
+// same reason BrowserDoc.Proxy is — a field the editor form does not know
+// about must still survive a full-document save.
 type ModelDoc struct {
-        Name          string `yaml:"name"                     json:"name"`
-        APIKey        string `yaml:"api_key"                  json:"apiKey"`
-        BaseURL       string `yaml:"base_url"                 json:"baseUrl"`
+        Name          string   `yaml:"name"                     json:"name"`
+        APIKey        string   `yaml:"api_key"                  json:"apiKey"`
+        APIKeys       []string `yaml:"api_keys,omitempty"       json:"apiKeys,omitempty"`
+        BaseURL       string   `yaml:"base_url"                 json:"baseUrl"`
         ContextWindow *int   `yaml:"context_window,omitempty" json:"contextWindow,omitempty"`
         ImageEnabled  *bool  `yaml:"image_enabled,omitempty"  json:"imageEnabled,omitempty"`
         API           string `yaml:"api,omitempty"            json:"api,omitempty"`
         ThinkEnabled  *bool  `yaml:"think_enabled,omitempty"  json:"thinkEnabled,omitempty"`
         ThinkLevel    string `yaml:"think_level,omitempty"    json:"thinkLevel,omitempty"`
+        PersonalRead  *bool  `yaml:"personal_read,omitempty"  json:"personalRead,omitempty"`
+        PersonalWrite *bool  `yaml:"personal_write,omitempty" json:"personalWrite,omitempty"`
         Default       bool   `yaml:"default,omitempty"        json:"default,omitempty"`
 }
 
@@ -122,6 +130,16 @@ type BrowserDoc struct {
         Proxy    string   `yaml:"proxy,omitempty" json:"proxy,omitempty"`
 }
 
+// PersonalDoc describes the personal-data section: one master switch for
+// the dashboard's calendar / kanban / mail widgets plus the local
+// directories they read. Paths round-trip verbatim — home expansion is a
+// runtime-parse concern (project.expandHome), not the editor's.
+type PersonalDoc struct {
+        Enabled     *bool  `yaml:"enabled,omitempty"      json:"enabled,omitempty"`
+        CalendarDir string `yaml:"calendar_dir,omitempty" json:"calendarDir,omitempty"`
+        MailDir     string `yaml:"mail_dir,omitempty"     json:"mailDir,omitempty"`
+}
+
 // UIDoc describes terminal UI presentation settings.
 type UIDoc struct {
         // AutoExpandToolOutput is a pointer so an absent key round-trips as absent
@@ -129,20 +147,14 @@ type UIDoc struct {
         AutoExpandToolOutput *bool `yaml:"auto_expand_tool_output" json:"autoExpandToolOutput"`
 }
 
-// WebDoc is the web GUI's section. AutoNameSessions is a pointer so an
-// absent key round-trips as absent (the resolver defaults it to on).
+// WebDoc is the web GUI's section. Pointers so absent keys round-trip as
+// absent (the resolvers default them: auto-name on, theme follows the OS).
+// DarkMode is declared — not just tolerated — for the same reason as
+// ToolsDoc.MaxToolCalls: the editor's full-file rewrite must never wipe a
+// theme choice the chat UI's button wrote to the file.
 type WebDoc struct {
         AutoNameSessions *bool `yaml:"auto_name_sessions,omitempty" json:"autoNameSessions,omitempty"`
-}
-
-// WeatherDoc describes Open-Meteo weekly forecast injection into the agent
-// context. Disabled by default — the user must opt in by setting enabled:
-// true and providing latitude / longitude (and optionally a display name).
-type WeatherDoc struct {
-        Enabled   bool    `yaml:"enabled"        json:"enabled"`
-        Latitude  float64 `yaml:"latitude"       json:"latitude"`
-        Longitude float64 `yaml:"longitude"      json:"longitude"`
-        Name      string  `yaml:"name,omitempty" json:"name,omitempty"`
+        DarkMode         *bool `yaml:"dark_mode,omitempty"         json:"darkMode,omitempty"`
 }
 
 // PersonasDoc stores the active persona ID at the config-file level so the
@@ -226,6 +238,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
                         writeConfigErr(w, http.StatusInternalServerError, err)
                         return
                 }
+                html = applyPageTheme(html, h.savedDarkMode())
                 w.Header().Set("Content-Type", "text/html; charset=utf-8")
                 // no-store: the TUI launches this page on a fresh random port per
                 // run, and a browser that cached a previous build's HTML kept
@@ -257,6 +270,44 @@ func (h *Handler) loadHTML() ([]byte, error) {
         return html, nil
 }
 
+// htmlThemeTag is the exact opening tag the theme stamp replaces — the
+// editor document's own <html lang="en">. The page's boot script checks
+// for a pre-set data-theme before applying its fallback chain (stored
+// choice, then OS preference), so the stamped choice wins pre-paint.
+const htmlThemeTag = `<html lang="en">`
+
+// savedDarkMode resolves the persisted web.dark_mode choice off the
+// config file (nil = no explicit choice — follow the OS). Read per page
+// serve: the file is small, page loads are rare, and a toggle saved from
+// the chat UI lands here on the next reload with no cache to invalidate.
+// A malformed file degrades to nil — a broken config must not break the
+// editor the user would fix it with.
+func (h *Handler) savedDarkMode() *bool {
+        doc, err := readConfigDoc(h.ConfigPath)
+        if err != nil || doc.Web == nil {
+                return nil
+        }
+        return doc.Web.DarkMode
+}
+
+// applyPageTheme stamps the persisted theme onto the editor document's
+// <html> tag — the persistence half of "the theme follows the config
+// screen": the chat UI's button writes web.dark_mode, and this page (the
+// config screen) reads it server-side, so the two documents agree even
+// though they never share a stylesheet. A nil theme leaves the page
+// untouched; the boot script then follows the same-origin stored choice
+// and the OS preference, the same chain the chat page uses.
+func applyPageTheme(html []byte, dark *bool) []byte {
+        if dark == nil {
+                return html
+        }
+        t := "light"
+        if *dark {
+                t = "dark"
+        }
+        return bytes.Replace(html, []byte(htmlThemeTag), []byte(`<html lang="en" data-theme="`+t+`">`), 1)
+}
+
 func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
         switch r.Method {
         case http.MethodGet:
@@ -284,7 +335,7 @@ func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
                 // a config-defined evidence check / Clock schedule. An
                 // explicit payload value (including an empty array, "clear
                 // them") wins.
-                if doc.Tools == nil || doc.Checks == nil || doc.Schedules == nil {
+                if doc.Tools == nil || doc.Checks == nil || doc.Schedules == nil || doc.Web == nil || doc.Web.DarkMode == nil || len(doc.Models) > 0 {
                         if cur, err := readConfigDoc(h.ConfigPath); err == nil {
                                 if doc.Tools == nil {
                                         doc.Tools = cur.Tools
@@ -294,6 +345,37 @@ func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
                                 }
                                 if doc.Schedules == nil {
                                         doc.Schedules = cur.Schedules
+                                }
+                                // The web block's theme key has no editor
+                                // form (the chat UI's theme button owns
+                                // it), so a payload that carries web for
+                                // the auto-name toggle still arrives
+                                // without darkMode — carry it the way
+                                // apiKeys carry, or every editor save
+                                // would reset the theme to "system".
+                                if doc.Web == nil {
+                                        doc.Web = cur.Web
+                                } else if doc.Web.DarkMode == nil && cur.Web != nil {
+                                        doc.Web.DarkMode = cur.Web.DarkMode
+                                }
+                                // Per-model carry for the field the editor
+                                // form does not know about: a model entry
+                                // posted without apiKeys keeps the file's
+                                // pool (matched by name — the editor's job
+                                // is editing connection settings, not
+                                // rotating credentials); an explicit value,
+                                // including an empty array ("clear them"),
+                                // wins.
+                                for i := range doc.Models {
+                                        if doc.Models[i].APIKeys != nil {
+                                                continue
+                                        }
+                                        for j := range cur.Models {
+                                                if cur.Models[j].Name == doc.Models[i].Name {
+                                                        doc.Models[i].APIKeys = cur.Models[j].APIKeys
+                                                        break
+                                                }
+                                        }
                                 }
                         }
                 }

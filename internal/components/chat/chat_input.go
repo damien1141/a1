@@ -103,6 +103,12 @@ type ChatInput struct {
 
 	// dumpNextDraw is set on paste/insert when A1_DEBUG=1.
 	dumpNextDraw bool
+
+	// drawWidth/drawMethod mirror the wrap parameters of the last Draw: the
+	// visual-row cursor movement in Handle needs the same width the renderer
+	// used, or Up/Down would disagree with the rows on screen.
+	drawWidth  int
+	drawMethod xui.WidthMethod
 }
 
 func (c *ChatInput) completerOpen() bool {
@@ -371,11 +377,20 @@ func (c *ChatInput) Handle(ctx *components.EventContext, ev xui.Event) {
 			if c.completerOpen() {
 				return
 			}
+			// Vertical movement is display-row aware: the editor soft-wraps
+			// long lines, so Up/Down walk the wrapped rows the user actually
+			// sees before history navigation gets a say. Only at the first
+			// visual row does Up recall history (the readline contract).
+			if c.moveVisualRow(-1) {
+				c.notifyCompleters()
+				ctx.ConsumeAndRedraw()
+				return
+			}
 			if c.OnHistoryNav != nil && c.OnHistoryNav(-1) {
 				ctx.ConsumeAndRedraw()
 				return
 			}
-			c.moveVert(-1)
+			c.Cursor = 0
 			c.notifyCompleters()
 			ctx.ConsumeAndRedraw()
 			return
@@ -383,11 +398,16 @@ func (c *ChatInput) Handle(ctx *components.EventContext, ev xui.Event) {
 			if c.completerOpen() {
 				return
 			}
+			if c.moveVisualRow(1) {
+				c.notifyCompleters()
+				ctx.ConsumeAndRedraw()
+				return
+			}
 			if c.OnHistoryNav != nil && c.OnHistoryNav(1) {
 				ctx.ConsumeAndRedraw()
 				return
 			}
-			c.moveVert(1)
+			c.Cursor = len(c.Value)
 			c.notifyCompleters()
 			ctx.ConsumeAndRedraw()
 			return
@@ -547,9 +567,19 @@ func (c *ChatInput) notifyQuestion() {
 }
 
 // ReplaceRange replaces value[start:end] with text and places the cursor after it.
+// Both bounds are clamped into [0, len(value)] before the swap: callers only
+// maintain that invariant (hostile cursors flow in from the composer fallback
+// path), and an escaped negative end would otherwise survive the swap as a
+// negative start and slice out of range.
 func (c *ChatInput) ReplaceRange(start, end int, text string) {
 	if start < 0 {
 		start = 0
+	}
+	if start > len(c.Value) {
+		start = len(c.Value)
+	}
+	if end < 0 {
+		end = 0
 	}
 	if end > len(c.Value) {
 		end = len(c.Value)
@@ -563,27 +593,106 @@ func (c *ChatInput) ReplaceRange(start, end int, text string) {
 	c.notifyChange()
 }
 
-func (c *ChatInput) moveVert(delta int) {
-	start := LineStart(c.Value, c.Cursor)
-	col := utf8.RuneCountInString(c.Value[start:c.Cursor])
+// moveVisualRow moves the cursor one soft-wrapped display row up (delta < 0)
+// or down (delta > 0), preserving the display column. It reports whether the
+// cursor moved; at the first/last row it returns false and leaves the cursor
+// untouched so the caller can fall through to history navigation.
+//
+// The old logical-line walk (moveVert) fought the renderer: Draw soft-wraps
+// long lines and places the caret in wrapped coordinates, so pressing Up on a
+// wrapped row looked like it should move the caret up one screen row but
+// instead recalled history — surprising the user mid-composition and stashing
+// their draft. Wrapping here uses the same width Draw last painted with.
+func (c *ChatInput) moveVisualRow(delta int) bool {
+	if c == nil {
+		return false
+	}
+	w, method := c.visualWrap()
+	lines := text.WrapEditorLines(c.Value, w, method)
+	if len(lines) <= 1 {
+		return false
+	}
+	line, col := text.CursorLineCol(c.Value, c.Cursor, w, method)
+	var target int
 	if delta < 0 {
-		if start == 0 {
-			c.Cursor = 0
-			return
+		if line <= 0 {
+			return false
 		}
-		prevEnd := start - 1 // newline
-		prevStart := LineStart(c.Value, prevEnd)
-		c.Cursor = runeIndex(c.Value[prevStart:prevEnd], col) + prevStart
-		return
+		target = line - 1
+	} else {
+		// CursorLineCol reports the phantom row below a full-width last line
+		// as (len(lines), 0); that is a valid "down" target only when a real
+		// row exists there, which len(lines) itself bounds.
+		if line >= len(lines)-1 {
+			return false
+		}
+		target = line + 1
 	}
-	end := LineEnd(c.Value, c.Cursor)
-	if end >= len(c.Value) {
-		c.Cursor = len(c.Value)
-		return
+	starts := wrappedRowStarts(c.Value, lines)
+	base := starts[target]
+	if base > len(c.Value) {
+		base = len(c.Value)
 	}
-	nextStart := end + 1
-	nextEnd := LineEnd(c.Value, nextStart)
-	c.Cursor = runeIndex(c.Value[nextStart:nextEnd], col) + nextStart
+	row := c.Value[base:min(base+len(lines[target]), len(c.Value))]
+	c.Cursor = base + offsetAtVisualCol(row, col, method)
+	return true
+}
+
+// visualWrap returns the wrap width and width-method the renderer last used.
+// Before the first Draw (tests driving Handle directly) a sane terminal width
+// stands in; WidthUnicode is the WidthMethod zero value.
+func (c *ChatInput) visualWrap() (int, xui.WidthMethod) {
+	w := c.drawWidth
+	if w < 1 {
+		w = 80
+	}
+	return w, c.drawMethod
+}
+
+// wrappedRowStarts returns the byte offset at which each wrapped display row
+// starts within value. Rows are contiguous slices of value: a soft wrap
+// consumes no bytes, a hard newline consumes exactly one.
+func wrappedRowStarts(value string, lines []string) []int {
+	starts := make([]int, len(lines))
+	off := 0
+	for i := range lines {
+		if i > 0 {
+			off += len(lines[i-1])
+			if off < len(value) && value[off] == '\n' {
+				off++
+			}
+		}
+		if off > len(value) {
+			off = len(value)
+		}
+		starts[i] = off
+	}
+	return starts
+}
+
+// offsetAtVisualCol returns the byte offset into s of display column col,
+// snapping left when col lands inside a wide glyph so the caret never sits on
+// a continuation column.
+func offsetAtVisualCol(s string, col int, method xui.WidthMethod) int {
+	if col <= 0 {
+		return 0
+	}
+	w := 0
+	for rest := s; rest != ""; {
+		_, cw, next := xui.FirstGrapheme(rest, method)
+		if cw < 1 {
+			cw = 1
+		}
+		if w+cw > col {
+			return len(s) - len(rest)
+		}
+		w += cw
+		rest = next
+		if w == col {
+			return len(s) - len(rest)
+		}
+	}
+	return len(s)
 }
 
 // Draw renders the bordered composer with edge labels, skills row, editor
@@ -647,6 +756,7 @@ func (c *ChatInput) Draw(ctx components.DrawContext) components.Surface {
 	pad := c.padX()
 	innerW := w - 2 - pad*2
 	innerW = max(innerW, 1)
+	c.drawWidth, c.drawMethod = innerW, ctx.Method
 
 	// Fill body background (non-default spaces so Clear+diff works cleanly).
 	for y := 1; y <= body && y < h-1; y++ {
@@ -838,9 +948,14 @@ func (c *ChatInput) paintPendingImages(s *components.Surface, x, y, width int, m
 }
 
 // LineStart returns the byte offset of the start of the line containing off.
+// Offsets are clamped into [0, len(s)]: hostile cursors are negative too, and
+// s[:off] panics on a negative off just as it does past the end.
 func LineStart(s string, off int) int {
 	if off > len(s) {
 		off = len(s)
+	}
+	if off < 0 {
+		off = 0
 	}
 	i := strings.LastIndexByte(s[:off], '\n')
 	if i < 0 {
@@ -850,29 +965,19 @@ func LineStart(s string, off int) int {
 }
 
 // LineEnd returns the byte offset just after the end of the line containing off.
+// Offsets are clamped into [0, len(s)] — s[off:] panics on a negative off.
 func LineEnd(s string, off int) int {
 	if off > len(s) {
 		off = len(s)
+	}
+	if off < 0 {
+		off = 0
 	}
 	i := strings.IndexByte(s[off:], '\n')
 	if i < 0 {
 		return len(s)
 	}
 	return off + i
-}
-
-func runeIndex(s string, n int) int {
-	if n <= 0 {
-		return 0
-	}
-	i := 0
-	for pos := range s {
-		if i == n {
-			return pos
-		}
-		i++
-	}
-	return len(s)
 }
 
 func dumpSurfaceRow(label string, buf []xui.Cell, rowW, row int) {

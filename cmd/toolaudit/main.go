@@ -3,6 +3,13 @@
 // bytes/4 heuristic the /context breakdown uses. Run it after editing
 // any tool description to keep the tool budget honest.
 //
+// Coverage: the default builtin set, list_skills, and the personal trio
+// + session_search (mounted with stub deps — definitions only, nothing
+// executes). Deliberately NOT covered: the memory quartet, the agent
+// quartet, schedule, contract, and budget — their constructors need a
+// live store/manager/engine, and their descriptions are small; the
+// number below is therefore a floor, not the exact per-session total.
+//
 // Usage:
 //
 //      go run ./cmd/toolaudit            # per-tool table + total
@@ -10,6 +17,7 @@
 package main
 
 import (
+        "database/sql"
         "encoding/json"
         "flag"
         "fmt"
@@ -18,7 +26,11 @@ import (
         "strings"
 
         "github.com/damien1141/a1/internal/tools"
+        "github.com/damien1141/a1/internal/tools/calendartool"
+        "github.com/damien1141/a1/internal/tools/kanbantool"
+        "github.com/damien1141/a1/internal/tools/mailtool"
         "github.com/damien1141/a1/internal/tools/memtool"
+        "github.com/damien1141/a1/internal/tools/sessiontool"
         "github.com/damien1141/a1/internal/tools/skilltool"
 )
 
@@ -26,8 +38,7 @@ func main() {
         asJSON := flag.Bool("json", false, "emit JSON instead of a table")
         flag.Parse()
 
-        all := append(tools.DefaultTools(), skilltool.ListSkillsTool("skills"))
-        all = append(all, memtool.Tools(nil)...)
+        all := auditSet()
 
         type row struct {
                 Name      string `json:"name"`
@@ -72,4 +83,26 @@ func main() {
         }
         fmt.Println(strings.Repeat("-", w+34))
         fmt.Printf("%-*s  %37d\n", w, "TOTAL", total)
+}
+
+// auditSet assembles the tool definitions the audit prices. The stub
+// deps satisfy the constructors' nil-guards (a nil CalendarDir/DB/MailDir
+// collapses to a zero Tool with no name); nothing here executes — the
+// Run closures are never called, only the Definition is read.
+func auditSet() []tools.Tool {
+        all := append(tools.DefaultTools(), skilltool.ListSkillsTool("skills"))
+        all = append(all, memtool.Tools(nil)...)
+        all = append(all,
+                calendartool.CalendarTool(calendartool.Deps{
+                        CalendarDir: func() string { return "" },
+                }),
+                kanbantool.KanbanTool(kanbantool.Deps{
+                        DB: func() *sql.DB { return nil },
+                }),
+                mailtool.MailTool(mailtool.Deps{
+                        MailDir: func() string { return "" },
+                }),
+                sessiontool.SessionSearchTool(".", ""),
+        )
+        return all
 }

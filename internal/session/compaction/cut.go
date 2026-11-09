@@ -232,6 +232,13 @@ func EstimateContextTokens(entries []session.MessageEntry) int {
 // collectCutPoints returns the indices of every user/assistant message
 // entry in [startIndex, endIndex), in chronological order: the positions
 // where a compaction cut may land. Picking among them is findCutIndex's job.
+//
+// Runtime-context riders (clock, weather, memories, job notices) are user
+// messages but not turns: a cut landing on one would strand it as the head
+// of the kept zone without the user message it precedes, and one landing
+// elsewhere can leave it as a standalone summarized zone — a 40-token clock
+// line that then costs its own checkpoint-summarizer round trip. Riders are
+// skipped; the user message they precede is the boundary.
 func collectCutPoints(entries []session.MessageEntry, startIndex, endIndex int) []int {
         var cutPoints []int
 
@@ -242,6 +249,9 @@ func collectCutPoints(entries []session.MessageEntry, startIndex, endIndex int) 
                 }
                 msgEntry := e.(session.SessionMessageEntry)
                 role := msgEntry.Message.Role
+                if msgEntry.Message.Runtime {
+                        continue
+                }
                 if role == llm.RoleUser || role == llm.RoleAssistant {
                         cutPoints = append(cutPoints, i)
                 }
@@ -250,7 +260,9 @@ func collectCutPoints(entries []session.MessageEntry, startIndex, endIndex int) 
 }
 
 // findTurnStartIndex walks backward from entryIndex to find the user message
-// that starts the current turn.
+// that starts the current turn. Runtime riders are not turn starts — the
+// turn starts at the real user message the rider precedes; otherwise the
+// rider would be classified as the turn prefix and summarized alone.
 func findTurnStartIndex(entries []session.MessageEntry, entryIndex, startIndex int) int {
         for i := entryIndex; i >= startIndex; i-- {
                 entry := entries[i]
@@ -258,6 +270,9 @@ func findTurnStartIndex(entries []session.MessageEntry, entryIndex, startIndex i
 
                 if ty == session.EntryMessage {
                         msgEntry := entry.(session.SessionMessageEntry)
+                        if msgEntry.Message.Runtime {
+                                continue
+                        }
                         if msgEntry.Message.Role == llm.RoleUser {
                                 return i
                         }

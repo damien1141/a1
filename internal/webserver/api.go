@@ -1,6 +1,7 @@
 package webserver
 
 import (
+        "bytes"
         "context"
         "encoding/json"
         "errors"
@@ -32,11 +33,41 @@ type cancelRequest struct {
         SessionID string `json:"sessionId"`
 }
 
-// handlePage serves the single-document web UI.
+// htmlThemeTag is the opening tag the theme stamp replaces — the built
+// document's own <html lang="en">. The boot snippet in that same document
+// yields to a pre-set data-theme before applying its own fallback chain,
+// so a stamped choice wins pre-paint. (themeapi.go owns the write side.)
+const htmlThemeTag = `<html lang="en">`
+
+// handlePage serves the single-document web UI. When config.yaml carries
+// an explicit theme choice (web.dark_mode, written by PUT /api/theme) it
+// is stamped onto the <html> tag before the bytes leave the server: the
+// browser paints the right theme FIRST — no localStorage round-trip, no
+// flash — and the choice reaches every browser, not just the one that
+// made it.
 func (s *Server) handlePage(w http.ResponseWriter, _ *http.Request) {
         w.Header().Set("Content-Type", "text/html; charset=utf-8")
         w.Header().Set("Cache-Control", "no-store")
-        _, _ = w.Write(s.page)
+        _, _ = w.Write(s.themedPage())
+}
+
+// themedPage returns the embedded page with the persisted theme stamped
+// on. No choice — or no project (tests build bare Servers) — serves the
+// document untouched and the boot snippet's own chain (stored choice,
+// then OS preference) applies.
+func (s *Server) themedPage() []byte {
+        if s.proj == nil || s.proj.Config() == nil {
+                return s.page
+        }
+        dark := s.proj.Config().Web.DarkMode
+        if dark == nil {
+                return s.page
+        }
+        t := "light"
+        if *dark {
+                t = "dark"
+        }
+        return bytes.Replace(s.page, []byte(htmlThemeTag), []byte(`<html lang="en" data-theme="`+t+`">`), 1)
 }
 
 // handleListSessions renders the sidebar session list as an htmx fragment.
@@ -293,6 +324,18 @@ func (s *Server) projectEvent(sessionID string, window int, msgID string, ev ses
                         text = fmt.Sprintf("compacted context (%d tokens)", e.TokensBefore)
                 }
                 s.events().publish(sessionID, serverEvent{Kind: eventStatus, Status: &statusPayload{Text: text}})
+                if !e.Failed {
+                        // A successful compaction lands a persistent entry in the
+                        // session tree, so a reloaded transcript renders a divider
+                        // for it — the live stream must draw the same cut or the
+                        // two views visibly disagree. A failed compaction appends
+                        // no entry, so it gets no marker either: only the
+                        // transient status line above.
+                        s.events().publish(sessionID, serverEvent{
+                                Kind:   eventMarker,
+                                Marker: &markerPayload{Text: compactionDividerText(e.TokensBefore)},
+                        })
+                }
         }
 }
 

@@ -11,9 +11,7 @@ import (
 
         "github.com/damien1141/a1/internal/permission"
         "github.com/damien1141/a1/internal/persona"
-        "github.com/damien1141/a1/internal/project"
         "github.com/damien1141/a1/internal/session/memory"
-        "github.com/damien1141/a1/internal/weather"
 )
 
 // personaDTO is the JSON shape the PersonaManager UI reads / writes. It is
@@ -700,33 +698,4 @@ func sniffMIMEForFile(path string) string {
         buf := make([]byte, 512)
         n, _ := f.Read(buf)
         return http.DetectContentType(buf[:n])
-}
-
-// weatherConfigFromProject reads the weather block from the project config
-// and translates it to a weather.Config. Returns the zero Config when the
-// project is unset or the weather block is absent (default-off).
-func weatherConfigFromProject(proj *project.Project) weather.Config {
-        if proj == nil || proj.Config() == nil {
-                return weather.Config{}
-        }
-        cfg := proj.Config()
-        if cfg.Weather == nil {
-                return weather.Config{}
-        }
-        return weather.Config{
-                Enabled:   cfg.Weather.Enabled,
-                Latitude:  cfg.Weather.Latitude,
-                Longitude: cfg.Weather.Longitude,
-                Name:      cfg.Weather.Name,
-        }
-}
-
-// RefreshWeather re-reads the weather block from the project config and
-// updates the live weather service. Called after the config editor saves
-// so toggling weather.enabled in the UI takes effect without a restart.
-func (s *Server) RefreshWeather() {
-        if s == nil || s.weatherSvc == nil {
-                return
-        }
-        s.weatherSvc.UpdateConfig(weatherConfigFromProject(s.proj))
 }

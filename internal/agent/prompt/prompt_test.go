@@ -16,7 +16,22 @@ func TestBuildAgentsEnabledToggle(t *testing.T) {
 	require.Contains(t, with, "At most 4 sub-agents run concurrently")
 	require.NotContains(t, without, "agent_spawn")
 	require.NotContains(t, without, "sub-agents run concurrently")
-	require.Contains(t, without, "`find` / `grep` / `ls` yourself")
+	require.Contains(t, without, "`search` / `read` yourself")
+}
+
+// The Tools section must name only tools that exist: the old wording sent
+// the model to `grep`/`ls`/`find`/`judge` as if they were registered tool
+// names, and a literal model burned a round on "tool 'grep' not found".
+// They are modes of search/read/code, and the prompt must say so.
+func TestBuildToolsSectionNamesRealToolsOnly(t *testing.T) {
+	got := Build("", false, 0, nil)
+	assert.Contains(t, got, "`read` mode=ls")
+	assert.Contains(t, got, "`code` mode=judge")
+	assert.Contains(t, got, "`git` (not bash) for git work")
+	assert.NotContains(t, got, "→ `grep`")
+	assert.NotContains(t, got, "→ `ls`")
+	assert.NotContains(t, got, "→ `find`")
+	assert.NotContains(t, got, "→ `judge`")
 }
 
 func TestBuildEditMatchesOldStrNewStr(t *testing.T) {

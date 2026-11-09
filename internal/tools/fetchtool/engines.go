@@ -105,26 +105,32 @@ type searchRouter struct {
 // the only instances.
 //
 // Priority order rationale:
-//  1. Frankfurter — tightest predicate (currency pattern), instant
+//  1. Time / weather — the clock and forecast subtools. Tight, explicit
+//     question shapes ("what time is it", "weather in Reykjavik"); time
+//     answers with no network at all and weather with one keyless API
+//     call, so they outrank everything. They also always produce an
+//     answer — the router never falls through past them — which is why
+//     their predicates stay deliberately narrow.
+//  2. Frankfurter — tightest predicate (currency pattern), instant
 //     response, never wrong when it matches.
-//  2. MDN — web-platform reference (css/html/dom/svg); runs before the
+//  3. MDN — web-platform reference (css/html/dom/svg); runs before the
 //     broad programming predicates so doc queries land on docs.
-//  3. npm / crates — language-specific package registries; the
+//  4. npm / crates — language-specific package registries; the
 //     authoritative index when the query names the ecosystem, so they
 //     run before GitHub's language-agnostic repo search.
-//  4. GitHub — library/package discovery for every other language;
+//  5. GitHub — library/package discovery for every other language;
 //     common in coding queries (before SE: library queries with "go"
 //     match both).
-//  5. Reddit / Hacker News — community opinion. They run BEFORE Stack
+//  6. Reddit / Hacker News — community opinion. They run BEFORE Stack
 //     Exchange on purpose: SE's broad programming predicate matches any
 //     query that so much as names a language, and "what do people think
 //     of bun" must reach the forums, not the Q&A index. Reddit edges out
 //     HN when the query names it explicitly.
-//  6. Stack Exchange — the broad programming signal set, the single
+//  7. Stack Exchange — the broad programming signal set, the single
 //     most useful engine for a coding agent.
-//  7. arxiv — academic queries are rare but unambiguous when they
+//  8. arxiv — academic queries are rare but unambiguous when they
 //     match ("paper", "research", "arxiv").
-//  8. Wikipedia — factual queries; less common in coding work but
+//  9. Wikipedia — factual queries; less common in coding work but
 //     covers the "what is X concept" case well.
 //
 // The first fallback is the merged web engine: DuckDuckGo Lite run in
@@ -148,6 +154,8 @@ func newSearchRouter() *searchRouter {
         }
         return &searchRouter{
                 engines: []SearchEngine{
+                        newTimeEngine(),     // zero-network direct answer, tightest predicate
+                        newWeatherEngine(),  // direct forecast; zero context cost until asked
                         newFrankfurterEngine(),
                         newMDNEngine(),
                         newNpmEngine(),

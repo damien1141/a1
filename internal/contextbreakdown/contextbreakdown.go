@@ -39,6 +39,25 @@ type Breakdown struct {
         ContextWindow int
         // Reserve is the headroom kept for the reply, if the caller knows it.
         Reserve int
+        // Cache is the provider-reported prompt-cache accounting. Nil when no
+        // request ever reported a cache bucket — providers without prompt
+        // caching keep /context estimate-only instead of printing a
+        // permanent "0% hit".
+        Cache *CacheStats
+}
+
+// CacheStats is the provider-reported prompt-cache split: the exact numbers
+// the provider billed, not the byte-ratio estimates that fill the rest of
+// the breakdown. Last is the most recent request (the live hit rate); the
+// session fields sum every reported request, so their hit rate shows what
+// caching saved across the whole conversation. The buckets mirror
+// session.TokenUsage: reads and writes are disjoint from the fresh
+// (uncached) input.
+type CacheStats struct {
+        Last          session.TokenUsage
+        SessionReads  int
+        SessionWrites int
+        SessionFresh  int
 }
 
 // Total sums the categories that actually consume context.
@@ -91,7 +110,26 @@ func (b Breakdown) Estimate() string {
         } else {
                 fmt.Fprintf(&sb, "Total %s (window unknown for this model)\n", total)
         }
+        if b.Cache != nil {
+                fmt.Fprintf(&sb, "\nPrompt cache (provider-reported, exact)\n")
+                fmt.Fprintf(&sb, "  last request  %s\n", formatCacheLine(
+                        b.Cache.Last.CachedTokens, b.Cache.Last.CacheWriteTokens, b.Cache.Last.PromptTokens))
+                fmt.Fprintf(&sb, "  session       %s\n", formatCacheLine(
+                        b.Cache.SessionReads, b.Cache.SessionWrites, b.Cache.SessionFresh))
+        }
         return sb.String()
+}
+
+// formatCacheLine renders one read/write/fresh split with the hit rate —
+// the share of that prompt the cache answered. read+write+fresh is the
+// whole prompt because the buckets are disjoint (see llm.Usage).
+func formatCacheLine(read, write, fresh int) string {
+        prompt := read + write + fresh
+        if prompt <= 0 {
+                return "no prompt usage reported"
+        }
+        return fmt.Sprintf("%s read · %s write · %s fresh  (%d%% hit)",
+                formatThousands(read), formatThousands(write), formatThousands(fresh), read*100/prompt)
 }
 
 // Build assembles the breakdown for a snapshot. toolBytes/toolCount come from
@@ -147,6 +185,24 @@ func Build(snap session.Snapshot, contextWindow, toolBytes, toolCount int) Break
         }
         if toolIO > 0 {
                 b.Categories = append(b.Categories, Category{Name: "Tool output", Tokens: estimateTokens(toolIO)})
+        }
+
+        // Prompt-cache accounting from the provider-reported usage that rides
+        // assistant messages (each round of each turn reports its own request,
+        // so the sums cover every request the session made). Only set when a
+        // cache bucket was ever reported.
+        var stats CacheStats
+        for _, m := range snap.Messages {
+                if !m.Usage.Reported() {
+                        continue
+                }
+                stats.Last = m.Usage
+                stats.SessionReads += m.Usage.CachedTokens
+                stats.SessionWrites += m.Usage.CacheWriteTokens
+                stats.SessionFresh += m.Usage.PromptTokens
+        }
+        if stats.SessionReads+stats.SessionWrites > 0 {
+                b.Cache = &stats
         }
         return b
 }

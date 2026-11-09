@@ -32,6 +32,14 @@ func ReplaySnapshot(entries []MessageEntry, detail ToolDetail) Snapshot {
 
 func replayEntry(snap Snapshot, entry SessionMessageEntry, detail ToolDetail) Snapshot {
         msg := entry.Message
+        // Runtime-context riders (clock, weather, memories, job notices) are
+        // persisted history the model reads but the user never typed — ambient
+        // context, not conversation. Skip them in the transcript: a wall-clock
+        // line above every turn is noise, and their content is already implied
+        // by the turn that follows.
+        if msg.Runtime {
+                return snap
+        }
         switch msg.Role {
         case llm.RoleUser:
                 images := make([]llm.Image, 0, len(msg.Images))

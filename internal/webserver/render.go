@@ -60,7 +60,7 @@ func sessionListFragment(sessions []session.SessionMeta, pins []string) string {
         for _, s := range orderByPin(sessions, pinned) {
                 title := html.EscapeString(sessionTitleFromMeta(s))
                 fmt.Fprintf(&sb,
-                        `<button type="button" class="session-row%[1]s" data-session-id="%[2]s" data-title="%[3]s">`+
+                        `<button type="button" class="session-row%[1]s" data-session-id="%[2]s" data-title="%[3]s" data-mtime="%[6]s">`+
                                 `<span class="session-pin" aria-hidden="true">%[4]s</span>`+
                                 `<span class="session-title">%[3]s</span>`+
                                 `<span class="session-meta">%[5]s</span>`+
@@ -70,6 +70,7 @@ func sessionListFragment(sessions []session.SessionMeta, pins []string) string {
                         title,
                         pinGlyph(pinned[s.ID]),
                         html.EscapeString(friendlySessionTime(s)),
+                        html.EscapeString(s.Mtime.UTC().Format(time.RFC3339Nano)),
                 )
         }
         return sb.String()
@@ -116,6 +117,18 @@ func pinGlyph(pinned bool) string {
         return "&#9734;"
 }
 
+// compactionDividerText is the divider every view renders for a compaction
+// cut: the reload paths (HTML fragment and JSON transcript) for the stored
+// entry, and the live marker event for the cut as it happens. One string,
+// three call sites — a session watched live and the same session reloaded
+// must draw the same line at the same place.
+func compactionDividerText(tokensBefore int) string {
+        if tokensBefore <= 0 {
+                return "Compacted context"
+        }
+        return fmt.Sprintf("Compacted context (%d tokens)", tokensBefore)
+}
+
 // transcriptFragment renders a stored transcript: user text, assistant text and
 // thinking, tool runs, and compaction markers. An empty session renders the
 // same start page the client draws, so switching to an unused session and
@@ -132,11 +145,8 @@ func transcriptFragment(snap session.Snapshot) string {
                 case session.RoleAssistant:
                         sb.WriteString(assistantBubble(m))
                 case session.RoleCompaction:
-                        text := "Compacted context"
-                        if m.TokensBefore > 0 {
-                                text = fmt.Sprintf("Compacted context (%d tokens)", m.TokensBefore)
-                        }
-                        fmt.Fprintf(&sb, `<div class="bubble bubble-system">%s</div>`, html.EscapeString(text))
+                        fmt.Fprintf(&sb, `<div class="bubble bubble-system">%s</div>`,
+                                html.EscapeString(compactionDividerText(m.TokensBefore)))
                 }
         }
         sb.WriteString(toolsFragment(snap))

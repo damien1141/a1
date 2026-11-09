@@ -2,6 +2,7 @@ package agent
 
 import (
         "context"
+        "database/sql"
         "encoding/json"
         "errors"
         "fmt"
@@ -26,14 +27,20 @@ import (
         "github.com/damien1141/a1/internal/mcp"
         "github.com/damien1141/a1/internal/memstore"
         "github.com/damien1141/a1/internal/permission"
+        "github.com/damien1141/a1/internal/project"
         "github.com/damien1141/a1/internal/project/model"
         "github.com/damien1141/a1/internal/schedule"
         "github.com/damien1141/a1/internal/session"
         "github.com/damien1141/a1/internal/session/compaction"
         "github.com/damien1141/a1/internal/snapshot"
+        "github.com/damien1141/a1/internal/toolguard"
         "github.com/damien1141/a1/internal/tools"
+        "github.com/damien1141/a1/internal/tools/calendartool"
+        "github.com/damien1141/a1/internal/tools/kanbantool"
+        "github.com/damien1141/a1/internal/tools/mailtool"
         "github.com/damien1141/a1/internal/tools/memtool"
         "github.com/damien1141/a1/internal/tools/scheduletool"
+        "github.com/damien1141/a1/internal/tools/sessiontool"
         "github.com/damien1141/a1/internal/tools/skilltool"
         "github.com/damien1141/a1/internal/tools/tooldef"
 )
@@ -53,6 +60,13 @@ var activeEngine atomic.Value
 // Pass nil to clear.
 func SetActiveEngine(engine *Engine) {
         activeEngine.Store(engine)
+        if engine == nil {
+                // Forwarding the typed nil (*Engine)(nil) would store a non-nil
+                // Engine interface in engineaccess and "clear" nothing — the clear
+                // path must send a literal nil so the registry actually empties.
+                engineaccess.SetActiveEngine(nil)
+                return
+        }
         engineaccess.SetActiveEngine(engine)
 }
 
@@ -114,6 +128,33 @@ type Engine struct {
         // judges against the evidence ledger at turn end (zero-rank stop).
         // Reset at every Loop entry; ratcheted within a turn.
         turnContract turnContractState
+        // turnVerify is the per-turn workspace-mutation record the
+        // verify-on-stop gate judges an undeclared finish against (see
+        // verify_stop.go). Reset at every Loop entry, like turnContract.
+        turnVerify turnVerifyState
+
+        // Learning loop (see learning.go): nudge counters that tick on
+        // opportunity and reset on actual use, plus the review-fork state.
+        // Session-scoped engine state, deliberately NOT reset per turn —
+        // the windows carry across Loops within the engine's lifetime.
+        learnMemInterval   atomic.Int64
+        turnsSinceMemory   atomic.Int64
+        learnSkillInterval atomic.Int64
+        itersSinceSkill    atomic.Int64
+        // Memory-consolidation cadence (memory_outlet.go): the pinned
+        // interval (1 = per turn, N = every Nth) and the completed-turn
+        // counter the auto-local policy gates on. Set once at construction;
+        // ticks are atomic because turn terminals fire from the Loop path
+        // while the surface may also drive drains.
+        consolidationInterval int
+        consolidateTicks      atomic.Int64
+        // consolidationBatchedLogged keeps the one-time local-batching notice
+        // to a single debuglog line per engine instead of one per skipped turn.
+        consolidationBatchedLogged atomic.Bool
+        reviewCancelMu     sync.Mutex
+        reviewCancel       context.CancelFunc
+        reviewInFlight     atomic.Bool
+        reviewOutstanding  atomic.Int64
         // sessionValence is the session's mood (Bet 06), computed at each
         // turn's end from outcomes (regressions pull down, certificates
         // pull up) and fed to the next retrieval's mood-congruency cue.
@@ -194,34 +235,48 @@ type Engine struct {
         // base model restores these — vendor-specific wire shapes must
         // follow the model actually in use, not the one the surface booted
         // with.
-        baseHooks           llmclient.Hooks
-        gate               permission.Gate
-        ask                permission.AskFunc
-        question           tooldef.QuestionFunc
-        continueAsk        ContinueFunc
-        jobs               *job.Manager
-        scheduler          *schedule.Scheduler // nil = no schedule tool (Bet 01 Clock)
-        extensions         *extension.Runner // nil = disabled; all methods are nil-safe no-ops
-        baseTools          []tools.Tool      // nil = DefaultTools; preserved across rebind
-        omitExtTools       bool              // sub-agents: emit events but skip RegisterTool merge
-        mcp                *mcp.Pool
-        memStore           *memstore.Store   // nil = no shared bank; remember/recall/revise/forget registered only when non-nil AND memory effective-on
-        embedder           memstore.Embedder // for opening per-persona SQLite stores lazily; nil = fall back to engine.memStore
+        baseHooks    llmclient.Hooks
+        gate         permission.Gate
+        ask          permission.AskFunc
+        question     tooldef.QuestionFunc
+        continueAsk  ContinueFunc
+        jobs         *job.Manager
+        scheduler    *schedule.Scheduler // nil = no schedule tool (Bet 01 Clock)
+        extensions   *extension.Runner   // nil = disabled; all methods are nil-safe no-ops
+        baseTools    []tools.Tool        // nil = DefaultTools; preserved across rebind
+        omitExtTools bool                // sub-agents: emit events but skip RegisterTool merge
+        mcp          *mcp.Pool
+        memStore     *memstore.Store   // nil = no shared bank; remember/recall/revise/forget registered only when non-nil AND memory effective-on
+        embedder     memstore.Embedder // for opening per-persona SQLite stores lazily; nil = fall back to engine.memStore
+        // Credential pools, keyed by key-set signature (poolFor). Shared
+        // across the client rebuilds that SetJobs, scheduler attach, and
+        // surface model switches all trigger through rebindTools, so a
+        // rate-limited key's cooldown survives them. Guarded by poolMu:
+        // the Loop goroutine rebinds while the memory-outlet goroutine
+        // builds diary clients.
+        poolMu sync.Mutex
+        pools  map[string]*llm.KeyPool
         // memoryEnabled is the surface's raw memory toggle (see
         // WithMemoryEnabled). Atomic so the palette/web toggle can flip it
         // while a loop runs; MemoryEnabled() derives the effective value
         // from it + the active persona's override.
         memoryEnabled atomic.Bool
-        // memoryInletMsg holds the per-turn semantic memory injection
-        // built by injectSemanticMemories(). It's a transient system
-        // message that gets prepended before the latest user message
-        // when BuildContext() is called for the next LLM turn. The
-        // message is NOT persisted to the session.
-        memoryInletMsg *llm.Message
+        // lastMemRider is the semantic memory bundle the most recent
+        // runtime rider persisted (see runtime_rider.go). The rider is
+        // change-gated against it: an identical bundle re-retrieved next
+        // turn is skipped — it is already frozen in history from the turn
+        // that injected it. Cleared on persona switch (the new persona's
+        // bank must re-inject) and empty on a fresh engine (one harmless
+        // re-injection after a resume).
+        lastMemRider string
         // Persona apply-on-switch hooks. Optional; when nil, the
         // corresponding persona setting is silently ignored on switch.
         personaModelResolver PersonaModelResolver
         permissionModeSetter PermissionModeSetter
+        // personalCfg supplies the live personal-data section for the
+        // agent-side personal tools (nil = no personal tools mount). Read
+        // at mount and at every call — see WithPersonalConfig.
+        personalCfg func() project.PersonalConfig
 
         session *Session
         // readCache backs the executor's read elision (see readcache.go):
@@ -286,6 +341,8 @@ func NewEngine(model llm.ModelConfig, sess *Session, opts ...EngineOption) (*Eng
                 memStore:             cfg.memStore,
                 embedder:             cfg.embedder,
                 personaModelResolver: cfg.personaModelResolver,
+                personalCfg:          cfg.personalCfg,
+                pools:                make(map[string]*llm.KeyPool),
                 permissionModeSetter: cfg.permissionModeSetter,
                 basePermissionMode:   cfg.basePermissionMode,
                 evidence:             defaultEvidenceLedger(sess, cfg.evidence, cfg.evidenceChecks),
@@ -328,7 +385,19 @@ func NewEngine(model llm.ModelConfig, sess *Session, opts ...EngineOption) (*Eng
         engine.extensions.SetBaseTools(engine.buildCoreTools(engine.baseTools))
         engine.extensions.SetMeta(engine.SessionID(), engine.SessionCwd())
         toolList := engine.buildToolList(engine.baseTools)
-        engine.client = llmclient.NewClient(model, engine.hooks, tools.Definitions(toolList), engine.systemPrompt())
+        engine.client = llmclient.NewClient(model, engine.hooks, tools.Definitions(toolList), engine.systemPrompt()).SetKeyPool(engine.poolFor(model)).SetCacheScope(engine.cacheScope())
+        // Learning loop intervals: a review every defaultLearnNudgeInterval
+        // opportunities unless an option said otherwise (learning.go owns
+        // the semantics; this is just the default install).
+        engine.learnMemInterval.Store(defaultLearnNudgeInterval)
+        engine.learnSkillInterval.Store(defaultLearnNudgeInterval)
+        engine.consolidationInterval = engine.resolveConsolidationInterval(cfg.consolidationInterval)
+        if cfg.learnMemInterval > 0 {
+                engine.learnMemInterval.Store(int64(cfg.learnMemInterval))
+        }
+        if cfg.learnSkillInterval > 0 {
+                engine.learnSkillInterval.Store(int64(cfg.learnSkillInterval))
+        }
         engine.bindExecutor(tools.NewRegistry(toolList))
         return engine, nil
 }
@@ -369,6 +438,17 @@ func (engine *Engine) buildCoreTools(base []tools.Tool) []tools.Tool {
         if skillPath := engine.modelCfg.SkillPath; skillPath != "" {
                 out = append(out, skilltool.ListSkillsTool(skillPath))
         }
+        // session_search tool: raw-transcript recall over this project's
+        // past sessions. The memory bank holds distilled facts; the
+        // transcripts hold what was actually said — the two answer
+        // different questions, and only the human could browse the second
+        // one until now. Registered whenever the session persists under a
+        // directory a listing can read; in-memory sessions (tests) have
+        // nothing to search. The live session id rides along so the tool
+        // never restates the transcript the model already holds.
+        if dir := engine.SessionDir(); dir != "" {
+                out = append(out, sessiontool.SessionSearchTool(dir, engine.SessionID()))
+        }
         // Memory tools (remember/recall/revise/forget) are registered only
         // when a shared bank is attached AND memory is effectively on —
         // MemoryEnabled() folds the surface's raw toggle (Ctrl+K / web
@@ -392,6 +472,45 @@ func (engine *Engine) buildCoreTools(base []tools.Tool) []tools.Tool {
                         merged = append(merged, mcpTools...)
                         out = merged
                 }
+        }
+        // Personal-data tools (dashboard chunks 2+): the calendar, kanban,
+        // and mail facades mount only when the LIVE personal section is
+        // enabled and the active model opted into reads. This is the
+        // convenience check — the enforcement is in the tools, which re-read
+        // the switch and the model's flags on every call, so a stale or
+        // mis-built mount can neither read nor write. Deliberately BEFORE
+        // the jobs early return: personal data is not fleet machinery, and
+        // an engine without a job manager (most chat sessions) still gets
+        // it.
+        if engine.personalConfig().EnabledResolved() && engine.modelCfg.PersonalRead {
+                out = append(out, calendartool.CalendarTool(calendartool.Deps{
+                        CalendarDir:  engine.personalCalendarDir,
+                        ReadAllowed:  engine.personalReadAllowed,
+                        WriteAllowed: engine.personalWriteAllowed,
+                }))
+                // The board has no directory to configure — it lives in
+                // the vault beside the sessions and tool runs, so the
+                // facade takes its handle from the process-wide default
+                // the TUI and web surfaces install (the evidence ledger's
+                // path), read live at call time: no vault, honest refusal.
+                out = append(out, kanbantool.KanbanTool(kanbantool.Deps{
+                        DB: func() *sql.DB {
+                                if v := session.DefaultVault(); v != nil {
+                                        return v.DB()
+                                }
+                                return nil
+                        },
+                        ReadAllowed:  engine.personalReadAllowed,
+                        WriteAllowed: engine.personalWriteAllowed,
+                }))
+                // The Maildir facade is the read-only personal surface: no
+                // write hook exists on it at all, and the model reads the
+                // envelope only (bodies are a webui privilege) — the strictest
+                // of the three by design, because mail is the most personal.
+                out = append(out, mailtool.MailTool(mailtool.Deps{
+                        MailDir:     engine.personalMailDir,
+                        ReadAllowed: engine.personalReadAllowed,
+                }))
         }
         if engine.jobs == nil {
                 return out
@@ -418,6 +537,48 @@ func (engine *Engine) buildCoreTools(base []tools.Tool) []tools.Tool {
                 }))
         }
         return out
+}
+
+// personalConfig returns the live personal section (zero when no provider
+// was wired — locked, the safe default).
+func (engine *Engine) personalConfig() project.PersonalConfig {
+        if engine == nil || engine.personalCfg == nil {
+                return project.PersonalConfig{}
+        }
+        return engine.personalCfg()
+}
+
+func (engine *Engine) personalCalendarDir() string {
+        return engine.personalConfig().CalendarDir
+}
+
+// personalMailDir is personalCalendarDir for the Maildir root.
+func (engine *Engine) personalMailDir() string {
+        return engine.personalConfig().MailDir
+}
+
+// personalReadAllowed folds the live master switch with the ACTIVE model's
+// opt-in — read at call time, never captured.
+func (engine *Engine) personalReadAllowed() bool {
+        return engine.personalConfig().EnabledResolved() && engine.modelCfg.PersonalRead
+}
+
+// personalWriteAllowed is personalReadAllowed for the write face.
+func (engine *Engine) personalWriteAllowed() bool {
+        return engine.personalConfig().EnabledResolved() && engine.modelCfg.PersonalWrite
+}
+
+// RefreshPersonalTools rebuilds the tool bindings so a personal-config
+// change (the master switch, a directory, or the model's personal flags)
+// is live on the next turn without restarting the session. Called by the
+// web surface after a config save; safe mid-turn for the same reason
+// every other rebind trigger is (the running loop keeps its client
+// reference, the next round picks up the new binding).
+func (engine *Engine) RefreshPersonalTools() {
+        if engine == nil {
+                return
+        }
+        engine.rebindTools()
 }
 
 // SetModel replaces the LLM client and model-related settings without
@@ -533,8 +694,30 @@ func (engine *Engine) rebindTools() {
                 engine.hooks,
                 tools.Definitions(toolList),
                 engine.systemPrompt(),
-        )
+        ).SetKeyPool(engine.poolFor(engine.modelCfg)).SetCacheScope(engine.cacheScope())
         engine.bindExecutor(tools.NewRegistry(toolList))
+}
+
+// poolFor returns the shared credential pool for a model config's key set,
+// building it on first use. Pools are keyed by the key set itself, so every
+// rebind, model switch, and diary client over the same keys shares one
+// pool's cooldowns — and switching away and back reuses the pool it left,
+// rate-limit memory intact. Nil (fewer than two unique keys) is the
+// single-key world; SetKeyPool reads nil as "no pool".
+func (engine *Engine) poolFor(cfg llm.ModelConfig) *llm.KeyPool {
+        all := append([]string{cfg.APIKey}, cfg.APIKeys...)
+        sig := llm.KeySetSignature(all)
+        engine.poolMu.Lock()
+        defer engine.poolMu.Unlock()
+        if p, ok := engine.pools[sig]; ok {
+                return p
+        }
+        p := llm.NewKeyPool(all)
+        if p == nil {
+                return nil
+        }
+        engine.pools[sig] = p
+        return p
 }
 
 func (engine *Engine) systemPrompt() string {
@@ -542,8 +725,10 @@ func (engine *Engine) systemPrompt() string {
         // default system prompt"), its prompt IS the system prompt — the
         // built-in a1 behavioral template, project context, skills and MCP
         // catalogs are all dropped so the persona's voice is the only voice.
-        // Runtime context (clock, weather, persona memories) still rides in
-        // as separate system messages from Session.BuildContext.
+        // Runtime context (persona memories, the change-gated memory
+        // bundle, job notices) rides as persisted Runtime-marked user
+        // messages (see runtime_rider.go); the clock and the forecast are
+        // fetch engines the model calls when it needs them.
         if engine.session != nil {
                 if p, ok := engine.session.activePersona(); ok && p.ReplacesSystemPrompt() {
                         return strings.TrimSpace(p.SystemPrompt)
@@ -570,9 +755,9 @@ func (engine *Engine) systemPrompt() string {
 // store pick the switch up the same way when they are constructed.
 //
 // Settings applied (in order):
-//  1. Clear stale memoryInletMsg — the new persona has its own semantic
-//     memory namespace, so any injection from the previous persona is
-//     stale and must not carry into the next turn.
+//  1. Clear the memory-rider gate (lastMemRider) — the new persona has
+//     its own semantic memory namespace, so a bundle from the previous
+//     persona must not suppress the new one's first injection.
 //  2. If persona.Model is set and personaModelResolver is wired: resolve
 //     the model name to an llm.ModelConfig and update engine.modelCfg.
 //     rebindTools() then rebuilds the LLM client with the new config.
@@ -628,11 +813,12 @@ func (engine *Engine) applyPersonaSettings() {
         if engine == nil || engine.session == nil {
                 return
         }
-        // 1. Clear stale memory injection. The new persona has its own
-        //    semantic memory namespace; an injection from the previous
-        //    persona would be wrong context. The inlet is rebuilt on
-        //    the next turn via injectSemanticMemories().
-        engine.memoryInletMsg = nil
+        // 1. Clear the memory-rider gate. The new persona has its own
+        //    semantic memory namespace; a bundle injected by the previous
+        //    persona must not suppress the new one's first injection.
+        //    The rider is rebuilt on the next turn via
+        //    injectSemanticMemories().
+        engine.lastMemRider = ""
 
         // Look up the active persona. No store (or read error) → treat as
         // the default persona: restore base settings, clear nothing else.
@@ -703,6 +889,19 @@ func (engine *Engine) bindExecutor(registry tools.Registry) {
         // Image blocks ride tool results only for vision-capable models;
         // rebind on every model switch so the flag never goes stale.
         engine.executor.SetImageEnabled(engine.modelCfg.ImageEnabled)
+        // Learning loop: the dispatch sink resets the nudge counters on
+        // actual memory/skill use — the executor calls it after every gate
+        // has passed, just before the tool runs.
+        engine.executor.SetLearningSink(engine.learningSink)
+        // Tool loop guardrails (hermes tool_guardrails): warnings on every
+        // engine; hard stops on the unattended ones — anything at fleet
+        // depth > 0 runs without a human watching to say "stop", which is
+        // exactly where a replay loop burns the budget. Per-turn state
+        // resets at Loop entry.
+        engine.executor.SetLoopGuard(toolguard.New(toolguard.Config{
+                Warnings: true,
+                HardStop: engine.agentDepth > 0,
+        }))
         if engine.session != nil {
                 engine.executor.SetMemoryBank(engine.session.MemoryBank())
         }
@@ -1109,10 +1308,16 @@ func (engine *Engine) MaxToolCalls() int {
 }
 
 // toolBudgetUnlimited reports whether the tool-call budget is suppressed for
-// the current gate: yolo mode promises unlimited tool calls, so the budget
-// must not fight the mode the user explicitly chose.
+// the current gate. Yolo mode promises unlimited tool calls, so the budget
+// must not fight the mode the user explicitly chose - and "yolo" reaches the
+// engine as more than one gate shape: `a1 run --yolo` builds an AllowAll
+// gate, the TUI's allow-all session override is an armed SessionAllowGate,
+// and dangerously_allow_all / allow_all_session short-circuit inside the
+// StaticGate itself. permission.Unrestricted recognizes every shape; the old
+// ModeOf-only check missed all but the literal mode, so the cap still fired
+// under flags whose whole point was lifting it.
 func (engine *Engine) toolBudgetUnlimited() bool {
-        return permission.ModeOf(engine.gate) == permission.ModeYolo
+        return permission.Unrestricted(engine.gate)
 }
 
 // SetExtensions replaces the extension runner. Pass nil to disable extensions.
@@ -1133,12 +1338,33 @@ func (engine *Engine) SessionID() string {
         return engine.session.ID()
 }
 
+// cacheScope returns the session's logical prompt-cache scope for request
+// routing: every rebuild of the client (rebind, model switch) re-pins it,
+// so the scope — and the provider-side cache bucket it names — outlives
+// each rebuild, exactly like the credential pool does. Nil session means
+// no scope, which leaves the wire as it was before scopes existed.
+func (engine *Engine) cacheScope() string {
+        if engine == nil || engine.session == nil {
+                return ""
+        }
+        return engine.session.CacheScope()
+}
+
 // SessionFile returns the JSONL path (empty in memory mode).
 func (engine *Engine) SessionFile() string {
         if engine == nil || engine.session == nil {
                 return ""
         }
         return engine.session.File()
+}
+
+// SessionDir returns the directory the session persists under (empty in
+// memory mode).
+func (engine *Engine) SessionDir() string {
+        if engine == nil || engine.session == nil {
+                return ""
+        }
+        return engine.session.SessionDir()
 }
 
 // SessionCwd returns the cwd recorded on the session header.
@@ -1174,7 +1400,7 @@ func (engine *Engine) recentUserMessages(maxCount int) []string {
         msgs := engine.session.BuildContext()
         var collected []string
         for i := len(msgs) - 1; i >= 0 && len(collected) < maxCount; i-- {
-                if msgs[i].Role == llm.RoleUser {
+                if msgs[i].Role == llm.RoleUser && !msgs[i].Runtime {
                         collected = append(collected, msgs[i].Content)
                 }
         }
@@ -1228,6 +1454,22 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
                 }
                 engine.extensions.EmitAgentStart()
                 defer engine.extensions.EmitAgentEnd()
+                // Runtime-context rider (see runtime_rider.go): the
+                // change-gated memory bundle and delivered job notices,
+                // built and PERSISTED before the user message so every byte
+                // that changes per turn lands at the tail the request cache
+                // is about to write, then freezes into history. The clock
+                // and the forecast are fetch engines now — asked for, not
+                // injected. The old shape (transient RoleSystem injections
+                // hoisted into the cached system block) re-billed the full
+                // context as a cache write on every round. A rider with
+                // nothing new to say is skipped entirely.
+                if rider, ok := engine.buildRuntimeRider(ctx, content); ok {
+                        if err := engine.session.Append(rider); err != nil {
+                                yield(nil, err)
+                                return
+                        }
+                }
                 if err := engine.session.Append(llm.Message{
                         Role:    llm.RoleUser,
                         Content: content,
@@ -1236,20 +1478,6 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
                         yield(nil, err)
                         return
                 }
-
-                // Memory inlet (every-turn, pre-LLM): retrieve the top-K
-                // relevant memories from the active persona's semantic store
-                // and inject as a transient system message before the user
-                // message we just appended. The message is NOT persisted to
-                // the session — it's rebuilt every turn so memories written
-                // mid-conversation (via the outlet) surface immediately on
-                // the next user message.
-                //
-                // Returned nil when: no persona store attached, memory
-                // disabled, skip detector flagged the message, or no
-                // relevant memories found. All silent — a broken memory
-                // subsystem never breaks the agent loop.
-                engine.memoryInletMsg = engine.injectSemanticMemories(ctx, content)
 
                 // memfsck (Bet 06): reconcile <cwd>/memory with MEMORY.md
                 // once per session start, as the package doc always said.
@@ -1261,6 +1489,16 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
                 // fresh contract, and the verification-round counter the
                 // contract gate buys against starts at zero.
                 engine.turnContract.reset()
+                // Verify-on-stop: fresh mutation state for the fresh turn.
+                engine.turnVerify.reset()
+                // Verify-on-stop nudge budget: the gate is a brake, not a
+                // wall — after the budget the model's answer stands.
+                verifyNudges := 0
+                // Learning loop: preempt any in-flight review fork —
+                // self-improvement never overlaps a live user turn — then
+                // tick the memory counter for this turn.
+                engine.cancelLearningReview()
+                fireMemoryNudge := engine.tickMemoryNudge()
                 // Task contracts (Bet 04): a fleet-inherited seed re-enters the
                 // fresh turn contract (workers) or arms its watches (explore/
                 // review) so the child is held to — or at least records evidence
@@ -1276,6 +1514,11 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
                 // left undrained by an aborted prior turn are stale for this
                 // one — discard them so the candidate marker stays honest.
                 engine.executor.DrainEvidenceVerdicts()
+                // Tool loop guardrails: fresh state for the fresh prompt. The
+                // streaks are per-turn by design — a new user message is a new
+                // experiment, and re-reads or re-tries after it are never
+                // flagged.
+                engine.executor.ResetLoopGuard()
                 evGate := engine.newEvidenceGate()
                 // Overflow recovery state (doc/context-folding-math.md §5):
                 // overflowStreak counts consecutive recoveries and resets on
@@ -1289,6 +1532,13 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
                 // request, not proof the persistent window is wrong.
                 overflowStreak := 0
                 recoveryWindow := 0
+                // Empty-response ladder (see empty_guard.go): one guard per
+                // user turn — the streak proves determinism only within a
+                // turn, and a new prompt is a new experiment.
+                emptyGuard := &emptyResponseGuard{}
+                // Engine-layer transient retries used this turn: bounded so a
+                // dead endpoint cannot park the loop (see the error path).
+                transientRetries := 0
                 // Resolve the runtime window (config → probe → assumed)
                 // before the first stream so folding works from the very
                 // first turn on unknown-window models.
@@ -1300,17 +1550,27 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
 
                         engine.extensions.EmitTurnStart(toolRounds)
 
+                        // Learning loop: the skill counter ticks once per
+                        // model round, before the API call.
+                        engine.tickSkillIteration()
                         msgs := engine.session.BuildContext()
-                        // Apply the per-turn memory inlet injection. The
-                        // inlet is rebuilt every turn so memories written
-                        // mid-conversation surface on the next user
-                        // message. We don't cache this in the session's
-                        // context cache (it's a transient pre-LLM
-                        // injection, not persistent state).
-                        msgs = injectMemoryBeforeLastUser(msgs, engine.memoryInletMsg)
 
                         msg, completeEvent, err := engine.streamTurn(ctx, yield, msgs)
                         if err != nil {
+                                // Delivered-partial contract (hermes partial_result):
+                                // a stream that already showed text or reasoning is
+                                // terminal — the delivered text is the reply body,
+                                // persisted as the assistant row so a restart and the
+                                // next turn's context replay what was actually said.
+                                // Never retried: a fresh assistant id would duplicate
+                                // what the user already watched. The repetition cut
+                                // routes here by design — its message carries only the
+                                // placeholder, never the looped bytes.
+                                if strings.TrimSpace(msg.Content) != "" || strings.TrimSpace(msg.ReasoningContent) != "" {
+                                        engine.persistDeliveredPartial(msg)
+                                        yield(nil, err)
+                                        return
+                                }
                                 overflow := llm.IsContextOverflow(err)
                                 // Opaque 400/413 (doc/context-folding-math.md §5):
                                 // a gateway that answers "Provider returned error"
@@ -1333,9 +1593,11 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
                                         // halve the retry window (turn-local) so the
                                         // recovery compaction keeps more headroom on each
                                         // attempt.
+                                        statedLimit := false
                                         if limit, ok := llm.ParseContextLimit(err); ok {
                                                 engine.setContextWindow(limit)
                                                 recoveryWindow = limit
+                                                statedLimit = true
                                         } else if recoveryWindow <= 0 {
                                                 engine.ensureWindow(ctx)
                                                 if suspected {
@@ -1355,12 +1617,46 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
                                         }
                                         did, cerr := engine.runCompact(ctx, yield, 0, true, recoveryWindow)
                                         if cerr == nil && did {
-                                                overflowStreak++
-                                                continue
+                                                // Byte-scored progress gate (hermes #88960):
+                                                // token estimates are byte-blind to images, so
+                                                // progress is measured in serialized request
+                                                // bytes. Enforced only when the provider STATED
+                                                // the limit — with ground truth the compaction
+                                                // knew exactly how much to keep, so a request
+                                                // still within 5% of the failed one will fail
+                                                // identically and the original error surfaces.
+                                                // A numberless overflow keeps its retry: the
+                                                // halving recovery window cuts deeper on every
+                                                // attempt, so progress is structural.
+                                                before := llm.RequestBytes(msgs)
+                                                after := llm.RequestBytes(engine.session.BuildContext())
+                                                if !statedLimit || before == 0 || after == 0 || after*20 < before*19 {
+                                                        overflowStreak++
+                                                        continue
+                                                }
+                                                // Under 5%: fall through — the compaction
+                                                // bought nothing, and the original overflow
+                                                // below is the honest thing to surface.
                                         }
                                         // Compaction failed or had nothing left to
                                         // shrink: fall through and surface the original
                                         // overflow instead of burning more retries.
+                                }
+                                // Engine-layer transient retry: the failures the
+                                // HTTP layer cannot see (408 statuses, mid-stream
+                                // drops, wrapped transport errors). Status-level
+                                // 429/5xx patience is already owned and spent by
+                                // the HTTP client — re-retrying it here would
+                                // multiply a many-minute stall into a turn-killer.
+                                if v := llm.Classify(err); v.Retryable && !llm.StatusRetryOwned(err) && transientRetries < maxEngineTransientRetries {
+                                        transientRetries++
+                                        select {
+                                        case <-time.After(v.Backoff(transientRetries - 1)):
+                                        case <-ctx.Done():
+                                                yield(nil, ctx.Err())
+                                                return
+                                        }
+                                        continue
                                 }
                                 yield(nil, err)
                                 return
@@ -1371,6 +1667,41 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
                         recoveryWindow = 0
                         if completeEvent == nil {
                                 // Cancelled or consumer stopped — no error to surface.
+                                return
+                        }
+
+                        // Empty-response guard (see empty_guard.go): a successful
+                        // stream that produced no visible text, no reasoning, and no
+                        // tool calls re-bills the full input on every retry, so the
+                        // ladder is budgeted — and a streak that proves the emptiness
+                        // deterministic fails the turn fast with the sentinel row
+                        // persisted (a blank assistant row re-seeds empty loops on
+                        // replay). Ambiguous evidence keeps the full budget.
+                        if emptyCompletion(msg) {
+                                if emptyGuard.observe(engine.modelCfg.Name, msg.Usage, false) {
+                                        select {
+                                        case <-time.After(emptyBackoffDelay(emptyGuard.retries)):
+                                        case <-ctx.Done():
+                                                yield(nil, ctx.Err())
+                                                return
+                                        }
+                                        continue
+                                }
+                                settled := settleCompleteText(completeEvent, EmptyResponseSentinel)
+                                if !yield(settled, nil) {
+                                        return
+                                }
+                                if err := engine.session.Append(llm.Message{
+                                        Role:    llm.RoleAssistant,
+                                        Content: EmptyResponseSentinel,
+                                }); err != nil {
+                                        yield(nil, err)
+                                        return
+                                }
+                                yield(nil, fmt.Errorf(
+                                        "agent: model returned no content after %d attempts (empty-response guard)",
+                                        len(emptyGuard.attempts),
+                                ))
                                 return
                         }
 
@@ -1408,6 +1739,7 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
                                 // completed turn — the conversation content is real
                                 // even though the pending calls were rejected.
                                 engine.consolidateTurn(content, msg)
+                                engine.maybeLearn(fireMemoryNudge)
                                 engine.budgetTerminalStop(msg, completeEvent, toolRounds, yield)
                                 return
                         }
@@ -1451,10 +1783,26 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
                                                 continue
                                         }
                                         if zr.Stop {
+                                                engine.maybeLearn(fireMemoryNudge)
                                                 return
                                         }
                                         // Certificate: fall through to the
                                         // normal end (steering, compaction).
+                                }
+                                // Verify-on-stop gate (see verify_stop.go): a model
+                                // that edited code and tries to finish without a
+                                // single check passing since the edits gets its answer
+                                // held as an interim row plus a synthetic nudge, and
+                                // the turn re-opens — capped, then the answer stands.
+                                if note := engine.verifyStopCheck(&verifyNudges); note != "" {
+                                        if err := engine.session.Append(llm.Message{Role: llm.RoleUser, Content: note}); err != nil {
+                                                yield(nil, err)
+                                                return
+                                        }
+                                        if !yield(session.UserAppend{Text: note}, nil) {
+                                                return
+                                        }
+                                        continue
                                 }
                                 if cont, steer := engine.extensions.EmitTurnStopping(toolRounds); cont {
                                         steerMsg := steer
@@ -1469,6 +1817,9 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
                                         }
                                         continue
                                 }
+                                // Learning loop: a completed turn is the
+                                // review opportunity.
+                                engine.maybeLearn(fireMemoryNudge)
                                 // Turn finished — compact using this assistant's usage. The
                                 // threshold reads context size the same way the composer does.
                                 if _, err := engine.runCompact(ctx, yield, msg.Usage.ContextTokens(), false, 0); err != nil {
@@ -1493,7 +1844,8 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
                         // Per-turn tool-call budget: each executed call consumes a
                         // slot. Over-budget calls are rejected (so the session and
                         // UI never hold unexecuted tool calls) and the turn ends
-                        // cleanly with a system note. Yolo mode runs unlimited.
+                        // cleanly with a system note. Unrestricted gates (yolo, allow-all
+                        // overrides) run unlimited.
                         allowance := -1
                         if limit := int(engine.maxToolCalls.Load()); limit > 0 && !engine.toolBudgetUnlimited() {
                                 allowance = limit - toolCallsUsed
@@ -1522,6 +1874,9 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
                                 return yield(td, nil)
                         })
                         toolCallsUsed += engine.executor.AllowanceUsed()
+                        // Verify-on-stop: fold this batch's mutations into
+                        // the turn state the finish will be judged against.
+                        engine.turnVerify.fold(engine.executor.DrainMutations())
                         // Persist the assistant message, then the tool results.
                         // Order matters: Append(msg) sets the leaf so each
                         // tool message's ParentID points at the assistant msg.
@@ -1562,12 +1917,14 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
                                 // Memory outlet: a verdict-gate stop still ends a
                                 // completed turn — the exchange is worth keeping.
                                 engine.consolidateTurn(content, msg)
+                                engine.maybeLearn(fireMemoryNudge)
                                 return
                         }
                         if stop {
                                 // Memory outlet: an executor stop still ends a
                                 // completed turn.
                                 engine.consolidateTurn(content, msg)
+                                engine.maybeLearn(fireMemoryNudge)
                                 return
                         }
 
@@ -1590,6 +1947,7 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
                                 // tool-call budget, but the conversation still
                                 // happened — consolidate it.
                                 engine.consolidateTurn(content, msg)
+                                engine.maybeLearn(fireMemoryNudge)
                                 return
                         }
 
@@ -1786,11 +2144,26 @@ func (engine *Engine) streamTurn(
         var final llm.Message
         gotDone := false
         start := time.Now()
+        // Runaway watches (hermes #127234): a stream that keeps producing
+        // never reaches a completion check, so each channel (visible text,
+        // reasoning) is judged while it streams. The first check runs at
+        // stop-path scale — asked-for repeats stay below it — and every check
+        // reads only the tail, so the watch stays linear in output size.
+        textWatch := llm.NewRunawayWatch()
+        reasoningWatch := llm.NewRunawayWatch()
 
         for event, err := range engine.client.Stream(ctx, messages) {
                 if err != nil {
                         if thinking != "" || text != "" {
                                 _ = yield(emitMessage(id, session.StateError, session.StopNone, thinking, text, nil, llm.Usage{}), nil)
+                                // Delivered-partial contract: the text the consumer
+                                // already watched is the reply body. Return it so Loop
+                                // persists it instead of discarding it with the error.
+                                return llm.Message{
+                                        Role:             llm.RoleAssistant,
+                                        ReasoningContent: thinking,
+                                        Content:          text,
+                                }, nil, err
                         }
                         return llm.Message{}, nil, err
                 }
@@ -1806,9 +2179,15 @@ func (engine *Engine) streamTurn(
                 case llm.StreamEventTypeDelta:
                         if event.Delta.ReasoningContent != "" {
                                 thinking += event.Delta.ReasoningContent
+                                if reasoningWatch.Feed(event.Delta.ReasoningContent) {
+                                        return engine.cutRepetition(id, yield)
+                                }
                         }
                         if event.Delta.Content != "" {
                                 text += event.Delta.Content
+                                if textWatch.Feed(event.Delta.Content) {
+                                        return engine.cutRepetition(id, yield)
+                                }
                         }
                         if !yield(
                                 emitMessage(id, session.StateStreaming, session.StopNone, thinking, text, nil, llm.Usage{}),
@@ -1839,6 +2218,14 @@ func (engine *Engine) streamTurn(
                         return llm.Message{}, nil, nil
                 }
                 return llm.Message{}, nil, errors.New("agent: stream closed without assistant output")
+        }
+
+        // Stop-path repetition check (hermes #112764): a provider can end a
+        // degenerate loop with a clean finish, so a completed reply is judged
+        // too — at runaway scale only, so asked-for repetition (which stays in
+        // the low KB) is always delivered verbatim.
+        if len([]rune(text)) >= llm.RepetitionStopPathMinChars && llm.IsRunawayRepetition(text) {
+                return engine.cutRepetition(id, yield)
         }
 
         reason := session.StopEndTurn

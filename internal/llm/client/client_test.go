@@ -289,6 +289,64 @@ func TestClientStreamOpenAIInterceptorError(t *testing.T) {
 	require.Contains(t, events[0].Err, "blocked by hook")
 }
 
+// A session can hold tool calls whose arguments arrived malformed — a stream
+// cut mid-arguments leaves a truncated prefix. Replayed verbatim those are
+// invalid JSON on the request and a strict gateway answers a bare 400 no
+// recovery loop can diagnose. Every request must leave the client with
+// parseable arguments; the session slice itself is never rewritten.
+func TestClientStreamRepairsMalformedToolCallArguments(t *testing.T) {
+	var body []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer srv.Close()
+
+	history := []llm.Message{
+		{Role: llm.RoleUser, Content: "rewrite the readme"},
+		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
+			{ID: "c1", Function: llm.Function{Name: "write", Arguments: `{"path": "/tmp/a"`}},  // truncated mid-stream
+			{ID: "c2", Function: llm.Function{Name: "write", Arguments: `{"path": "/tmp/b"}`}}, // healthy
+		}},
+		{Role: llm.RoleTool, ToolCallID: "c1", Content: "refused: malformed arguments"},
+		{Role: llm.RoleTool, ToolCallID: "c2", Content: "ok"},
+		{Role: llm.RoleUser, Content: "continue"},
+	}
+
+	client := NewClient(llm.ModelConfig{Name: "gpt-4o", BaseURL: srv.URL, APIKey: "sk-test"}, Hooks{}, nil, "")
+	for _, err := range client.Stream(t.Context(), history) {
+		require.NoError(t, err)
+	}
+
+	var req struct {
+		Messages []struct {
+			ToolCalls []struct {
+				Function struct {
+					Arguments string `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
+		} `json:"messages"`
+	}
+	require.NoError(t, json.Unmarshal(body, &req))
+	var args []string
+	for _, m := range req.Messages {
+		for _, tc := range m.ToolCalls {
+			args = append(args, tc.Function.Arguments)
+		}
+	}
+	require.Len(t, args, 2, "both tool calls ride the wire")
+	for _, a := range args {
+		require.True(t, json.Valid([]byte(a)), "wire arguments must be valid JSON, got %q", a)
+	}
+	require.Equal(t, "{}", args[0], "the truncated call is repaired on the wire")
+	require.Equal(t, `{"path": "/tmp/b"}`, args[1], "the healthy call rides verbatim")
+
+	require.Equal(t, `{"path": "/tmp/a"`,
+		history[1].ToolCalls[0].Function.Arguments,
+		"the caller's history is never rewritten by the repair")
+}
+
 // collectEvents drains an iter.Seq2 into a slice.
 func collectEvents(seq func(func(llm.StreamEvent, error) bool)) []llm.StreamEvent {
 	var events []llm.StreamEvent
@@ -300,4 +358,122 @@ func collectEvents(seq func(func(llm.StreamEvent, error) bool)) []llm.StreamEven
 		events = append(events, ev)
 	}
 	return events
+}
+
+// captureTransport records the request body and answers with a canned SSE
+// stream, so wire-shape tests can target the real api.openai.com host
+// without any network leaving the process.
+type captureTransport struct {
+	body []byte
+	sse  string
+}
+
+func (ct *captureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, err
+	}
+	ct.body = body
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(ct.sse)),
+		Request:    req,
+	}, nil
+}
+
+const chatSSEFixture = "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":\"hi\"}}]}\n\ndata: [DONE]\n\n"
+
+const responsesSSEFixture = "data: {\"type\":\"response.output_text.delta\",\"delta\":\"hi\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":3,\"output_tokens\":1,\"total_tokens\":4}}}}\n\n"
+
+// A client with a pinned scope derives the content-addressed
+// prompt_cache_key on the wire when — and only when — the endpoint is
+// OpenAI's own.
+func TestClientStreamSendsPromptCacheKeyOnOpenAIHost(t *testing.T) {
+	ct := &captureTransport{sse: chatSSEFixture}
+	toolDefs := []llm.ToolDefinition{{Name: "count", Description: "count things"}}
+	client := NewClient(
+		llm.ModelConfig{Name: "gpt-4o", BaseURL: "https://api.openai.com/v1", APIKey: "sk-test"},
+		Hooks{},
+		toolDefs,
+		"be brief",
+	).SetCacheScope("schedule:job-7")
+	client.httpClient = &http.Client{Transport: ct}
+
+	for _, err := range client.Stream(t.Context(), []llm.Message{{Role: llm.RoleUser, Content: "hi"}}) {
+		require.NoError(t, err)
+	}
+
+	var req struct {
+		PromptCacheKey string `json:"prompt_cache_key"`
+	}
+	require.NoError(t, json.Unmarshal(ct.body, &req))
+	require.Equal(t, llm.PromptCacheKey("schedule:job-7", "be brief", toolDefs), req.PromptCacheKey)
+}
+
+// Every other host — strict compat endpoints, aggregators, local servers —
+// keeps the exact pre-scope request bytes.
+func TestClientStreamOmitsPromptCacheKeyOffOpenAIHost(t *testing.T) {
+	var body []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer srv.Close()
+
+	client := NewClient(
+		llm.ModelConfig{Name: "gpt-4o", BaseURL: srv.URL, APIKey: "sk-test"},
+		Hooks{},
+		nil,
+		"be brief",
+	).SetCacheScope("schedule:job-7")
+	for _, err := range client.Stream(t.Context(), []llm.Message{{Role: llm.RoleUser, Content: "hi"}}) {
+		require.NoError(t, err)
+	}
+	require.NotContains(t, string(body), "prompt_cache_key", "non-OpenAI hosts keep the pre-scope body")
+}
+
+// The chat-completions and Responses routes of one engine hash the same
+// normalized tool surface, so both derive the same key and share the bucket
+// across modes.
+func TestClientStreamResponsesCacheKeyMatchesChatRoute(t *testing.T) {
+	ct := &captureTransport{sse: responsesSSEFixture}
+	toolDefs := []llm.ToolDefinition{{Name: "count", Description: "count things"}}
+	client := NewClient(
+		llm.ModelConfig{Name: "gpt-5", BaseURL: "https://api.openai.com/v1", APIKey: "sk-test", API: llm.OpenAIResponses},
+		Hooks{},
+		toolDefs,
+		"be brief",
+	).SetCacheScope("schedule:job-7")
+	client.httpClient = &http.Client{Transport: ct}
+
+	for _, err := range client.Stream(t.Context(), []llm.Message{{Role: llm.RoleUser, Content: "hi"}}) {
+		require.NoError(t, err)
+	}
+
+	var req struct {
+		PromptCacheKey string `json:"prompt_cache_key"`
+	}
+	require.NoError(t, json.Unmarshal(ct.body, &req))
+	require.Equal(t, llm.PromptCacheKey("schedule:job-7", "be brief", toolDefs), req.PromptCacheKey,
+		"chat and Responses routes of one engine share the bucket")
+}
+
+// No scope pinned — not even api.openai.com gets a key: the wire is exactly
+// what it was before scopes existed.
+func TestClientStreamNoScopeKeepsPreScopeWire(t *testing.T) {
+	ct := &captureTransport{sse: chatSSEFixture}
+	client := NewClient(
+		llm.ModelConfig{Name: "gpt-4o", BaseURL: "https://api.openai.com/v1", APIKey: "sk-test"},
+		Hooks{},
+		nil,
+		"be brief",
+	)
+	client.httpClient = &http.Client{Transport: ct}
+
+	for _, err := range client.Stream(t.Context(), []llm.Message{{Role: llm.RoleUser, Content: "hi"}}) {
+		require.NoError(t, err)
+	}
+	require.NotContains(t, string(ct.body), "prompt_cache_key", "no scope = the pre-scope wire")
 }

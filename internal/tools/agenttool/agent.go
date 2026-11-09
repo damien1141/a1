@@ -272,6 +272,12 @@ Use agent_cancel to stop a running job.`,
 			if err != nil {
 				return tooldef.Result{}, err
 			}
+			// Durable outbox: the parent just consumed this
+			// result directly — ack the delivery row so the
+			// next turn boundary does not re-present it.
+			if res.Info.Status.Terminal() {
+				deps.Manager.AckDelivery(res.Info.ID)
+			}
 			summary := truncateBytes(res.Summary, agentSummaryLimit)
 			body := map[string]any{
 				"job_id":      res.Info.ID,

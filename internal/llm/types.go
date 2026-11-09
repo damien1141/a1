@@ -77,6 +77,10 @@ type ModelConfig struct {
 	Name    string
 	APIKey  string
 	BaseURL string
+	// APIKeys are EXTRA keys for the same endpoint beyond APIKey, rotating
+	// under rate limits and auth failures (see KeyPool). Consumers union
+	// them with APIKey (poolFor does); empty is the single-key world.
+	APIKeys []string
 	// SkillPath is the directory to scan for SKILL.md files.
 	// Defaults to ~/.a1/skills if empty.
 	SkillPath string
@@ -86,6 +90,15 @@ type ModelConfig struct {
 	// ImageEnabled opts this model into image attachments (clipboard / @file).
 	// Absent or false keeps the composer from attaching images.
 	ImageEnabled bool
+	// PersonalRead opts this model into the agent-side personal-data tools
+	// (calendar / kanban / mail reads). Absent or false keeps the tools
+	// unmounted — the dashboard's own widgets are unaffected (the web UI is
+	// the user acting directly; this flag governs the MODEL's autonomy).
+	PersonalRead bool
+	// PersonalWrite opts this model into personal-data WRITES (calendar
+	// events, kanban cards — never the Maildir, which is read-only by
+	// ruling). Absent or false keeps every personal tool read-only.
+	PersonalWrite bool
 	API          RouterType
 	// Think controls reasoning effort sent as reasoning_effort.
 	Think ThinkConfig
@@ -134,6 +147,17 @@ type Message struct {
 	// Images attaches base64 images to a user message. Providers that do not
 	// support images fall back to the text content only.
 	Images []Image `json:"images,omitempty"`
+
+	// Runtime marks a runtime-context rider: the per-turn block (memory
+	// bundle, job notices) the engine persists immediately before the user
+	// message. Riders are real history — the model must keep seeing them,
+	// and their bytes must never change once written, because prefix
+	// caching bills every mutated byte as a fresh write — but they are
+	// ambient context, not conversation, so transcript surfaces skip them.
+	// (The clock and the forecast used to ride here too; they are fetch
+	// engines now, so ambient context stays empty on turns that need
+	// neither.) Not serialized by any provider request shape.
+	Runtime bool `json:"runtime,omitempty"`
 
 	// Usage tracks token consumption for the turn. Excluded from the API
 	// request body; used by the session manager for compaction decisions.

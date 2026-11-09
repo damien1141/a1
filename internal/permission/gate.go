@@ -652,6 +652,14 @@ func (g *StaticGate) evaluate(ctx context.Context, req Request) (Decision, strin
                 return g.checkRead(req)
         case ActionAgent:
                 return Allow, ""
+        case ActionPersonal:
+                // Personal-data writes (calendar events, later kanban cards) are
+                // consented OUT of band: the operator's config.yaml master switch
+                // plus the model's personal_write opt-in, both re-checked by the
+                // tool at call time. The gate's job here is only the mode fold —
+                // readonly still denies, because "this session writes nothing"
+                // includes the user's calendar.
+                return Allow, ""
         default:
                 return Ask, fmt.Sprintf("unknown action %q requires approval", req.Action)
         }
@@ -845,7 +853,7 @@ func (g *StaticGate) foldMode(dec Decision, reason string, req Request) (Decisio
 
 func isMutating(a Action) bool {
         switch a {
-        case ActionWrite, ActionEdit, ActionBash:
+        case ActionWrite, ActionEdit, ActionBash, ActionPersonal:
                 return true
         default:
                 return false

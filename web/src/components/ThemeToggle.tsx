@@ -65,7 +65,7 @@ export function ThemeSegmented() {
         System
       </button>
       <p class="text-xs text-ink-muted mt-1 w-full">
-        System follows your OS preference until you pick light or dark.
+        System follows your OS preference until you pick light or dark. Your choice is saved to config.yaml (web.dark_mode) and reaches the config screen.
       </p>
     </div>
   );

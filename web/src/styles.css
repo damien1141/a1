@@ -126,6 +126,26 @@ kbd {
    Chat message markdown
    ======================================================================== */
 
+/* highlight.js tokens — the file browser's preview theme (chunk 5). One
+   rule set for both themes: every color is a channel variable, so the
+   [data-theme="dark"] swap re-tints the code with the rest of the page.
+   The mapping stays inside the app's own palette — keywords take the
+   seal, strings the moss, numbers and deletions the cinnabar — so the
+   preview reads as this app's paper, not as a pasted-in editor theme. */
+.hljs { color: rgb(var(--ink-light)); }
+.hljs-comment, .hljs-quote { color: rgb(var(--ink-muted)); font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-doctag,
+.hljs-name, .hljs-tag { color: rgb(var(--seal)); }
+.hljs-string, .hljs-regexp, .hljs-addition, .hljs-selector-attr,
+.hljs-selector-pseudo { color: rgb(var(--moss)); }
+.hljs-number, .hljs-symbol, .hljs-bullet, .hljs-meta, .hljs-link,
+.hljs-deletion { color: rgb(var(--cinnabar)); }
+.hljs-title, .hljs-section, .hljs-attr, .hljs-attribute, .hljs-variable,
+.hljs-template-variable, .hljs-type, .hljs-built_in, .hljs-builtin-name,
+.hljs-class .hljs-title, .hljs-function .hljs-title { color: rgb(var(--ink)); font-weight: 600; }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 700; }
+
 .md-content { line-height: 1.75; }
 .md-content p { margin: 0 0 0.5em 0; }
 .md-content p:last-child { margin-bottom: 0; }
@@ -655,4 +675,48 @@ kbd {
   .source-pill,
   .source-pill-more,
   .source-card { animation: none; }
+}
+
+/* The session drawer's slide (chunk 7): a longer, softer settle than the
+   120ms feedback token — ease-out-quint's fast start and long tail make a
+   240px panel feel guided in, not snapped. The shadow fades with it so
+   the open panel reads as lifted, not pasted. */
+.drawer-slide {
+  transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 260ms ease;
+}
+
+/* The left-edge hover zone's affordance: a slim vertical pill hugging the
+   screen's left edge, quiet at rest, brightening and stretching as the
+   pointer lands — the minimal signal that the session drawer is one
+   brush away. Purely decorative (the zone is the hit target; the pill is
+   its aria-hidden face). */
+.edge-zone .edge-hint {
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 56px;
+  border-radius: 9999px;
+  background: rgb(var(--ink) / 0.14);
+  transition: background 220ms ease, height 220ms ease;
+}
+.edge-zone:hover .edge-hint {
+  background: rgb(var(--seal) / 0.55);
+  height: 96px;
+}
+
+/* The file pane's reveal: the same ease-out-quint settle as the session
+   drawer, on the two properties the two viewports actually animate —
+   `width` at lg, where the pane is a flex sibling of the chat and grows
+   from the screen's right edge so the conversation reflows around it
+   (the inner column keeps a fixed width and gets clipped, so no glyph
+   ever re-wraps mid-flight), and `transform` below lg, where the pane
+   is a full-screen sheet and slides the way drawers slide. One class,
+   both breakpoints; only ever one of the two properties changes at a
+   time, so the transition list never fights itself. */
+.file-pane {
+  transition: width 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
 }

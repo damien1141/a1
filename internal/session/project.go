@@ -49,7 +49,7 @@ type Item struct {
 // collapse on replay.
 var collapsibleReadTools = map[string]bool{
         "read": true, "grep": true, "ls": true, "glob": true, "find": true,
-        "search": true, "vector_search": true,
+        "search": true, "vector_search": true, "session_search": true,
         // fetch folds too: a turn that pulls eight docs is eight rows otherwise, and
         // each is a single glanceable line that costs a lot of vertical space. The
         // newest one is kept as the group's hint.

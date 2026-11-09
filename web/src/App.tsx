@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'preact/hooks';
+import { Menu } from 'lucide-preact';
 import { Sidebar } from './components/Sidebar';
 import { ChatArea } from './components/ChatArea';
 import { InputBar } from './components/InputBar';
@@ -6,6 +7,10 @@ import { Footer } from './components/Footer';
 import { ToastStack, useToast } from './components/Toast';
 import { CommandPalette, type Command } from './components/CommandPalette';
 import { PersonaManager } from './components/PersonaManager';
+import { MailReader } from './components/MailInbox';
+import { MailAccountsEditor } from './components/MailAccountsEditor';
+import { Dashboard } from './components/Dashboard';
+import { FileBrowser } from './components/FileBrowser';
 import { personaAvatar } from './components/Avatar';
 import type { SlashCommand } from './components/SlashPicker';
 import {
@@ -22,8 +27,9 @@ import {
 import * as api from './api';
 
 export interface Message {
-  // 'system' rows are replay markers (compaction cuts) from loaded
-  // transcripts; live chat never produces them.
+  // 'system' rows are transcript markers (compaction cuts): reloaded
+  // sessions get them from the stored entry, live chat from the marker
+  // SSE event — both render the same divider.
   role: 'user' | 'assistant' | 'system';
   text: string;
   reasoning?: string;
@@ -59,7 +65,9 @@ type Overlay =
   | { kind: 'skills' }
   | { kind: 'extensions' }
   | { kind: 'settings' }
-  | { kind: 'personas' };
+  | { kind: 'personas' }
+  | { kind: 'mail' }
+  | { kind: 'mail-accounts' };
 
 export default function App() {
   const [sessions, setSessions] = useState<api.SessionMeta[]>([]);
@@ -83,6 +91,60 @@ export default function App() {
   const [welcome, setWelcome] = useState(true);
   const [state, setState] = useState<api.StatePayload | null>(null);
   const [overlay, setOverlay] = useState<Overlay>({ kind: 'none' });
+  // mailVersion is the mail surfaces' refresh token (chunk 8): the
+  // accounts editor bumps it on save and the dashboard refetches the
+  // personal status + mail rail behind the modal — the new account is
+  // live while the editor is still open.
+  const [mailVersion, setMailVersion] = useState(0);
+  // The file browser is NOT an overlay: it is a split-screen pane that
+  // lives beside the chat/dashboard and stays while the user works — the
+  // one surfaces-level view state that is neither welcome nor overlay.
+  const [filesOpen, setFilesOpen] = useState(false);
+  // The session drawer (chunk 7): collapsed by default at EVERY viewport.
+  // It opens from the left-edge hover zone (or the hamburger below lg) and
+  // closes on pick / X / Escape / pointer-leave. The hover intent is
+  // debounced: entering the panel cancels a pending close, leaving it
+  // schedules one ~300ms out, so a pointer crossing the gap between the
+  // edge zone and the panel never flickers the drawer open-and-shut.
+  const [navOpen, setNavOpen] = useState(false);
+  const navCloseTimer = useRef<number | null>(null);
+  const openNav = useCallback(() => {
+    if (navCloseTimer.current !== null) {
+      clearTimeout(navCloseTimer.current);
+      navCloseTimer.current = null;
+    }
+    setNavOpen(true);
+  }, []);
+  const scheduleNavClose = useCallback(() => {
+    if (navCloseTimer.current !== null) clearTimeout(navCloseTimer.current);
+    navCloseTimer.current = window.setTimeout(() => {
+      navCloseTimer.current = null;
+      setNavOpen(false);
+    }, 300);
+  }, []);
+  const closeNavNow = useCallback(() => {
+    if (navCloseTimer.current !== null) {
+      clearTimeout(navCloseTimer.current);
+      navCloseTimer.current = null;
+    }
+    setNavOpen(false);
+  }, []);
+  // Timer cleanup on unmount.
+  useEffect(() => () => {
+    if (navCloseTimer.current !== null) clearTimeout(navCloseTimer.current);
+  }, []);
+
+  // The drawer's Escape: scoped to while it is open, so a focused modal
+  // elsewhere keeps its own. The scrim and the X close it too — three
+  // exits, one state.
+  useEffect(() => {
+    if (!navOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setNavOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [navOpen]);
   // Personas: full registry (palette + manager) and the active profile.
   // The active one rides on `state.persona` (initial GET + every state
   // SSE event), so a switch in another tab lands here instantly.
@@ -101,6 +163,21 @@ export default function App() {
     api.fetchState().then(setState).catch(() => {});
     api.fetchPersonas().then(r => setPersonas(r.personas ?? [])).catch(() => {});
   }, []);
+
+  // ---- theme persistence failures ----
+  // theme.ts is a framework-free module (it boots before the first render);
+  // the CustomEvent is its channel back into the component tree. A theme
+  // choice that failed to reach config.yaml must not pass silently for a
+  // saved one — the toggle already applied locally, so the toast is the
+  // honesty.
+  useEffect(() => {
+    const onToast = (e: Event) => {
+      const detail = (e as CustomEvent<api.ToastPayload>).detail;
+      if (detail) pushToast(detail);
+    };
+    window.addEventListener('a1:toast', onToast);
+    return () => window.removeEventListener('a1:toast', onToast);
+  }, [pushToast]);
 
   // ---- SSE subscription ----
   useEffect(() => {
@@ -205,6 +282,24 @@ export default function App() {
       if (data.failed) setStreaming(false);
     };
 
+    // Markers: persistent transcript rows (compaction cuts). The reload
+    // path renders these dividers from the stored session entry; the live
+    // stream must draw the same cut, or a session watched live and the same
+    // session reloaded disagree about where the context was folded. A
+    // failed compaction appends no entry and emits no marker — only the
+    // transient status line.
+    const onMarker = (e: MessageEvent) => {
+      const data: api.ServerEvent = JSON.parse(e.data);
+      if (!belongsHere(data)) return;
+      if (!data.marker) return;
+      setMessages(prev => {
+        // Seal any still-pending bubble above the cut — what follows the
+        // marker resumes from the compacted context, not a continuation.
+        const sealed = prev.map(m => (m.pending ? { ...m, pending: false } : m));
+        return [...sealed, { role: 'system', text: data.marker!.text }];
+      });
+    };
+
     const onDone = () => {
       setStreaming(false);
       setStatusText('');
@@ -244,6 +339,7 @@ export default function App() {
     es.addEventListener('delta', onDelta);
     es.addEventListener('tool', onTool);
     es.addEventListener('status', onStatus);
+    es.addEventListener('marker', onMarker);
     es.addEventListener('done', onDone);
     es.addEventListener('ask', onAsk);
     es.addEventListener('toast', onToast);
@@ -651,12 +747,49 @@ export default function App() {
     { id: 'settings', group: 'settings', verb: 'Settings', description: 'Model · think · agents · memory · theme', keywords: ['config', 'model', 'think', 'agents', 'memory'], run: () => setOverlay({ kind: 'settings' }) },
     { id: 'skills', group: 'browse', verb: 'Browse skills', description: 'List installed SKILL.md files', keywords: ['skill'], run: () => setOverlay({ kind: 'skills' }) },
     { id: 'extensions', group: 'browse', verb: 'Browse extensions', description: 'List discovered a1 extensions', keywords: ['extension', 'plugin'], run: () => setOverlay({ kind: 'extensions' }) },
+    { id: 'mail', group: 'browse', verb: 'Read mail', description: 'Mailboxes · messages · read pane (read-only)', keywords: ['mail', 'inbox', 'email', 'maildir', 'unread'], run: () => setOverlay({ kind: 'mail' }) },
+    { id: 'mail-accounts', group: 'browse', verb: 'Configure mail accounts', description: 'Add · edit · test IMAP servers and Maildirs', keywords: ['mail', 'account', 'imap', 'password', 'email', 'server', 'maildir'], run: () => setOverlay({ kind: 'mail-accounts' }) },
+    { id: 'open-files', group: 'browse', verb: 'Browse files', description: 'Split-screen browser — preview, edit, save (2 MB cap)', keywords: ['file', 'browser', 'edit', 'explorer', 'save', 'folder'], run: () => setFilesOpen(true) },
     { id: 'config', group: 'browse', verb: 'Open config editor', description: 'Opens /settings in a new tab', keywords: ['config', 'yaml'], run: () => window.open('/settings', '_blank') },
   ], [compact, cycleMode, personas, activePersonaId, switchPersona]);
 
   return (
     <div class="flex flex-col h-screen bg-paper text-ink">
       <div class="flex flex-1 min-h-0">
+        {/* The left-edge hover zone: the drawer's opener at every viewport
+            (below lg the hamburger bar exists too). A slim invisible strip
+            hugging the screen's left edge; crossing it slides the session
+            drawer in. It carries the one visible affordance — a small pill
+            that brightens as the pointer lands — plus keyboard access
+            (focus opens, Enter toggles). z-20: above the page, under the
+            drawer itself. */}
+        <div
+          class="edge-zone fixed inset-y-0 left-0 z-20 w-3"
+          onMouseEnter={openNav}
+          onClick={() => (navOpen ? closeNavNow() : openNav())}
+        >
+          <button
+            type="button"
+            class="sr-only focus:not-sr-only focus:absolute focus:top-1/2 focus:-translate-y-1/2 focus:left-1 focus:px-2 focus:py-1 focus:rounded-sm focus:bg-paper-card focus:border focus:border-hairline focus:text-xs focus:text-ink-light"
+            onClick={() => (navOpen ? closeNavNow() : openNav())}
+            aria-expanded={navOpen}
+            aria-label="Toggle the session list"
+          >
+            Sessions
+          </button>
+          <span class="edge-hint" aria-hidden="true" />
+        </div>
+        {/* The drawer's scrim: below lg only (touch has no hover, so the
+            tap-anywhere exit is what closes there) — under the drawer
+            (z-20 vs z-30) and under the modal layer (z-40), which is the
+            fix for the sidebar floating OVER open dialogs. */}
+        {navOpen && (
+          <div
+            class="lg:hidden fixed inset-0 z-20 bg-ink/25"
+            onClick={closeNavNow}
+            aria-hidden="true"
+          />
+        )}
         <Sidebar
           sessions={sessions}
           currentSession={currentSession}
@@ -667,17 +800,48 @@ export default function App() {
           onDelete={deleteSession}
           persona={activePersona}
           onOpenPersonas={() => setOverlay({ kind: 'personas' })}
+          open={navOpen}
+          onClose={closeNavNow}
+          onMouseEnter={openNav}
+          onMouseLeave={scheduleNavClose}
         />
         <main class="flex-1 flex flex-col min-w-0 relative">
+          {/* The mobile menu bar: below lg only — the drawer's opener and a
+              wordmark, the one chrome row a phone needs. Above lg it is
+              nothing; the sidebar is the chrome. */}
+          <div class="lg:hidden flex items-center gap-1.5 pl-1.5 pr-3 py-1.5 border-b border-hairline flex-shrink-0">
+            <button
+              type="button"
+              class="p-2 rounded-sm text-ink-muted hover:text-seal hover:bg-seal-light active:scale-90 transition-all duration-fast"
+              onClick={openNav}
+              aria-label="Open the session list"
+              aria-expanded={navOpen}
+            >
+              <Menu size={16} />
+            </button>
+            <span class="font-serif text-sm text-ink-light">a1</span>
+          </div>
           {welcome ? (
-            <InputBar
+            // The dashboard IS the welcome state: hero + widget grid with
+            // the composer docked bottom-center. Submitting from the dock
+            // is the old welcome flow verbatim (send → setWelcome(false)),
+            // so the chat view takes over with no new routing.
+            <Dashboard
+              sessions={sessions}
+              pins={pins}
+              persona={activePersona}
+              streaming={streaming}
               onSend={send}
               onCancel={cancel}
-              streaming={streaming}
-              welcome={true}
-              persona={activePersona}
               slashCommands={slashCommands}
               onSlashCommand={onSlashCommand}
+              onSelectSession={selectSession}
+              onOpenOverlay={kind => setOverlay({ kind })}
+              onOpenFiles={() => setFilesOpen(true)}
+              filesOpen={filesOpen}
+              onToggleFiles={() => setFilesOpen(v => !v)}
+              onToast={pushToast}
+              mailVersion={mailVersion}
             />
           ) : (
             <>
@@ -699,6 +863,8 @@ export default function App() {
                 persona={activePersona}
                 slashCommands={slashCommands}
                 onSlashCommand={onSlashCommand}
+                filesOpen={filesOpen}
+                onToggleFiles={() => setFilesOpen(v => !v)}
               />
               {/* Footer chrome sits BELOW the composer + tips so the input
                   stays the bottom-most interactive element's neighbor and
@@ -718,6 +884,16 @@ export default function App() {
             </>
           )}
         </main>
+
+        {/* The split-screen right pane: full-system file browser. A pane,
+            not an overlay — it holds its own scroll, its own address bar,
+            and it stays open while the user reads mail or chats. Below lg
+            it covers the screen (the responsive sweep is chunk 6's).
+            Keep-alive like the session drawer: mounted from app load,
+            `open` is a pure class flip (`.file-pane` — width reveal at lg,
+            slide below), so the close animates out instead of unmounting
+            mid-frame, and reopening returns to the folder it was left in. */}
+        <FileBrowser open={filesOpen} onClose={() => setFilesOpen(false)} onToast={pushToast} />
       </div>
 
       {/* Overlays */}
@@ -774,6 +950,18 @@ export default function App() {
         <PersonaManager
           onClose={() => { setOverlay({ kind: 'none' }); loadPersonas(); }}
           onSwitched={p => pushToast({ level: 'success', message: `Now speaking as ${p.name}`, duration: 2500 })}
+        />
+      )}
+      {overlay.kind === 'mail' && (
+        <MailReader
+          onClose={() => setOverlay({ kind: 'none' })}
+          onConfigure={() => setOverlay({ kind: 'mail-accounts' })}
+        />
+      )}
+      {overlay.kind === 'mail-accounts' && (
+        <MailAccountsEditor
+          onClose={() => setOverlay({ kind: 'none' })}
+          onSaved={() => setMailVersion(v => v + 1)}
         />
       )}
 

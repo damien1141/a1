@@ -40,7 +40,7 @@ func TestRunDeps_FindsExternalDeps(t *testing.T) {
 import "fmt"
 
 func main() {
-	fmt.Println("hello")
+        fmt.Println("hello")
 }
 `)
 
@@ -54,7 +54,7 @@ func TestRunDeps_SkipsInternalImports(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "main.go", `package main
 
-import . "fmt"
+import "./local"
 
 func main() {}
 `)
@@ -62,7 +62,53 @@ func main() {}
 	raw, _ := json.Marshal(depsInput{Path: root, Glob: "*.go", Limit: 10})
 	out, err := runDeps(t.Context(), raw)
 	require.NoError(t, err)
-	assert.NotContains(t, out.Content, "fmt")
+	// Relative paths (leading ".") are the non-external ones; a dot-import's
+	// *path* is still external, so the fixture must use "./local" here.
+	assert.Equal(t, "No external dependencies found", out.Content)
+}
+
+func TestRunDeps_GroupedAndAliasedImports(t *testing.T) {
+	// The go/parser pass must see grouped `import ( ... )` blocks and aliased
+	// imports — the historic line regexp matched neither, so idiomatic files
+	// reported no dependencies at all.
+	root := t.TempDir()
+	writeFile(t, root, "main.go", `package main
+
+import (
+        "fmt"
+
+        str "strings"
+)
+
+func main() {
+        fmt.Println(str.ToUpper("x"))
+}
+`)
+	writeFile(t, root, "blank.go", `package main
+
+import (
+        _ "embed"
+)
+`)
+
+	raw, _ := json.Marshal(depsInput{Path: root, Glob: "*.go", Limit: 10})
+	out, err := runDeps(t.Context(), raw)
+	require.NoError(t, err)
+	assert.Contains(t, out.Content, "fmt")
+	assert.Contains(t, out.Content, "strings")
+	assert.Contains(t, out.Content, "embed")
+}
+
+func TestRunDeps_MalformedFileFallsBackToRegexp(t *testing.T) {
+	// A file the parser rejects (no package clause) still gets the historic
+	// single-line regexp scan instead of being dropped entirely.
+	root := t.TempDir()
+	writeFile(t, root, "snippet.go", "import \"fmt\"\n")
+
+	raw, _ := json.Marshal(depsInput{Path: root, Glob: "*.go", Limit: 10})
+	out, err := runDeps(t.Context(), raw)
+	require.NoError(t, err)
+	assert.Contains(t, out.Content, "fmt")
 }
 
 func TestRunDeps_Limit(t *testing.T) {

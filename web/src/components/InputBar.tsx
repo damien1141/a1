@@ -1,8 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'preact/hooks';
-import { Send, Square, Terminal } from "lucide-preact";
+import { Send, Square, Terminal, PanelRight } from "lucide-preact";
 import { SlashPicker, type SlashCommand } from './SlashPicker';
-import { Dodec } from './Dodec';
-import { personaAvatar } from './Avatar';
 import type * as api from '../api';
 
 interface Props {
@@ -21,9 +19,15 @@ interface Props {
   // /code, /branch). Plain /clear and /compact may be sent straight
   // through as text the way the TUI does.
   onSlashCommand?: (cmd: SlashCommand) => void;
+  // filesOpen/onToggleFiles wire the split-screen file browser's toggle
+  // (chunk 7): it lives in the composer, left of the send button — the
+  // spot the eye is already on when it wants the screen split — and
+  // reads as pressed while the pane is up. Omit both to hide it.
+  filesOpen?: boolean;
+  onToggleFiles?: () => void;
 }
 
-export function InputBar({ onSend, onCancel, streaming, welcome = false, persona = null, slashCommands = [], onSlashCommand }: Props) {
+export function InputBar({ onSend, onCancel, streaming, welcome = false, persona = null, slashCommands = [], onSlashCommand, filesOpen, onToggleFiles }: Props) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [showSlash, setShowSlash] = useState(false);
@@ -150,6 +154,22 @@ export function InputBar({ onSend, onCancel, streaming, welcome = false, persona
             shell
           </span>
         )}
+        {onToggleFiles && (
+          <button
+            type="button"
+            class={`p-1.5 rounded-sm transition-all duration-fast active:scale-90 ${
+              filesOpen
+                ? 'text-seal bg-seal-light'
+                : 'text-ink-muted hover:text-seal hover:bg-seal-light'
+            }`}
+            onClick={onToggleFiles}
+            title="File browser — split screen"
+            aria-label="Toggle the file browser pane"
+            aria-pressed={!!filesOpen}
+          >
+            <PanelRight size={welcome ? 18 : 16} />
+          </button>
+        )}
         {streaming ? (
           <button
             class={`p-1.5 rounded-sm text-cinnabar hover:bg-cinnabar/10 active:scale-90 transition-all duration-fast`}
@@ -182,39 +202,18 @@ export function InputBar({ onSend, onCancel, streaming, welcome = false, persona
     </p>
   );
 
+  // Welcome mode no longer owns the page: the Dashboard composes the hero
+  // and docks this composer bottom-center. The welcome flag keeps its
+  // sizing contract (taller textarea, welcome placeholder, autofocus) —
+  // only the layout wrapper is the caller's business now.
   if (welcome) {
     return (
-      <div class="flex-1 flex flex-col items-center justify-center px-6 py-12 relative">
-        <div class="w-full max-w-chat">
-          {/* Staggered entrance: mark rises first, then heading, input,
-              then the hint line — a soft 120ms cascade. The a1 square gave
-              way to the Dodec wireframe — the same brand geometry as the
-              favicon, live-rotating on a 3D turntable. */}
-          <div class="flex justify-center mb-5 animate-rise-in">
-            <Dodec size={46} class="dodec-hero" />
-          </div>
-          <h1 class="text-center font-serif text-2xl text-ink-light mb-3 animate-rise-in" style={{ animationDelay: '80ms' }}>
-            What should we work on today?
-          </h1>
-          {/* Persona identity chip: who answers the next prompt. Hidden for
-              the default persona (the Dodec above already says "a1"). */}
-          {persona && persona.id !== 'default' && (
-            <div class="flex justify-center mb-6 animate-rise-in" style={{ animationDelay: '120ms' }}>
-              <span class="persona-chip flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-lg bg-paper-card border border-hairline shadow-sm">
-                {personaAvatar(persona, 22)}
-                <span class="text-xs text-ink-light">speaking as <span class="font-medium">{persona.name}</span></span>
-              </span>
-            </div>
-          )}
-          {(!persona || persona.id === 'default') && <div class="mb-6" />}
-          <div class="relative animate-rise-in" style={{ animationDelay: '160ms' }}>
-            {Picker}
-            {Input}
-          </div>
-          <div class="animate-rise-in" style={{ animationDelay: '260ms' }}>
-            {Hint}
-          </div>
+      <div class="w-full">
+        <div class="relative">
+          {Picker}
+          {Input}
         </div>
+        {Hint}
       </div>
     );
   }

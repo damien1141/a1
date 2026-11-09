@@ -1,0 +1,16 @@
+From: Igor <igor@example.dev>
+To: user@example.org
+Subject: Alternative parts
+Date: Sun, 1 Nov 2026 09:00:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="BOUND1"
+
+--BOUND1
+Content-Type: text/plain; charset=utf-8
+
+Plain wins.
+--BOUND1
+Content-Type: text/html; charset=utf-8
+
+<html><body><p>HTML <b>loses</b>.</p><script>alert(1)</script></body></html>
+--BOUND1--

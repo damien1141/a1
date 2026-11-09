@@ -1,0 +1,7 @@
+From: Julia <julia@example.dev>
+To: user@example.org
+Subject: HTML only
+Date: Sun, 1 Nov 2026 10:00:00 +0000
+Content-Type: text/html; charset=utf-8
+
+<html><head><style>p{color:red}</style></head><body><h1>Heading</h1><p>Some <a href="http://example.com" title="a>b">link</a> text.</p></body></html>

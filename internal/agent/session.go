@@ -1,18 +1,15 @@
 package agent
 
 import (
-        "context"
         "errors"
         "fmt"
         "strings"
-        "time"
 
         "github.com/damien1141/a1/internal/llm"
         "github.com/damien1141/a1/internal/persona"
         "github.com/damien1141/a1/internal/project"
         "github.com/damien1141/a1/internal/session"
         "github.com/damien1141/a1/internal/session/memory"
-        "github.com/damien1141/a1/internal/weather"
 )
 
 // Session owns the message store for the engine loop. It wraps a
@@ -26,18 +23,21 @@ type Session struct {
         memoryBank        *memory.Bank
         memoryInjected    bool
 
-        // personaInjected tracks whether we have already prepended the active
-        // persona's framing line + per-persona memory bank entries to the
-        // context cache. Cleared together with the cache so the persona can be
-        // swapped mid-session and the next turn reflects the new personality.
-        personaInjected  bool
+        // personaBlock is the FROZEN persona injection: the active persona's
+        // framing lines + per-persona memory bank entries, captured once per
+        // persona epoch and re-prepended byte-identically on every context
+        // rebuild. Freezing — not flag-gating — is what keeps two properties
+        // true at once: a mid-session cache bust (every Append) must not drop
+        // the persona from later turns, and consecutive request prefixes must
+        // stay byte-identical so local prompt caching and provider cache reads
+        // survive the bust. Cleared by SetPersona so a switch re-freezes under
+        // the new personality.
+        personaBlock []llm.Message
 
-        // personaStore + weatherSvc are injected via WithPersonaStore /
-        // WithWeather options. Both are optional — when nil, the session
-        // behaves identically to the pre-persona baseline (default-neutral
-        // assistant with no weather forecast).
+        // personaStore is injected via the WithPersonaStore option. Optional —
+        // when nil, the session behaves identically to the pre-persona baseline
+        // (default-neutral assistant).
         personaStore *persona.Store
-        weatherSvc   *weather.Service
 }
 
 // SessionOption configures NewSession.
@@ -51,7 +51,6 @@ type sessionConfig struct {
         resumeID     string
         parentID     string
         personaStore *persona.Store
-        weatherSvc   *weather.Service
 }
 
 // WithCwd sets the cwd written to SessionHeader (usually process cwd).
@@ -92,14 +91,6 @@ func WithPersonaStore(store *persona.Store) SessionOption {
         return func(c *sessionConfig) { c.personaStore = store }
 }
 
-// WithWeather attaches a weather service to the session. When set, the
-// weekly forecast is injected into the agent context (after the clock
-// system message, before memory bank entries). Without this option no
-// weather forecast is added.
-func WithWeather(svc *weather.Service) SessionOption {
-        return func(c *sessionConfig) { c.weatherSvc = svc }
-}
-
 // NewSession creates a session wrapper according to opts.
 func NewSession(opts ...SessionOption) (*Session, error) {
         var cfg sessionConfig
@@ -130,7 +121,6 @@ func NewSession(opts ...SessionOption) (*Session, error) {
                         manager:      m,
                         lastID:       m.LeafID(),
                         personaStore: cfg.personaStore,
-                        weatherSvc:   cfg.weatherSvc,
                 }, nil
         }
 
@@ -146,6 +136,7 @@ func NewSession(opts ...SessionOption) (*Session, error) {
                         // every path-derived behavior (evidence scope,
                         // resume, listings) unchanged.
                         m, err = session.NewVaultManager(cfg.cwd, cfg.sessionDir, cfg.parentID, v,
+                                session.WithSessionDir(cfg.sessionDir),
                                 session.WithParent(cfg.parentID))
                 } else {
                         m, err = session.NewSessionManager(cfg.cwd,
@@ -160,21 +151,19 @@ func NewSession(opts ...SessionOption) (*Session, error) {
                 return &Session{
                         manager:      m,
                         personaStore: cfg.personaStore,
-                        weatherSvc:   cfg.weatherSvc,
                 }, nil
         }
 
         return &Session{
                 manager:      session.NewManager(cfg.cwd),
                 personaStore: cfg.personaStore,
-                weatherSvc:   cfg.weatherSvc,
         }, nil
 }
 
 // Fork creates a new Session that shares the same underlying manager state
 // but starts from the current leaf, allowing independent conversation branches.
-// The persona store and weather service are inherited from the parent so the
-// forked branch keeps the same personality and forecast context.
+// The persona store is inherited from the parent so the forked branch keeps
+// the same personality.
 func (s *Session) Fork() (*Session, error) {
         fork, err := s.manager.Fork()
         if err != nil {
@@ -184,7 +173,6 @@ func (s *Session) Fork() (*Session, error) {
                 manager:      fork,
                 lastID:       fork.LeafID(),
                 personaStore: s.personaStore,
-                weatherSvc:   s.weatherSvc,
         }, nil
 }
 
@@ -196,12 +184,33 @@ func (s *Session) ID() string {
         return s.manager.ID()
 }
 
+// CacheScope returns the session's logical prompt-cache scope — the
+// rotation-stable bucket id the engine routes provider prompt caches by
+// (see Manager.CacheScope). Empty only when the manager is missing, which
+// leaves the wire as it was before scopes existed.
+func (s *Session) CacheScope() string {
+        if s == nil || s.manager == nil {
+                return ""
+        }
+        return s.manager.CacheScope()
+}
+
 // File returns the JSONL path, or empty in memory mode / before first flush path assignment.
 func (s *Session) File() string {
         if s == nil || s.manager == nil {
                 return ""
         }
         return s.manager.File()
+}
+
+// SessionDir returns the directory this session persists under (empty in
+// memory mode). Surfaces the storage root for features that read the
+// project's other sessions — session_search needs it to list them.
+func (s *Session) SessionDir() string {
+        if s == nil || s.manager == nil {
+                return ""
+        }
+        return s.manager.SessionDir()
 }
 
 // Cwd returns the session header cwd.
@@ -214,28 +223,12 @@ func (s *Session) Cwd() string {
 
 func (s *Session) invalidateContextCache() {
         s.contextCacheValid = false
-        // Note: we deliberately do NOT clear memoryInjected / personaInjected
-        // here. Both flags gate "one-time per session" injections that should
-        // survive a context-cache bust (e.g. an Append) but should NOT survive
-        // a persona switch — SetPersona() clears personaInjected explicitly.
-}
-
-// nowSystemMessage is the wall-clock stamp carried by every turn's context.
-// Local time is used so the date matches what the user sees. The weekday is
-// spelled out because models misjudge day-of-week from a bare date, and the
-// ISO week pins down "this week" for relative phrasing. The zone name is
-// included so the model does not have to guess which clock it is reading.
-func nowSystemMessage() string {
-        now := time.Now()
-        year, week := now.ISOWeek()
-        return fmt.Sprintf(
-                "Current date and time: %s (%s), %s (ISO week %d-W%02d, zone %s).",
-                now.Format("Monday, 2 January 2006"),
-                now.Format("15:04:05"),
-                now.Format("2006-01-02"),
-                year, week,
-                now.Format("MST"),
-        )
+        // The frozen persona block deliberately survives a cache bust: the
+        // next rebuild re-prepends the same bytes, so the context stays
+        // byte-stable across Appends (the property prefix caching bills
+        // against) and the persona never vanishes mid-session. Only
+        // SetPersona() clears it — a switch re-freezes under the new
+        // personality.
 }
 
 // activePersona returns the persona store's currently active persona when
@@ -362,21 +355,26 @@ func (s *Session) PathEntries() []session.MessageEntry {
 
 // BuildContext returns the messages for LLM inference, oldest first.
 // Compaction entries are projected as user messages carrying the summary.
-// Memory bank entries are injected once per session as a system message, and
-// the current date/time is refreshed on every turn as a leading system message.
+// Persona framing is injected once per session as system messages.
 //
-// Persona + weather injections:
-//   - weather: when a weather.Service is attached and configured, the weekly
-//     forecast is rendered as a system message after the clock. Forecast is
-//     fetched with a TTL (cached server-side) so a long chat does not refetch
-//     on every turn.
+// What is deliberately NOT here: the wall clock, the weather forecast, the
+// semantic memory bundle, and job notices. Every provider builder hoists
+// RoleSystem text into the leading system block — the block prompt caching
+// is pinned to — so anything regenerated per turn here re-billed the whole
+// context as a cache write on every request (the clock carried seconds and
+// was rebuilt on every tool round). The memory bundle and job notices ride
+// as a persisted, Runtime-marked user message appended at each turn
+// boundary by the engine (see runtime_rider.go); the clock and forecast
+// are fetch engines the model calls on demand.
+//
+// Persona injection:
 //   - persona: when a persona.Store is attached, the active persona's framing
 //     line ("Active persona: Sherlock. A brilliant detective persona.") is
 //     injected as a system message, and the persona's per-persona memory
 //     bank entries are injected alongside (but not confused with) the
 //     session's own memory bank. Both injections happen once per session
 //     and are sticky across context-cache busts; switching the active persona
-//     via SetPersona() clears personaInjected so the next BuildContext
+//     via SetPersona() clears personaBlock so the next BuildContext
 //     reflects the new personality. When the persona is configured to
 //     replace the default system prompt (OverrideSystemPrompt), the engine's
 //     client already carries its prompt as THE system prompt — the direction
@@ -387,28 +385,24 @@ func (s *Session) BuildContext() []llm.Message {
                 return s.contextCache
         }
         entries := s.manager.BuildContext()
-        msgs := make([]llm.Message, 0, len(entries)+4)
-        // Clock first: every provider merges system messages to the front of the
-        // request, so placement here does not reorder the conversation. The stamp
-        // is regenerated on each turn rather than cached with the session, so a
-        // long-lived session stops drifting away from the wall clock.
-        msgs = append(msgs, llm.Message{Role: llm.RoleSystem, Content: nowSystemMessage()})
+        msgs := make([]llm.Message, 0, len(entries)+2)
 
-        // Weather forecast: refresh-fetched with a TTL by the weather service.
-        // Failed fetches silently fall back to the cached value (or empty
-        // string when nothing is cached), so a flaky network never breaks a turn.
-        if s.weatherSvc != nil {
-                if weather := s.weatherSvc.SystemMessage(context.Background()); weather != "" {
-                        msgs = append(msgs, llm.Message{Role: llm.RoleSystem, Content: weather})
-                }
+        // Persona framing + per-persona memory bank. Frozen once per persona
+        // epoch: the first build captures the injection, and every later
+        // rebuild (cache busts fire on every Append) re-prepends the same
+        // bytes. The freeze is what keeps the request prefix byte-stable —
+        // re-reading live persona memories per build would flip the prefix
+        // whenever the bank changed, re-billing the whole context — and it
+        // is also what keeps the persona from silently vanishing after the
+        // first cache bust, which the old one-shot flag allowed. A persona
+        // switch clears the block via SetPersona() and re-freezes.
+        if s.personaBlock == nil && s.personaStore != nil {
+                var block []llm.Message
+                s.injectPersonaContext(&block)
+                s.personaBlock = block
         }
-
-        // Persona framing + per-persona memory bank. This is a one-shot per
-        // session: subsequent turns re-use the cached context. A persona switch
-        // clears personaInjected explicitly via SetPersona().
-        if !s.personaInjected && s.personaStore != nil {
-                s.injectPersonaContext(&msgs)
-                s.personaInjected = true
+        if len(s.personaBlock) > 0 {
+                msgs = append(msgs, s.personaBlock...)
         }
 
         // JSONL memory bank injection is disabled — the semantic memory
@@ -511,11 +505,11 @@ func (s *Session) SetPersona(id string) error {
         if err := s.personaStore.SetActive(id); err != nil {
                 return err
         }
-        // Clear the per-persona injection flag so the next BuildContext re-runs
-        // the persona injection with the new active persona. The clock, weather,
-        // and session-memory injections are untouched because they are not
-        // persona-dependent.
-        s.personaInjected = false
+        // Clear the frozen persona block so the next BuildContext re-runs
+        // the persona injection with the new active persona and re-freezes
+        // it. The session-memory injections are untouched because they are
+        // not persona-dependent.
+        s.personaBlock = nil
         s.invalidateContextCache()
         return nil
 }

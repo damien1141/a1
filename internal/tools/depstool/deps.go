@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/damien1141/a1/internal/tools/tooldef"
@@ -192,13 +195,36 @@ func collectGoFiles(root, glob string) ([]string, error) {
 	return files, err
 }
 
+// importRe is the degraded-path import extractor: a line-anchored regexp that
+// only understands single-line `import "path"` (or backquoted) forms. It runs
+// solely for files go/parser rejects; see parseImports.
 var importRe = regexp.MustCompile(`(?m)^import\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `)`)
 
+// parseImports extracts the import paths of one Go file. The go/parser pass
+// (parser.ImportsOnly, mirroring internal/graph/parsers_light.go) understands
+// every import form the real grammar accepts — grouped `import ( ... )`
+// blocks, aliased, blank, and dot imports — which the line regexp above
+// cannot. When the file is too malformed for the parser (snippets, templates,
+// mid-edit buffers), the regexp still runs so behavior degrades to the
+// historic scan instead of erroring out.
 func parseImports(path string) ([]string, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
+	fset := token.NewFileSet()
+	if node, perr := parser.ParseFile(fset, path, b, parser.ImportsOnly); perr == nil {
+		var imports []string
+		for _, imp := range node.Imports {
+			// Unquote handles both "path" and `path` literals; on a weird
+			// literal it errors and we skip that import rather than the file.
+			if p, uerr := strconv.Unquote(imp.Path.Value); uerr == nil && p != "" {
+				imports = append(imports, p)
+			}
+		}
+		return imports, nil
+	}
+
 	text := string(b)
 	var imports []string
 	for _, m := range importRe.FindAllStringSubmatch(text, -1) {

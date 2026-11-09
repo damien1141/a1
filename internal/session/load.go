@@ -14,7 +14,7 @@ import (
         "github.com/damien1141/a1/internal/llm"
         "github.com/damien1141/a1/internal/util"
 
-	"github.com/damien1141/a1/internal/vault"
+        "github.com/damien1141/a1/internal/vault"
 )
 
 // SessionMeta is a lightweight listing row for persisted sessions.
@@ -360,6 +360,15 @@ func OpenSession(path string) (*Manager, error) {
         }, nil
 }
 
+// DecodeEntryLine decodes one persisted session line. Exported for
+// transcript readers outside the package (the session_search tool) so
+// they share the exact type-probe and error conventions of OpenSession
+// instead of re-deriving them — a reader that drifts from this decode
+// silently misses entries the resume path still loads.
+func DecodeEntryLine(raw []byte, lineNo int) (MessageEntry, error) {
+        return decodeEntryLine(raw, lineNo)
+}
+
 func decodeEntryLine(raw []byte, lineNo int) (MessageEntry, error) {
         var probe struct {
                 Type string `json:"type"`
@@ -399,11 +408,34 @@ func (sm *Manager) ID() string {
         return sm.sessionID
 }
 
+// CacheScope returns the session's logical prompt-cache scope: the pinned
+// header value when one is set (Fork stamps the parent's resolved scope so a
+// branch keeps the root conversation's cache bucket), else the schedule
+// pseudo-parent when this session is a scheduler fire (every fire of one
+// schedule shares one bucket), else the session id. Consumers hash it with
+// the request's static prefix to derive provider-side cache keys; it never
+// affects persistence or session identity.
+func (sm *Manager) CacheScope() string {
+        sm.mu.Lock()
+        defer sm.mu.Unlock()
+        return sm.cacheScopeLocked()
+}
+
 // File returns the JSONL path, or empty when not persisting.
 func (sm *Manager) File() string {
         sm.mu.Lock()
         defer sm.mu.Unlock()
         return sm.sessionFile
+}
+
+// SessionDir returns the directory this manager persists under (empty
+// for in-memory managers). Both backings carry it: file managers from
+// WithSessionDir, vault managers from the project dir the rows are
+// scoped to.
+func (sm *Manager) SessionDir() string {
+        sm.mu.Lock()
+        defer sm.mu.Unlock()
+        return sm.config.sessionDir
 }
 
 // Cwd returns the session working directory recorded in the header.

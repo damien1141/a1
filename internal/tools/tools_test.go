@@ -20,6 +20,10 @@ import (
 //
 // The expected list is alphabetical so the diff is scannable when this
 // test fails. Order isn't part of the contract — only the set.
+//
+// `script` is the programmatic-tool-calling steal: every in-script call
+// rides the executor's normal permission pipeline, so the registration
+// adds surface without adding bypass.
 func TestDefaultTools_CollapsedSet(t *testing.T) {
 	tools := DefaultTools()
 	names := make(map[string]bool, len(tools))
@@ -30,6 +34,7 @@ func TestDefaultTools_CollapsedSet(t *testing.T) {
 	expected := []string{
 		"ask_user",
 		"bash",
+		"script",
 		"browser",
 		"browser_interact",
 		"browser_navigate",

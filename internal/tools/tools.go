@@ -14,6 +14,7 @@ import (
 	"github.com/damien1141/a1/internal/tools/permissiontool"
 	"github.com/damien1141/a1/internal/tools/questiontool"
 	"github.com/damien1141/a1/internal/tools/readtool"
+	"github.com/damien1141/a1/internal/tools/scripttool"
 	"github.com/damien1141/a1/internal/tools/searchtool"
 	"github.com/damien1141/a1/internal/tools/secrettool"
 	"github.com/damien1141/a1/internal/tools/testtool"
@@ -99,6 +100,12 @@ var (
 func DefaultTools() []Tool {
 	return []Tool{
 		bashtool.BashTool(),
+		// script is the programmatic-tool-calling surface: one Python
+		// script that calls real a1 tools as functions over a loopback
+		// RPC, with only the final stdout entering context. Every
+		// in-script call traverses the executor's normal permission
+		// pipeline — the collapse saves context, never safety.
+		scripttool.ScriptTool(),
 		// git before bash-adjacent fallbacks: the model should reach for the
 		// governed facade, not a shell string, for git work.
 		gittool.GitTool(),

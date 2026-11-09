@@ -84,7 +84,7 @@ func SearchTool() tooldef.Tool {
 					},
 					"mode": llm.Object{
 						"type":        "string",
-						"description": "auto (default) | text | symbol | file | grep | find | graph | rank.",
+						"description": "Search plane — see tool description.",
 						"enum":        []string{"auto", "text", "symbol", "file", "grep", "find", "graph", "rank"},
 					},
 					"path": llm.Object{
@@ -97,7 +97,7 @@ func SearchTool() tooldef.Tool {
 					},
 					"glob": llm.Object{
 						"type":        "string",
-						"description": "File filter for every plane, e.g. \"*.go\". The text plane honors full ripgrep glob syntax (including ** and !negation).",
+						"description": "File filter for every plane, e.g. \"*.go\" (ripgrep glob syntax).",
 					},
 					"literal": llm.Object{
 						"type":        "boolean",

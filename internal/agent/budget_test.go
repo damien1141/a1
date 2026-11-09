@@ -110,7 +110,10 @@ func TestBudgetToolExtensionEcho(t *testing.T) {
 
 func TestBudgetToolBadArgs(t *testing.T) {
         engine := newContractTestEngine(t)
-        for _, args := range []string{`{"rounds":0}`, `{"rounds":-3}`, `{invalid`} {
+        // Valid JSON the tool itself refuses — zero and negative rounds, and
+        // a non-object that fails the tool's unmarshal — answers in the
+        // tool's own voice.
+        for _, args := range []string{`{"rounds":0}`, `{"rounds":-3}`, `42`} {
                 msg := runToolCall(t, engine.executor, "budget", args)
                 assert.Contains(t, msg.Content, "budget: arguments must be", "args %s refused", args)
         }
@@ -119,6 +122,12 @@ func TestBudgetToolBadArgs(t *testing.T) {
         // "rounds" and the shape to re-issue.
         msg := runToolCall(t, engine.executor, "budget", `{}`)
         assert.Contains(t, msg.Content, "empty arguments", "the guard refuses the fieldless call")
+        assert.Contains(t, msg.Content, `"rounds"`)
+        // Unparseable arguments are refused one layer up too, by the
+        // executor's malformed-arguments guard — same outcome, with the guard
+        // naming what actually arrived and the shape to re-issue.
+        msg = runToolCall(t, engine.executor, "budget", `{invalid`)
+        assert.Contains(t, msg.Content, "malformed arguments", "the guard refuses the unparseable call")
         assert.Contains(t, msg.Content, `"rounds"`)
         assert.Equal(t, 0, engine.TurnBudgetCeiling(), "refused declarations hold no budget")
 }

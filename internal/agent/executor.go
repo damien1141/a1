@@ -20,6 +20,7 @@ import (
         "github.com/damien1141/a1/internal/session/memory"
         "github.com/damien1141/a1/internal/skillstats"
         "github.com/damien1141/a1/internal/telemetry"
+        "github.com/damien1141/a1/internal/toolguard"
         "github.com/damien1141/a1/internal/tools"
         "github.com/damien1141/a1/internal/tools/tooldef"
         "github.com/damien1141/a1/internal/util"
@@ -96,6 +97,29 @@ type Executor struct {
         // askMu serializes approval prompts: a concurrent read-only batch can
         // otherwise pop multiple dialogs / interleave stdin reads at once.
         askMu sync.Mutex
+
+        // loopGuard is the per-turn tool-call loop guardrail controller (nil =
+        // disabled — a bare executor, as tests build). Installed via
+        // SetLoopGuard; the engine resets it at every user prompt.
+        loopGuard *toolguard.Controller
+
+        // dispatchWhitelist limits which tools this executor may dispatch (nil
+        // = no restriction). A call outside it is refused before budget,
+        // permission, or execution — for constrained sub-engines the whitelist
+        // IS the policy. Installed via SetDispatchWhitelist.
+        dispatchWhitelist map[string]bool
+        dispatchDenier    func(tool string) string
+
+        // learningSink is the engine's nudge-counter reset hook (nil = no
+        // learning loop). Called just before an approved tool runs.
+        learningSink func(tool string, args json.RawMessage)
+
+        // mutationMu guards mutations, the verify-on-stop gate's fact list:
+        // successful workspace-mutating calls with a path argument, folded
+        // into the engine's turn state after each Run and drained by the
+        // same contract as the evidence verdicts.
+        mutationMu sync.Mutex
+        mutations  []MutationFact
 }
 
 type sessionMemoryBank interface {
@@ -454,6 +478,10 @@ func (e *Executor) runOneChecked(
         emit func(session.ToolData) bool,
 ) (llm.Message, bool, string) {
         ctx = tools.WithCwd(ctx, e.cwd)
+        // Script dispatch (scripttool's RPC): every tool Run carries this
+        // executor's dispatch pipeline, so the script tool's child process
+        // lands back in the executor that gated the script itself.
+        ctx = tooldef.WithScriptDispatch(ctx, e.DispatchScript)
         ctx = tooldef.WithImageEnabled(ctx, e.imageEnabled)
         // The live permission mode rides the context for the same reason the
         // cwd does: the gate below is the authority for this call, and tools
@@ -486,6 +514,15 @@ func (e *Executor) runOneChecked(
                 }
         }
 
+        // Dispatch whitelist: a constrained executor allows only its named
+        // tools; anything else is refused before budget, permission, or
+        // execution. The refusal feeds the loop guard like any other — a model
+        // re-issuing an out-of-surface call is exactly the replay loop the
+        // streaks exist to catch.
+        if refused, denied := e.guardDispatch(call, detail, emit); denied {
+                return refused, false, ""
+        }
+
         // Tool-call budget: claim a slot before anything runs, so an exhausted
         // budget neither prompts the user nor flashes an in-progress row. The
         // claim happens before the extension/gate pipeline for the same reason.
@@ -503,6 +540,7 @@ func (e *Executor) runOneChecked(
 
         if !ok {
                 errText := fmt.Sprintf("tool '%s' not found", call.Function.Name)
+                errText = e.guardRefusal(call, args, errText)
                 _ = emit(session.ToolData{Run: e.toolRun(call, session.ToolError, detail, errText, "")})
                 return e.toolMessage(call.ID, errText, nil), false, ""
         }
@@ -518,7 +556,7 @@ func (e *Executor) runOneChecked(
                 if reason == "" {
                         reason = "tool execution denied by extension"
                 }
-                reason = appendExtContext(reason, preContext)
+                reason = appendExtContext(e.guardRefusal(call, args, reason), preContext)
                 e.ext.EmitToolExecutionEnd(call.Function.Name, call.ID, true)
                 return e.rejectResult(call, detail, reason, emit), false, ""
         }
@@ -566,13 +604,67 @@ func (e *Executor) runOneChecked(
                         strings.Join(quoted, ", "),
                         params.Required[0],
                 )
+                errText = e.guardRefusal(call, args, errText)
                 debuglog.Logf("executor: refused empty-arguments call %s raw=%q", call.Function.Name, string(args))
                 _ = emit(session.ToolData{Run: e.toolRun(call, session.ToolError, detail, errText, "")})
                 e.ext.EmitToolExecutionEnd(call.Function.Name, call.ID, true)
                 return e.toolMessage(call.ID, errText, nil), false, ""
         }
 
+        // Malformed-arguments guard: non-empty arguments that are not valid
+        // JSON cannot be any tool's real call shape — a stream cut
+        // mid-arguments (or a gateway collapsing fragments it failed to
+        // parse) leaves a truncated prefix, and duplicate-delivery echoes
+        // leave two objects concatenated. emptyToolArgs passes both (they are
+        // neither blank nor {}), and before this guard they died at the
+        // permission extractor with a wrapped parse error — "permission
+        // check failed: write args: unexpected end of JSON input" — that told
+        // the model nothing it could correct against. Worse, the malformed
+        // call itself stays in the session, and replayed verbatim it poisons
+        // every later request against strict gateways: a bare 400 ("Provider
+        // returned error") that no amount of compaction fixes, because the
+        // poisoned message rides in the compaction kept zone. Refuse before
+        // permission, show the model what actually arrived, and ask for the
+        // complete object; the corrective round is the recovery. Valid
+        // non-object JSON (a bare string, a number) still passes: the tool's
+        // own parse error reports those in its own voice.
+        if raw := strings.TrimSpace(string(args)); raw != "" && !json.Valid([]byte(raw)) {
+                example := "argument"
+                if params := tool.Definition.Params; params != nil && len(params.Required) > 0 {
+                        example = params.Required[0]
+                }
+                errText := fmt.Sprintf(
+                        "tool '%s' was called with malformed arguments (not valid JSON): %s and was not executed — the arguments arrived truncated or corrupted. "+
+                                "Re-issue the call with its arguments as one complete JSON object, e.g. {\"%s\": <value>}",
+                        call.Function.Name,
+                        truncateForModel(raw),
+                        example,
+                )
+                errText = e.guardRefusal(call, args, errText)
+                debuglog.Logf("executor: refused malformed-arguments call %s raw=%q", call.Function.Name, string(args))
+                _ = emit(session.ToolData{Run: e.toolRun(call, session.ToolError, detail, errText, "")})
+                e.ext.EmitToolExecutionEnd(call.Function.Name, call.ID, true)
+                return e.toolMessage(call.ID, errText, nil), false, ""
+        }
+
+        // Tool loop guardrail, pre-call: block an imminent call the controller
+        // judges hopeless — an exact-args replay past its block threshold, a
+        // no-progress read past its block threshold, or a capped tool over its
+        // per-turn budget. Loop caps fire regardless of HardStop: a runaway
+        // fetch or spawn loop is a spend problem, not a judgment call.
+        if e.loopGuard != nil {
+                if d := e.loopGuard.Before(call.Function.Name, string(args), tool.Definition.Readable); d != nil {
+                        _ = emit(session.ToolData{Run: e.toolRun(call, session.ToolError, detail, d.Message, "")})
+                        e.ext.EmitToolExecutionEnd(call.Function.Name, call.ID, true)
+                        return e.toolMessage(call.ID, d.Message, nil), false, ""
+                }
+        }
+
         if msg, rejected := e.checkPermission(ctx, call, args, detail, emit); rejected {
+                if e.loopGuard != nil {
+                        d, notice, _ := e.loopGuard.Report(call.Function.Name, string(args), msg.Content, call.ID, true, tool.Definition.Readable)
+                        msg.Content = appendGuardNotes(msg.Content, d, notice)
+                }
                 e.ext.EmitToolExecutionEnd(call.Function.Name, call.ID, true)
                 return msg, false, ""
         }
@@ -586,9 +678,26 @@ func (e *Executor) runOneChecked(
         // Latency and session attribution ride the terminal telemetry events
         // (Bet 07): the tool_call pre-event fires before the run, so only
         // the ok/error events carry a duration.
+        // Learning sink (see learning.go): the engine's nudge counters
+        // reset on actual use — here, after every gate has passed and just
+        // before the tool runs, so a refused call (permission, whitelist,
+        // malformed args) never counts as use.
+        if e.learningSink != nil {
+                e.learningSink(call.Function.Name, args)
+        }
+
         start := time.Now()
         result, err := tool.Run(tools.WithToolCallID(ctx, call.ID), args)
         latency := time.Since(start).Milliseconds()
+
+        // Verify-on-stop: a successful mutating call with a path argument is
+        // a mutation fact — the turn's finish will be judged against it. A
+        // failed or rejected call mutated nothing, and read-only tools never
+        // count (a shell command without a path is deliberately invisible:
+        // its file effects cannot be attributed without semantic analysis).
+        if err == nil && !tool.Definition.Readable {
+                e.recordMutation(call, args)
+        }
 
         if e.telemetry != nil {
                 if err != nil {
@@ -713,6 +822,31 @@ func (e *Executor) runOneChecked(
                 output = newContent
         }
         e.ext.EmitToolExecutionEnd(call.Function.Name, call.ID, err != nil)
+
+        // Tool loop guardrail, post-call: fold the completed observation into
+        // the controller. A warn decision rides the tool result as guidance; a
+        // byte-identical large duplicate result becomes a reference stub (the
+        // tool still executed — only the context representation is
+        // deduplicated); an armed halt stops the turn with the guardrail's
+        // reason so the model and the surface both see why.
+        if e.loopGuard != nil {
+                d, notice, stub := e.loopGuard.Report(call.Function.Name, string(args), content, call.ID, err != nil, tool.Definition.Readable)
+                if stub != "" {
+                        content = stub
+                }
+                if notice != "" {
+                        content += "\n\n" + notice
+                }
+                if d != nil {
+                        switch d.Action {
+                        case "halt":
+                                _ = emit(session.ToolData{Run: e.toolRun(call, session.ToolError, detail, d.Message, output)})
+                                return e.toolMessage(call.ID, content+"\n\n"+d.Message, nil), true, "tool loop guardrail: " + d.Message
+                        case "warn":
+                                content += "\n\nTool loop warning: " + d.Message
+                        }
+                }
+        }
 
         // Skill-routing bandit (Bet 07): a successful read of a skill's
         // SKILL.md is the observable moment the model committed to that
@@ -976,7 +1110,11 @@ func (e *Executor) checkPermission(
 ) (llm.Message, bool) {
         req, err := permission.ExtractAt(call.Function.Name, args, e.cwd)
         if err != nil {
-                reason := fmt.Sprintf("permission check failed: %v", err)
+                // The raw parse error alone ("unexpected end of JSON input",
+                // "cannot unmarshal array") is not something the model can
+                // correct against; the arguments it describes ride along so the
+                // re-issue has something to differ from.
+                reason := fmt.Sprintf("permission check failed: %v (arguments: %s)", err, truncateForModel(string(args)))
                 return e.rejectResult(call, detail, reason, emit), true
         }
 
@@ -1080,6 +1218,17 @@ func emptyToolArgs(args json.RawMessage) bool {
                 return false
         }
         return len(fields) == 0
+}
+
+// truncateForModel clips a raw string for inclusion in a model-facing error
+// message. Rune-safe so a path never ends in a half character, and capped
+// small: the message must teach what went wrong, not re-send the payload.
+func truncateForModel(s string) string {
+        const maxRunes = 160
+        if r := []rune(s); len(r) > maxRunes {
+                return string(r[:maxRunes]) + "…"
+        }
+        return s
 }
 
 // askHandoff routes a tool-reported handoff state through the permission

@@ -189,10 +189,12 @@ func (m *MessageList) Handle(ctx *components.EventContext, ev xui.Event) {
 		}
 	}
 	// Prefer last-visible entries; fall back to all if layout not ready.
+	// Nil entries are skipped everywhere: calling Handle on a nil interface
+	// panics, and a hole in Entries only ever means "nothing to forward to".
 	if len(m.lastItems) > 0 {
 		for i := range slices.Backward(m.lastItems) {
 			idx := m.lastItems[i].index
-			if idx < 0 || idx >= len(m.Entries) {
+			if idx < 0 || idx >= len(m.Entries) || m.Entries[idx] == nil {
 				continue
 			}
 			m.Entries[idx].Handle(ctx, ev)
@@ -203,6 +205,9 @@ func (m *MessageList) Handle(ctx *components.EventContext, ev xui.Event) {
 		return
 	}
 	for i := range slices.Backward(m.Entries) {
+		if m.Entries[i] == nil {
+			continue
+		}
 		m.Entries[i].Handle(ctx, ev)
 		if ctx.Consume {
 			return
@@ -265,6 +270,12 @@ func (m *MessageList) Draw(ctx components.DrawContext) components.Surface {
 			bot := top + itemH
 			if bot <= 0 || top >= h {
 				continue // outside viewport — skip Draw
+			}
+			if m.Entries[i] == nil {
+				// measure() already gave nil rows a height of 1 so the scroll
+				// extent stays correct; paint nothing and keep them out of
+				// hit-testing instead of dereferencing a nil interface.
+				continue
 			}
 			surf := m.Entries[i].Draw(childCtx)
 			nh := surf.Size.Height

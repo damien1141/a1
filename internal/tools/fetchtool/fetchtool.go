@@ -33,13 +33,17 @@ var fetchDescription = `Fetch URLs or search the web over HTTP - no JavaScript, 
 browser tools cover pages that need those. Send exactly one of
 query / url / urls:
 
-- query: web search. Currency queries ("100 usd to eur") get a direct
-  answer; web-platform terms go to MDN; npm/crates registry lookups to
-  their own engines; programming, academic, and factual queries to the
-  Stack Exchange, GitHub, arxiv, or Wikipedia APIs; discussion-seeking
-  queries to Hacker News / Reddit; everything else merges DuckDuckGo
-  Lite + Hacker News + Reddit results (community links included; may
-  captcha on server IPs). Ranked results plus each page body by default.
+- query: web search. Current date/time ("what time is it", "time now")
+  and weather ("weather in Reykjavik", "forecast for Tokyo") get direct
+  answers from dedicated engines — no clock or forecast is injected into
+  your context, so fetch one before date-, time-, or weather-sensitive
+  work. Currency queries ("100 usd to eur") get a direct answer;
+  web-platform terms go to MDN; npm/crates registry lookups to their
+  own engines; programming, academic, and factual queries to the Stack
+  Exchange, GitHub, arxiv, or Wikipedia APIs; discussion-seeking queries
+  to Hacker News / Reddit; everything else merges DuckDuckGo Lite +
+  Hacker News + Reddit results (community links included; may captcha on
+  server IPs). Ranked results plus each page body by default.
 - url: one URL. HTML becomes readable text, JSON is pretty-printed,
   other text passes through, binaries a placeholder.
 - urls: up to 10 in parallel; per-URL blocks; one dead URL fails alone.
@@ -92,7 +96,8 @@ func FetchTool() tooldef.Tool {
 						"description": "Request headers, e.g. {\"Accept\": \"text/html\"}.",
 					},
 					"body": llm.Object{
-						"type": "string",
+						"type":        "string",
+						"description": "Request body for POST.",
 					},
 					"raw": llm.Object{
 						"type":        "boolean",

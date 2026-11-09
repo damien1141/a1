@@ -312,3 +312,71 @@ func TestComposerHistoryNavigation(t *testing.T) {
 	assert.Equal(t, "new input", c.Chat.Value)
 	assert.Equal(t, -1, c.historyIdx)
 }
+
+// TestComposerHistoryDownFromFreshNeverWipes pins the data-loss half of the
+// arrow-key jank: Down on a prompt that is not browsing history must be a
+// no-op. The old navigateHistory cleared the composer outright, so a stray
+// Down destroyed a half-typed prompt.
+func TestComposerHistoryDownFromFreshNeverWipes(t *testing.T) {
+	c := NewComposerPane(components.DefaultTheme(), "m", "/tmp")
+	c.bus = controller.NewBus(nil)
+	c.drainBus = func() {}
+	c.requestFocus = func(w components.Widget) {}
+
+	c.pushHistory("previous entry")
+	c.Chat.Value = "a half-typed prompt"
+	c.Chat.Cursor = len(c.Chat.Value)
+	c.historyIdx = -1
+
+	// The wired OnHistoryNav with Down while not browsing.
+	handled := c.historyNav(1)
+	assert.False(t, handled, "Down while not browsing is not handled")
+	assert.Equal(t, "a half-typed prompt", c.Chat.Value, "the input must survive")
+	assert.Equal(t, -1, c.historyIdx)
+
+	// And the defensive layer: navigateHistory(1) from fresh is a no-op too.
+	c.navigateHistory(1)
+	assert.Equal(t, "a half-typed prompt", c.Chat.Value, "navigateHistory must never wipe either")
+}
+
+// TestComposerHistoryUpStashDownRestoreRoundTrip drives the wired callback
+// the way ChatInput does at the visual edges: Up recalls, Down returns.
+func TestComposerHistoryUpStashDownRestoreRoundTrip(t *testing.T) {
+	c := NewComposerPane(components.DefaultTheme(), "m", "/tmp")
+	c.bus = controller.NewBus(nil)
+	c.drainBus = func() {}
+	c.requestFocus = func(w components.Widget) {}
+
+	c.pushHistory("only entry")
+	c.Chat.Value = "current draft"
+	c.Chat.Cursor = len(c.Chat.Value)
+
+	require.True(t, c.historyNav(-1))
+	assert.Equal(t, "only entry", c.Chat.Value)
+	assert.Equal(t, 0, c.historyIdx)
+	assert.Equal(t, "current draft", c.draft, "the draft is stashed")
+
+	require.True(t, c.historyNav(1))
+	assert.Equal(t, "current draft", c.Chat.Value, "Down past the newest restores the draft")
+	assert.Equal(t, -1, c.historyIdx)
+	assert.Empty(t, c.draft)
+
+	// Down again: not browsing — refuses without touching the value.
+	assert.False(t, c.historyNav(1))
+	assert.Equal(t, "current draft", c.Chat.Value)
+}
+
+// TestComposerLoadHistoryClearsDraft: a draft stashed while browsing the
+// previous session's history must not resurrect over fresh input after a
+// session switch reloads the history bank.
+func TestComposerLoadHistoryClearsDraft(t *testing.T) {
+	c := NewComposerPane(components.DefaultTheme(), "m", "/tmp")
+	c.pushHistory("old session entry")
+	c.Chat.Value = "typing something"
+	c.historyNav(-1) // stashes the draft
+	require.NotEmpty(t, c.draft)
+
+	c.LoadHistory([]string{"new session entry"})
+	assert.Empty(t, c.draft, "LoadHistory drops the stale draft")
+	assert.Equal(t, -1, c.historyIdx)
+}

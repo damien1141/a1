@@ -181,7 +181,7 @@ func DefaultTrustForToolArgs(tool string) Label {
                 // find|graph|rank; all are read-only analysis. Treat as user-trusted
                 // args the same way the old tools were.
                 return Label{Trust: User, ReaderSet: []string{"user"}}
-        case "code", "context", "docsync", "vector_search", "secret", "ask_user", "contract", "budget":
+        case "code", "context", "docsync", "vector_search", "session_search", "secret", "ask_user", "contract", "budget":
                 // Read-only analysis tools. Args are user-supplied (paths, queries,
                 // prompts) and don't carry network-sourced content. `contract` args
                 // are model-proposed check ids, validated by the harness; `budget`
@@ -208,7 +208,7 @@ func DefaultTrustForToolOutput(tool string) Label {
                 // `search` output is read-only analysis, same as the old grep/find
                 // tools it folds.
                 return Label{Trust: User, ReaderSet: []string{"user"}}
-        case "code", "context", "docsync", "vector_search", "secret", "ask_user", "contract", "budget":
+        case "code", "context", "docsync", "vector_search", "session_search", "secret", "ask_user", "contract", "budget":
                 // Read-only analysis tools. Output reports workspace state back to
                 // the agent — User-trusted, same shape as `read`/`search`. The
                 // `contract` tool's output is harness-computed ledger status; the

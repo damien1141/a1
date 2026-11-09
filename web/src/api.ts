@@ -5,6 +5,11 @@ export interface SessionMeta {
   id: string;
   preview: string;
   mtime: string;
+  // iso is the machine-readable last-activity timestamp (UTC RFC3339Nano,
+  // from the row's data-mtime attribute) — the dashboard's heatmap filters
+  // sessions by calendar day, which the friendly mtime label cannot express.
+  // Absent on old servers / rows without the attribute.
+  iso?: string;
 }
 
 export interface TranscriptEntry {
@@ -48,14 +53,17 @@ export interface Source {
   fetch_error?: string; // populated when the per-page fetch failed
 }
 
-// ServerEvent is the SSE envelope. New kinds: toast, state.
+// ServerEvent is the SSE envelope. New kinds: toast, state, marker.
 export interface ServerEvent {
-  kind: 'session' | 'delta' | 'tool' | 'ask' | 'status' | 'done' | 'toast' | 'state';
+  kind: 'session' | 'delta' | 'tool' | 'ask' | 'status' | 'done' | 'toast' | 'state' | 'marker';
   sessionId: string;
   delta?: { text: string; reasoning: string; msgId?: string };
   tool?: ToolRun;
   ask?: { id: string; tool: string; reason: string };
   status?: { text: string };
+  // marker is a persistent transcript row (compaction cut) — the same
+  // divider the reloaded transcript renders for the stored entry.
+  marker?: { text: string };
   toast?: ToastPayload;
   state?: StatePayload;
   failed?: boolean;
@@ -264,6 +272,7 @@ export async function fetchSessions(): Promise<SessionMeta[]> {
     id: row.getAttribute('data-session-id') || '',
     preview: row.querySelector('.session-title')?.textContent || '',
     mtime: row.querySelector('.session-meta')?.textContent || '',
+    iso: row.getAttribute('data-mtime') || undefined,
   }));
 }
 
@@ -445,6 +454,387 @@ export async function togglePin(sessionId: string): Promise<{ pinned: boolean; p
     body: JSON.stringify({ sessionId }),
   });
   if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// ---- theme persistence ----
+
+// saveTheme writes the web UI's theme choice to web.dark_mode in config.yaml
+// (PUT /api/theme): "dark" and "light" are the explicit choices, "system"
+// removes the key so the OS preference drives again. The server stamps the
+// choice onto the served page's <html> tag, so it reaches every browser and
+// the /settings config screen — not just this one's localStorage.
+export async function saveTheme(theme: 'light' | 'dark' | 'system'): Promise<{ theme: string }> {
+  const res = await fetch('/api/theme', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ theme }),
+  });
+  if (!res.ok) throw new Error(await parseErrorBody(res));
+  return res.json();
+}
+
+// ---- personal data (dashboard widgets) ----
+
+// PersonalStatus is the one ungated personal endpoint: the master switch
+// plus the configured directories, no content. The dashboard renders its
+// locked/coming placeholder cards off it without ever firing a gated fetch.
+// mailAccounts is the resolved account COUNT (a number, never a name —
+// the labels ride the gated mail endpoints).
+export interface PersonalStatus {
+  enabled: boolean;
+  calendarDir: string;
+  mailDir: string;
+  mailAccounts: number;
+}
+
+export async function fetchPersonalStatus(): Promise<PersonalStatus> {
+  const res = await fetch('/api/personal/status');
+  if (!res.ok) throw new Error(await parseErrorBody(res));
+  return res.json();
+}
+
+// ---- usage heatmap (dashboard) ----
+
+// UsageDay is one UTC day of activity from the vault rollup: sessions
+// created, user+assistant messages (riders and tool results excluded),
+// tool calls, and the tokens reported on those messages.
+export interface UsageDay {
+  date: string; // YYYY-MM-DD
+  sessions: number;
+  messages: number;
+  toolCalls: number;
+  tokens: number;
+}
+
+export interface UsageDailyResponse {
+  days: number;
+  daily: UsageDay[];
+}
+
+// fetchUsageDaily pulls the per-day usage window (default 371 = 53 weeks
+// × 7, the commit-style heatmap grid). The server clamps hostile values
+// itself; days may be omitted for the default window.
+export async function fetchUsageDaily(days?: number): Promise<UsageDailyResponse> {
+  const q = days ? `?days=${days}` : '';
+  const res = await fetch(`/api/usage/daily${q}`);
+  if (!res.ok) throw new Error(await parseErrorBody(res));
+  return res.json();
+}
+
+// ---- calendar agenda (dashboard) ----
+
+// CalendarEvent is one agenda entry from the gated personal endpoint.
+// Times are RFC3339 instants; all-day events anchor at local midnight.
+export interface CalendarEvent {
+  uid: string;
+  summary: string;
+  location?: string;
+  description?: string;
+  start: string; // RFC3339
+  end?: string; // RFC3339
+  allDay: boolean;
+  recurring: boolean;
+  warnings?: string[];
+}
+
+// CalendarStats is the scan's honest accounting — the agenda says so when
+// the directory is degraded instead of silently dropping events.
+export interface CalendarStats {
+  files: number;
+  skippedLines: number;
+  skippedEvents: number;
+  skippedFiles: number;
+  degraded: boolean;
+}
+
+export interface CalendarAgendaResponse {
+  configured: boolean;
+  from: string;
+  to: string;
+  events: CalendarEvent[];
+  stats: CalendarStats;
+}
+
+// fetchCalendarAgenda pulls the next-N-days agenda (the server anchors on
+// today's local midnight and clamps hostile days). Gated: it throws on
+// 403 when the personal master switch is off.
+export async function fetchCalendarAgenda(days?: number): Promise<CalendarAgendaResponse> {
+  const q = days ? `?days=${days}` : '';
+  const res = await fetch(`/api/personal/calendar${q}`);
+  if (!res.ok) throw new Error(await parseErrorBody(res));
+  return res.json();
+}
+
+// fetchCalendarRange pulls an explicit [from, to) window (the month
+// grid's fetch — from/to are YYYY-MM-DD, the window's right edge
+// exclusive, spans capped at 400 days server-side). Same response shape
+// as the agenda: the range endpoint and the agenda endpoint are one
+// scanner behind two windows.
+export async function fetchCalendarRange(from: string, to: string): Promise<CalendarAgendaResponse> {
+  const q = `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+  const res = await fetch(`/api/personal/calendar/range${q}`);
+  if (!res.ok) throw new Error(await parseErrorBody(res));
+  return res.json();
+}
+
+// ---- kanban board (dashboard) ----
+
+// KanbanCard is one board card. position is the dense index within the
+// card's column (0 = top); notes is omitted when empty.
+export interface KanbanCard {
+  id: string;
+  col: string; // 'todo' | 'doing' | 'done'
+  position: number;
+  title: string;
+  notes?: string;
+  createdAt: string; // RFC3339
+  updatedAt: string; // RFC3339
+}
+
+export interface KanbanBoardResponse {
+  columns: string[]; // board order: todo, doing, done
+  cards: KanbanCard[]; // (col, position) order
+}
+
+export interface KanbanCardResponse {
+  card: KanbanCard;
+}
+
+// fetchKanbanBoard pulls the whole board. Gated: it throws on 403 when the
+// personal master switch is off, and on 503 when no vault is available.
+export async function fetchKanbanBoard(): Promise<KanbanBoardResponse> {
+  const res = await fetch('/api/personal/kanban');
+  if (!res.ok) throw new Error(await parseErrorBody(res));
+  return res.json();
+}
+
+// kanbanAddCard creates a card: col defaults to todo server-side, an
+// omitted position appends.
+export async function kanbanAddCard(input: { col?: string; title: string; notes?: string; position?: number }): Promise<KanbanCardResponse> {
+  const res = await fetch('/api/personal/kanban', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(await parseErrorBody(res));
+  return res.json();
+}
+
+// kanbanUpdateCard moves and/or edits a card in one call. Omitted fields
+// are untouched: col/position omitted keeps the placement, an omitted
+// notes keeps the notes, an empty-string notes CLEARS them. An explicit
+// position without col is a within-column reorder; col with an omitted
+// position appends to that column.
+export async function kanbanUpdateCard(input: { id: string; col?: string; position?: number; title?: string; notes?: string }): Promise<KanbanCardResponse> {
+  const res = await fetch('/api/personal/kanban/card', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(await parseErrorBody(res));
+  return res.json();
+}
+
+// kanbanDeleteCard removes a card by id.
+export async function kanbanDeleteCard(id: string): Promise<void> {
+  const res = await fetch(`/api/personal/kanban/card?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(await parseErrorBody(res));
+}
+
+// ---- mail (dashboard) ----
+
+// Mailbox is one rail entry from the gated mail endpoints: filename-level
+// counts, no content.
+export interface Mailbox {
+  name: string;
+  total: number;
+  unread: number;
+}
+
+// MailStats is the scan's honest accounting — the list says so when a box
+// is degraded instead of silently dropping messages.
+export interface MailStats {
+  files: number;
+  skipped: number;
+  degraded: boolean;
+}
+
+// MailMessage is one message. The body (and its two markers) ride only on
+// the single-message fetch — listings are headers, exactly like the wire.
+export interface MailMessage {
+  id: string;
+  from?: string;
+  to?: string;
+  subject?: string;
+  date: string; // RFC3339
+  size: number;
+  seen: boolean;
+  answered: boolean;
+  flagged: boolean;
+  trashed: boolean;
+  body?: string;
+  truncated?: boolean;
+  wasHtml?: boolean;
+}
+
+// MailAccountInfo is one resolved account's public face: the label the
+// widget renders and the ?account= key that selects it. Credentials never
+// ride the wire. error is set when THIS account's read failed — the rail
+// answers 200 with the outage attached so one dead server cannot blank
+// the surface.
+export interface MailAccountInfo {
+  name: string;
+  type: string; // 'maildir' | 'imap'
+  error?: string;
+}
+
+export interface MailRailResponse {
+  configured: boolean;
+  accounts?: MailAccountInfo[];
+  account?: string;
+  error?: string;
+  mailboxes: Mailbox[];
+}
+
+export interface MailMessagesResponse {
+  configured: boolean;
+  account?: string;
+  box?: string;
+  messages: MailMessage[];
+  stats: MailStats;
+}
+
+export interface MailMessageResponse {
+  configured: boolean;
+  account?: string;
+  box?: string;
+  message: MailMessage;
+}
+
+// accountQuery shapes the optional ?account= on every mail fetch: the
+// empty/absent name is the server's first resolved account.
+function accountQuery(account?: string): string {
+  const a = (account || '').trim();
+  return a ? `&account=${encodeURIComponent(a)}` : '';
+}
+
+// fetchMailRail pulls the mailbox rail (and the account metadata the
+// tabs render). Gated: it throws on 403 when the personal master switch
+// is off. An account's own outage does NOT throw — the 200 carries
+// error + accounts[i].error for the widget to render inline.
+export async function fetchMailRail(account?: string): Promise<MailRailResponse> {
+  const res = await fetch(`/api/personal/mail/mailboxes?x=1${accountQuery(account)}`);
+  if (!res.ok) throw new Error(await parseErrorBody(res));
+  return res.json();
+}
+
+// fetchMailMessages pulls one account+box's latest messages (the server
+// defaults limit to 50 and clamps at 200).
+export async function fetchMailMessages(box: string, limit?: number, account?: string): Promise<MailMessagesResponse> {
+  const q = `?box=${encodeURIComponent(box)}${limit ? `&limit=${limit}` : ''}${accountQuery(account)}`;
+  const res = await fetch(`/api/personal/mail/messages${q}`);
+  if (!res.ok) throw new Error(await parseErrorBody(res));
+  return res.json();
+}
+
+// fetchMailMessage pulls one message with its body — the read pane's
+// fetch, and the one surface where the web holds more than the agent's
+// personal_mail tool ever gets.
+export async function fetchMailMessage(box: string, id: string, account?: string): Promise<MailMessageResponse> {
+  const q = `?box=${encodeURIComponent(box)}&id=${encodeURIComponent(id)}${accountQuery(account)}`;
+  const res = await fetch(`/api/personal/mail/message${q}`);
+  if (!res.ok) throw new Error(await parseErrorBody(res));
+  return res.json();
+}
+
+// ---- mail accounts (dashboard, the configurator) ----
+
+// MailAccountEntry is one SAVED account as the configurator reads it:
+// exactly the editable fields, plus hasPassword — the password itself
+// never crosses the wire in either direction of a read. tls is the
+// editor's explicit override; undefined = the server default (on).
+export interface MailAccountEntry {
+  name: string;
+  type: string; // 'maildir' | 'imap'
+  root?: string;
+  host?: string;
+  port?: number;
+  username?: string;
+  mailbox?: string;
+  tls?: boolean;
+  hasPassword: boolean;
+}
+
+// MailAccountsResponse is the configurator's read model: the legacy
+// mail_dir (a pinned read-only row — this surface does not own that
+// key), the saved entries, and the resolved account list (the same pills
+// the rail serves, so the editor can show what a name resolves to).
+export interface MailAccountsResponse {
+  legacyDir?: string;
+  entries: MailAccountEntry[];
+  resolved: MailAccountInfo[];
+}
+
+// MailAccountSpec is one entry in a save, and the whole body of a test.
+// password is write-only: it rides TO the server and never back.
+// keepPassword means "the field this client never saw stays as it was" —
+// resolved by name against the saved list server-side, so an edit or a
+// deletion cannot shuffle a credential onto the wrong account.
+export interface MailAccountSpec {
+  name: string;
+  type: string;
+  root?: string;
+  host?: string;
+  port?: number;
+  username?: string;
+  password?: string;
+  keepPassword?: boolean;
+  mailbox?: string;
+  tls?: boolean;
+}
+
+// MailTestResponse is the test dial's honest report: ok with the box
+// count and a few names as proof of life, or not ok with the reason. A
+// dead server is an answer, not an error.
+export interface MailTestResponse {
+  ok: boolean;
+  boxes?: number;
+  sample?: string[];
+  error?: string;
+}
+
+// fetchMailAccounts pulls the configurator's read model. Gated like
+// every personal content endpoint.
+export async function fetchMailAccounts(): Promise<MailAccountsResponse> {
+  const res = await fetch('/api/personal/mail/accounts');
+  if (!res.ok) throw new Error(await parseErrorBody(res));
+  return res.json();
+}
+
+// saveMailAccounts replaces the whole saved list and returns the fresh
+// read model — one round-trip, and the server reloads its config so the
+// rail serves the new accounts without a restart.
+export async function saveMailAccounts(accounts: MailAccountSpec[]): Promise<MailAccountsResponse> {
+  const res = await fetch('/api/personal/mail/accounts', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ accounts }),
+  });
+  if (!res.ok) throw new Error(await parseErrorBody(res));
+  return res.json();
+}
+
+// testMailAccount dials ONE spec and reports. keepPassword resolves
+// server-side against the saved list, so a saved account can be tested
+// without its password ever crossing the wire. Persists nothing.
+export async function testMailAccount(spec: MailAccountSpec): Promise<MailTestResponse> {
+  const res = await fetch('/api/personal/mail/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(spec),
+  });
+  if (!res.ok) throw new Error(await parseErrorBody(res));
   return res.json();
 }
 
@@ -687,6 +1077,68 @@ export interface Extension {
 
 export async function fetchExtensions(): Promise<{ extensions: Extension[]; warnings: { path?: string; message: string }[] }> {
   const res = await fetch('/api/extensions');
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// ---- files (the split-screen browser) ----
+
+// One listing row. dir is NAVIGABILITY, not dirent type: a symlink whose
+// target is a directory carries dir:true AND symlink:true + target — the
+// row is honest about both facts (the server's ruling, mirrored verbatim).
+export interface FileEntry {
+  name: string;
+  dir: boolean;
+  size: number;
+  mtime: string;
+  symlink?: boolean;
+  target?: string;
+}
+
+export interface FilesListResponse {
+  path: string;
+  entries: FileEntry[];
+}
+
+export interface FilesReadResponse {
+  path: string;
+  content: string;
+  size: number;
+  lang?: string; // highlight.js id; '' ⇒ plaintext
+}
+
+export interface FilesWriteResponse {
+  path: string;
+  size: number;
+}
+
+// fetchFilesList with no path asks for the server's own cwd — the first
+// open seeds the address bar from wherever the server runs.
+export async function fetchFilesList(path?: string): Promise<FilesListResponse> {
+  const params = new URLSearchParams();
+  if (path) params.set('path', path);
+  const q = params.toString();
+  const res = await fetch(`/api/files/list${q ? `?${q}` : ''}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function fetchFilesRead(path: string): Promise<FilesReadResponse> {
+  const res = await fetch(`/api/files/read?${new URLSearchParams({ path })}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// The one write face. PUT (not POST) so the server's CSRF guard and the
+// browser's own semantics agree this is a mutation; refusals arrive as
+// honest error bodies (read-only mode, symlink targets, missing parents,
+// the 2 MB cap) and belong in a toast, not a silent rollback.
+export async function writeFiles(path: string, content: string): Promise<FilesWriteResponse> {
+  const res = await fetch('/api/files/write', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, content }),
+  });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }

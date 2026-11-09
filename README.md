@@ -48,11 +48,11 @@ models:
 
 **Context management** — fold-based compression with growth gating: compaction only triggers past a floor fraction of the window AND after real growth, so spikes don't burn tokens. KEEP/DROP doctrine rides in the compression prompts.
 
-**Web GUI** (`internal/webserver` + `web/`) — Preact + Vite frontend embedded in the binary: streaming chat with SSE, transcript replay of stored sessions, persona manager with avatar uploads, permission-mode cycling, branch picker, snapshot/rollback overlay, context breakdown, skills and settings modals, config editor, dark mode.
+**Web GUI** (`internal/webserver` + `web/`) — Preact + Vite frontend embedded in the binary: a widget dashboard as the landing surface (GitHub-style usage heatmap, pinned sessions, and a personal trio — a month-grid .ics calendar with RRULE expansion, a kanban board, and a multi-account mail reader covering local Maildirs and remote IMAP servers, with accounts and app passwords configurable right in the app (add/edit/test, the keyring never the letters) — behind one `personal.enabled` switch with per-model read/write opt-ins), a split-screen file browser with vendored syntax highlighting in preview AND edit (full-system navigation, `A1_FILES` kill-switch), streaming chat with SSE, transcript replay of stored sessions, persona manager with avatar uploads, permission-mode cycling, branch picker, snapshot/rollback overlay, context breakdown, skills and settings modals, config editor, dark mode, and an edge-hover session drawer collapsed by default at every viewport.
 
 **TUI** (`internal/tui`) — bubbletea frontend with the same engine: command palette (Ctrl+K), slash commands, APPA mode cycling (shift-tab), checklist rendering for TODO.md, session resume.
 
-**Skills** — 41 pre-built skills (language pros, framework pros, domain playbooks like rigorous-coding, agent-orchestration, spec-driven-development) that load into the system prompt and route by keyword trigger. `list_skills` exposes them to the model.
+**Skills** — 42 pre-built skills (language pros, framework pros, domain playbooks like rigorous-coding, agent-orchestration, spec-driven-development, harness-config for self-configuring the harness) that load into the system prompt and route by keyword trigger. `list_skills` exposes them to the model.
 
 **Extensions & MCP** — PXB subprocess extensions (`a1.yaml` under `~/.a1/extensions`), MCP meta-tools (`mcp_list` / `mcp_inspect` / `mcp_call` — never raw schemas on the model).
 

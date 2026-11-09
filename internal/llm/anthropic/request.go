@@ -7,6 +7,38 @@ type cacheControl struct {
 	TTL  string `json:"ttl,omitempty"`
 }
 
+// cacheTTL reports the TTL any cache_control marker in the request carries,
+// "" when none does. The walk is structural (system blocks, message content
+// blocks, tools) rather than a body-bytes sniff, so a future marker placed
+// anywhere turns the beta header on by existing — the header requirement
+// follows the field wherever it lands. Markers without a ttl (the plain
+// {"type":"ephemeral"} 5m default) report "", matching the API's own rule
+// that the header only matters when ttl is set.
+func (r *AnthropicRequest) cacheTTL() string {
+	for i := range r.System {
+		if cc := r.System[i].CacheControl; cc != nil && cc.TTL != "" {
+			return cc.TTL
+		}
+	}
+	for i := range r.Messages {
+		blocks, ok := r.Messages[i].Content.([]anthropicContentBlock)
+		if !ok {
+			continue
+		}
+		for j := range blocks {
+			if cc := blocks[j].CacheControl; cc != nil && cc.TTL != "" {
+				return cc.TTL
+			}
+		}
+	}
+	for i := range r.Tools {
+		if cc := r.Tools[i].CacheControl; cc != nil && cc.TTL != "" {
+			return cc.TTL
+		}
+	}
+	return ""
+}
+
 // thinkingConfig controls Anthropic's extended thinking feature.
 // Type "adaptive" lets the model decide how much to think;
 // Type "enabled" with BudgetTokens gives a fixed token budget.

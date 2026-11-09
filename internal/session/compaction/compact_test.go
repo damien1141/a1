@@ -1,6 +1,7 @@
 package compaction
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -27,6 +28,22 @@ func msgEntry(id string, role llm.Role, tokens, usage int) session.MessageEntry 
 		Message:          llm.Message{Role: role, Content: sizedContent(tokens)},
 		Usage:            llm.Usage{TotalTokens: usage},
 	}
+}
+
+func TestPrepareCompact_EmptySession_NoPanicNoOp(t *testing.T) {
+	// A brand-new session has no path entries. Before the guard, the cut
+	// logic indexed pathEntries[0] and panicked - /compact on a fresh session
+	// crashed the engine.
+	prep, err := PrepareCompact(context.Background(), nil, SettingsFor(32*1024))
+	require.NoError(t, err)
+	require.NotNil(t, prep)
+	assert.Empty(t, prep.FirstKeptEntryId)
+	assert.Empty(t, prep.MessagesToSummarize)
+
+	prep, err = PrepareCompact(context.Background(), []session.MessageEntry{}, SettingsFor(32*1024))
+	require.NoError(t, err)
+	require.NotNil(t, prep)
+	assert.Empty(t, prep.FirstKeptEntryId)
 }
 
 func TestPrepareCompact_AlreadyCompacted_ReturnsEmptyPreparation(t *testing.T) {

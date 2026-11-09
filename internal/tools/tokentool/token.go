@@ -146,8 +146,16 @@ func allocateTokens(task string, total, limit int) ([]tokenAllocation, error) {
 		})
 	}
 
+	// Descending tokens with a tool-name tie-break: names are unique keys,
+	// so (Tokens, Tool) is a total order and the sorted sequence is fixed
+	// even when equal weights round to equal counts — without it, an
+	// unstable sort over tied counts permutes per call and the head
+	// rounding remainder in normalizeAllocations lands on a random entry.
 	sort.Slice(allocations, func(i, j int) bool {
-		return allocations[i].Tokens > allocations[j].Tokens
+		if allocations[i].Tokens != allocations[j].Tokens {
+			return allocations[i].Tokens > allocations[j].Tokens
+		}
+		return allocations[i].Tool < allocations[j].Tool
 	})
 	if len(allocations) > limit {
 		allocations = allocations[:limit]
@@ -165,42 +173,22 @@ type toolWeight struct {
 
 func buildWeights(task string) []toolWeight {
 	taskLower := strings.ToLower(task)
-	weights := map[string]toolWeight{
-		"grep": {
-			Tool:      "grep",
-			Weight:    22,
-			Reasoning: "cheap high-recall search; default first pass",
-		},
-		"find": {
-			Tool:      "find",
-			Weight:    16,
-			Reasoning: "locates files before reading",
-		},
-		"read": {
-			Tool:      "read",
-			Weight:    24,
-			Reasoning: "reads highest-value files",
-		},
-		"bash": {
-			Tool:      "bash",
-			Weight:    14,
-			Reasoning: "runs cheap verification commands",
-		},
-		"stack": {
-			Tool:      "stack",
-			Weight:    10,
-			Reasoning: "traces call sites cheaply",
-		},
-		"impact": {
-			Tool:      "impact",
-			Weight:    8,
-			Reasoning: "checks blast radius after reading",
-		},
-		"context": {
-			Tool:      "context",
-			Weight:    6,
-			Reasoning: "fold-health check late in pass",
-		},
+	// The base table is declared as an ordered slice, not a map literal,
+	// because buildWeights must emit a deterministic sequence: ranging a
+	// map randomizes the order per call, and tied weights would then
+	// permute through the allocation sort below.
+	base := []toolWeight{
+		{Tool: "grep", Weight: 22, Reasoning: "cheap high-recall search; default first pass"},
+		{Tool: "find", Weight: 16, Reasoning: "locates files before reading"},
+		{Tool: "read", Weight: 24, Reasoning: "reads highest-value files"},
+		{Tool: "bash", Weight: 14, Reasoning: "runs cheap verification commands"},
+		{Tool: "stack", Weight: 10, Reasoning: "traces call sites cheaply"},
+		{Tool: "impact", Weight: 8, Reasoning: "checks blast radius after reading"},
+		{Tool: "context", Weight: 6, Reasoning: "fold-health check late in pass"},
+	}
+	weights := make(map[string]toolWeight, len(base))
+	for _, w := range base {
+		weights[w.Tool] = w
 	}
 
 	boost := func(name string, delta float64, reason string) {
@@ -263,12 +251,33 @@ func buildWeights(task string) []toolWeight {
 		weights["migration"] = toolWeight{Tool: "migration", Weight: 12, Reasoning: "multi-file coordination"}
 	}
 
+	// Deterministic emission: base-table order first, then keyword-spliced
+	// extras sorted by name. Never range the map here — its order is random
+	// per call, which is exactly the nondeterminism this function must not
+	// have.
+	inBase := make(map[string]bool, len(base))
+	for _, w := range base {
+		inBase[w.Tool] = true
+	}
 	var result []toolWeight
-	for _, w := range weights {
+	emit := func(w toolWeight) {
 		if w.Weight < 1 {
 			w.Weight = 1
 		}
 		result = append(result, w)
+	}
+	for _, w := range base {
+		emit(weights[w.Tool])
+	}
+	var extras []string
+	for name := range weights {
+		if !inBase[name] {
+			extras = append(extras, name)
+		}
+	}
+	sort.Strings(extras)
+	for _, name := range extras {
+		emit(weights[name])
 	}
 	return result
 }

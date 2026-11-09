@@ -25,6 +25,7 @@ import (
 	"github.com/damien1141/a1/internal/permission"
 	"github.com/damien1141/a1/internal/project"
 	"github.com/damien1141/a1/internal/schedule"
+	"github.com/damien1141/a1/internal/session"
 )
 
 // ServePort is where `a1 serve` listens (one above the loopback GUI).
@@ -132,7 +133,7 @@ func (s *Server) wireClock(ctx context.Context, proj *project.Project) {
 		_, serr := jobs.Spawn(ctx, job.SpawnRequest{
 			Prompt:      sc.Prompt,
 			Description: sc.Description,
-			ParentID:    "schedule:" + sc.ID,
+			ParentID:    session.ScheduleParentPrefix + sc.ID,
 			Role:        role,
 			WorkDir:     sc.WorkDir,
 			Contract:    sc.Contract,

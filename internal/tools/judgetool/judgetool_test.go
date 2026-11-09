@@ -6,6 +6,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -343,4 +345,83 @@ func TestDetailFromArgs(t *testing.T) {
 	assert.Equal(t, `judge {"risk": 0.8}`, detail)
 	detail = tool.DetailFromArgs(json.RawMessage(`{}`))
 	assert.Equal(t, "judge", detail)
+}
+
+// oracle: naive glob reference — the test re-implements the whole parse
+// independently: split each segment on commas, trim, skip blanks, join
+// relative patterns onto the cwd, re-run filepath.Glob itself, drop
+// directories and unstat-able entries, dedupe by path, and sort with a plain
+// sort.Slice. expandGlobs must produce exactly that set for relative
+// patterns, absolute patterns, duplicates, blank segments, and a directory
+// whose name matches a glob.
+func TestExpandGlobs_MatchesNaiveGlobReference_Differential(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "sub"), 0o755))
+	for _, f := range []string{"a.go", "b.go", "sub/c.go", "sub/d.md"} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, f), []byte("x\n"), 0o644))
+	}
+	// A directory whose name matches *.go must be filtered out by the stat
+	// check, not matched as a file.
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "trap.go"), 0o755))
+
+	ctx := tooldef.WithCwd(t.Context(), dir)
+
+	naive := func(segments []string) []string {
+		seen := map[string]bool{}
+		var out []string
+		for _, seg := range segments {
+			for _, p := range strings.Split(seg, ",") {
+				p = strings.TrimSpace(p)
+				if p == "" {
+					continue
+				}
+				if !filepath.IsAbs(p) {
+					p = filepath.Join(dir, p)
+				}
+				for _, m := range mustGlob(t, p) {
+					if info, err := os.Stat(m); err != nil || info.IsDir() {
+						continue
+					}
+					if !seen[m] {
+						seen[m] = true
+						out = append(out, m)
+					}
+				}
+			}
+		}
+		sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+		return out
+	}
+
+	cases := [][]string{
+		{"*.go"},
+		{"*.go", "*.go"},                     // duplicate pattern dedupes
+		{"*.go", "sub/*.md"},                 // mixed suffixes across dirs
+		{" ", "*.go ", " ", ",,"},            // blank segments skipped
+		{filepath.Join(dir, "*.go")},         // absolute pattern
+		{filepath.Join(dir, "a.go"), "a.go"}, // abs + rel pointing at the same file
+		{"sub/*"},
+		{"*.go,,sub/*.md,,"}, // commas inside one segment
+	}
+	for _, segments := range cases {
+		got, count, err := expandGlobs(ctx, strings.Join(segments, ","))
+		require.NoError(t, err, "segments %v", segments)
+		want := naive(segments)
+		assert.Equal(t, want, got, "segments %v", segments)
+		assert.Equal(t, len(want), count, "count for %v", segments)
+	}
+
+	// The trap directory itself must never appear in a *.go expansion.
+	got, _, err := expandGlobs(ctx, "*.go")
+	require.NoError(t, err)
+	for _, g := range got {
+		assert.NotEqual(t, filepath.Join(dir, "trap.go"), g, "directories matching a glob are excluded")
+	}
+}
+
+func mustGlob(t *testing.T, pattern string) []string {
+	t.Helper()
+	matches, err := filepath.Glob(pattern)
+	require.NoError(t, err)
+	return matches
 }

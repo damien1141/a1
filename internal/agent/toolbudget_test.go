@@ -21,7 +21,22 @@ import (
 // The tool-call budget caps executed calls per turn. Over-budget calls come
 // back as rejected results, the turn ends cleanly (no error), and a system
 // note lands in the session so the model and the user both see why the turn
-// stopped. Yolo permission mode overrides the budget with unlimited.
+// stopped. Unrestricted gates - yolo mode, the allow-all flags and overrides
+// - override the budget with unlimited.
+
+// plainAllowGate allows every check while staying a plain Gate: the budget
+// enforcement tests need a permissive gate the budget still binds. The real
+// allow-all shapes (AllowAll, an armed SessionAllowGate, the policy flags)
+// are unrestricted and lift the cap - using one here would test nothing.
+type plainAllowGate struct{}
+
+func (plainAllowGate) Check(context.Context, permission.Request) (permission.Decision, string) {
+        return permission.Allow, ""
+}
+
+func (plainAllowGate) Admit(context.Context, permission.Request) (permission.Decision, string) {
+        return permission.Allow, ""
+}
 
 func newBudgetTestEngine(t *testing.T, serverURL string, runs *atomic.Int32, maxToolCalls int, gate permission.Gate) *Engine {
         t.Helper()
@@ -60,7 +75,7 @@ func TestLoopMaxToolCallsStopsTurnCleanly(t *testing.T) {
         defer server.Close()
 
         var runs atomic.Int32
-        engine := newBudgetTestEngine(t, server.URL, &runs, 2, permission.AllowAll{})
+        engine := newBudgetTestEngine(t, server.URL, &runs, 2, plainAllowGate{})
 
         lastErr := runTurn(t, engine)
         require.NoError(t, lastErr, "hitting the tool-call budget ends the turn, not the loop with an error")
@@ -90,7 +105,7 @@ func TestLoopMaxToolCallsUnlimitedByDefault(t *testing.T) {
         defer server.Close()
 
         var runs atomic.Int32
-        engine := newBudgetTestEngine(t, server.URL, &runs, 0, permission.AllowAll{})
+        engine := newBudgetTestEngine(t, server.URL, &runs, 0, plainAllowGate{})
 
         lastErr := runTurn(t, engine)
         require.NoError(t, lastErr)
@@ -117,6 +132,92 @@ func TestLoopMaxToolCallsYoloOverridesBudget(t *testing.T) {
         require.NotContains(t, msgs[len(msgs)-1].Content, "tool call budget")
 }
 
+// TestLoopMaxToolCallsAllowAllShapesUnlimited pins the fix for the reported
+// bug: "yolo doesn't apply unlimited tool calls". Yolo reaches the engine as
+// more than one gate shape, and the old ModeOf-only check missed all but the
+// literal mode - `a1 run --yolo` builds a bare AllowAll, the TUI's allow-all
+// session override is an armed SessionAllowGate, and the config flags
+// short-circuit inside the StaticGate. Every shape must lift the cap.
+func TestLoopMaxToolCallsAllowAllShapesUnlimited(t *testing.T) {
+        t.Run("bare AllowAll (a1 run --yolo)", func(t *testing.T) {
+                server, _ := fakeToolSequenceServer(5)
+                defer server.Close()
+
+                var runs atomic.Int32
+                engine := newBudgetTestEngine(t, server.URL, &runs, 2, permission.AllowAll{})
+
+                lastErr := runTurn(t, engine)
+                require.NoError(t, lastErr)
+                require.Equal(t, int32(5), runs.Load(),
+                        "--yolo (AllowAll gate) must not enforce the tool-call budget")
+
+                msgs := engine.session.BuildContext()
+                require.NotEmpty(t, msgs)
+                require.NotContains(t, msgs[len(msgs)-1].Content, "tool call budget")
+        })
+
+        t.Run("armed SessionAllowGate (TUI allow-all override)", func(t *testing.T) {
+                server, _ := fakeToolSequenceServer(5)
+                defer server.Close()
+
+                inner, err := permission.NewGate(permission.Policy{Mode: permission.ModeInteractive}, t.TempDir())
+                require.NoError(t, err)
+                var armed atomic.Bool
+                armed.Store(true)
+                gate := &permission.SessionAllowGate{Inner: inner, Enabled: &armed}
+
+                var runs atomic.Int32
+                engine := newBudgetTestEngine(t, server.URL, &runs, 2, gate)
+
+                lastErr := runTurn(t, engine)
+                require.NoError(t, lastErr)
+                require.Equal(t, int32(5), runs.Load(),
+                        "an armed session override must not enforce the tool-call budget")
+        })
+
+        t.Run("dangerously_allow_all policy flag", func(t *testing.T) {
+                server, _ := fakeToolSequenceServer(5)
+                defer server.Close()
+
+                gate, err := permission.NewGate(permission.Policy{
+                        Mode:                permission.ModeInteractive,
+                        DangerouslyAllowAll: true,
+                }, t.TempDir())
+                require.NoError(t, err)
+
+                var runs atomic.Int32
+                engine := newBudgetTestEngine(t, server.URL, &runs, 2, gate)
+
+                lastErr := runTurn(t, engine)
+                require.NoError(t, lastErr)
+                require.Equal(t, int32(5), runs.Load(),
+                        "dangerously_allow_all must not enforce the tool-call budget")
+        })
+
+        t.Run("disarmed override still enforces", func(t *testing.T) {
+                server, _ := fakeToolSequenceServer(5)
+                defer server.Close()
+
+                inner, err := permission.NewGate(permission.Policy{Mode: permission.ModeHeadlessStrict}, t.TempDir())
+                require.NoError(t, err)
+                var armed atomic.Bool // disarmed
+                gate := &permission.SessionAllowGate{Inner: inner, Enabled: &armed}
+
+                var runs atomic.Int32
+                engine := newBudgetTestEngine(t, server.URL, &runs, 2, gate)
+
+                lastErr := runTurn(t, engine)
+                require.NoError(t, lastErr)
+                // The inner headless-strict gate folds unknown-action Ask to Deny, so
+                // the count tool never runs - but the budget machinery itself is live.
+                // The enforcement assertion lives in the plainAllowGate tests above;
+                // this case pins that a disarmed override does not lift the cap by
+                // itself (Unrestricted defers to the inner gate).
+                require.LessOrEqual(t, runs.Load(), int32(2),
+                        "a disarmed override must not lift the tool-call budget")
+        })
+}
+
 func TestLoopMaxToolCallsCountsBatchedCalls(t *testing.T) {
         // One stream round that batches three calls consumes three slots: with a
         // budget of 2 the first two run and the third is rejected.
@@ -124,7 +225,7 @@ func TestLoopMaxToolCallsCountsBatchedCalls(t *testing.T) {
         defer server.Close()
 
         var runs atomic.Int32
-        engine := newBudgetTestEngine(t, server.URL, &runs, 2, permission.AllowAll{})
+        engine := newBudgetTestEngine(t, server.URL, &runs, 2, plainAllowGate{})
 
         lastErr := runTurn(t, engine)
         require.NoError(t, lastErr)
@@ -144,7 +245,7 @@ func TestSetMaxToolCallsMidLoop(t *testing.T) {
         defer server.Close()
 
         var runs atomic.Int32
-        engine := newBudgetTestEngine(t, server.URL, &runs, 2, permission.AllowAll{})
+        engine := newBudgetTestEngine(t, server.URL, &runs, 2, plainAllowGate{})
 
         rounds := 0
         for ev, err := range engine.Loop(t.Context(), "go", LoopOpts{}) {

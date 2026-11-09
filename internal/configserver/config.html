@@ -5,6 +5,28 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>A1 config</title>
 <link rel="icon" type="image/svg+xml" href="/dodecahedron.svg">
+<script>
+  // Theme boot: resolve light/dark BEFORE first paint. Precedence: a
+  // data-theme the SERVER stamped from the config file's web.dark_mode
+  // (the key the chat UI's theme button toggles) wins outright; otherwise
+  // fall back to this origin's stored choice (the chat UI's localStorage
+  // key — same origin) and then the OS preference. Same chain as the chat
+  // page's boot snippet, so the two documents can never disagree about
+  // which choice outranks which.
+  (function () {
+    var el = document.documentElement;
+    if (el.dataset.theme === 'light' || el.dataset.theme === 'dark') return;
+    try {
+      var t = localStorage.getItem('a1-theme');
+      if (t !== 'light' && t !== 'dark') {
+        t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+      el.dataset.theme = t;
+    } catch (e) {
+      el.dataset.theme = 'light';
+    }
+  })();
+</script>
 <style>
   /* ============================================================
      a1 settings — the chat UI's design language, applied end to end.
@@ -21,6 +43,7 @@
     --surface: #FBF7EE;
     --surface-strong: #FFFFFF;
     --surface-muted: #EFE8DB;
+    --surface-sunk: rgba(0, 0, 0, 0.02);
     /* Lines. */
     --border: #D8CFBE;
     --border-strong: #B8AE99;
@@ -28,11 +51,13 @@
     --text: #2A2622;
     --text-muted: #4A433C;
     --text-subtle: #6B6158;
+    --placeholder: #978D7E;
     /* Brand accents. */
     --accent: #537D96;          /* seal */
     --accent-strong: #3F6179;   /* seal-hover */
     --accent-light: rgba(83, 125, 150, 0.08);
     --accent-halo: rgba(83, 125, 150, 0.16);
+    --on-accent: #F7F4EC;       /* text on a filled seal button */
     --blue: #537D96;            /* legacy alias */
     --blue-strong: #3F6179;     /* legacy alias */
     --green: #4A6B4A;           /* moss */
@@ -43,12 +68,58 @@
     --red: #8B2C1F;             /* cinnabar */
     --red-3: #6A1F15;
     --red-light: rgba(139, 44, 31, 0.07);
+    --red-hover: rgba(139, 44, 31, 0.08);
+    /* Glass + shadow for the fixed save bar. */
+    --bar-glass: rgba(245, 239, 228, 0.92);
     /* Typography mirrors the chat UI. */
     --font-ui: 'HarmonyOS Sans', 'Noto Sans SC', 'Noto Sans', 'Segoe UI', sans-serif;
     --font-serif: 'EB Garamond', 'Noto Serif SC', 'Songti SC', serif;
     --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     --shadow-card: 0 1px 2px rgba(42, 38, 34, 0.04);
     --shadow-lift: 0 6px 18px rgba(42, 38, 34, 0.07);
+    --shadow-bar: 0 -6px 18px rgba(42, 38, 34, 0.05);
+  }
+
+  /* Dark: the chat UI's warm charcoal, token-for-token (web/src/styles.css
+     [data-theme="dark"]). The whole page themes by variable swap — every
+     rule below reads a token, so one block retunes the document. The few
+     values that were baked (the filled button's text, placeholders, the
+     save bar's glass) were promoted to tokens above for exactly this
+     moment. "Strong" text/border forms INVERT direction on dark: light
+     mode deepens them for contrast against paper, dark mode lifts them. */
+  [data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #1B1814;
+    --surface: #26221B;
+    --surface-strong: #2C2820;
+    --surface-muted: #161310;
+    --surface-sunk: rgba(255, 255, 255, 0.03);
+    --border: #3B352C;
+    --border-strong: #59534A;
+    --text: #E9E3D7;
+    --text-muted: #C7BEAF;
+    --text-subtle: #948A7B;
+    --placeholder: #7D7466;
+    --accent: #7FA9C4;
+    --accent-strong: #9DBDD3;
+    --accent-light: rgba(127, 169, 196, 0.08);
+    --accent-halo: rgba(127, 169, 196, 0.16);
+    --on-accent: #1B1814;       /* dark text on the lightened seal */
+    --blue: #7FA9C4;
+    --blue-strong: #9DBDD3;
+    --green: #86AC86;
+    --green-3: #A5C8A5;
+    --moss-light: rgba(134, 172, 134, 0.12);
+    --amber: #D9A62E;
+    --amber-light: rgba(217, 166, 46, 0.12);
+    --red: #D07464;
+    --red-3: #E08D7E;
+    --red-light: rgba(208, 116, 100, 0.10);
+    --red-hover: rgba(208, 116, 100, 0.12);
+    --bar-glass: rgba(27, 24, 20, 0.92);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow-lift: 0 6px 18px rgba(0, 0, 0, 0.5);
+    --shadow-bar: 0 -6px 18px rgba(0, 0, 0, 0.45);
   }
 
   * { box-sizing: border-box; }
@@ -261,19 +332,22 @@
     outline-offset: 2px;
   }
 
-  /* The single filled control on the page: seal, like the chat's accent. */
+  /* The single filled control on the page: seal, like the chat's accent.
+     Text is the on-accent token — white-on-paper in light, the webui's
+     dark-on-light-seal convention in dark (a lightened seal takes dark
+     text, same as --on-seal there). */
   .button.primary,
   #save.primary {
     border-color: var(--accent-strong);
     background: var(--accent-strong);
-    color: #F7F4EC;
+    color: var(--on-accent);
   }
 
   .button.primary:not(:disabled):hover,
   #save.primary:not(:disabled):hover {
     border-color: var(--accent);
     background: var(--accent);
-    color: #FFFFFF;
+    color: var(--on-accent);
   }
 
   .button.secondary { background: transparent; }
@@ -558,7 +632,7 @@
     line-height: 1.45;
   }
 
-  input::placeholder, textarea::placeholder { color: #978D7E; }
+  input::placeholder, textarea::placeholder { color: var(--placeholder); }
 
   .input-shell {
     display: flex;
@@ -695,7 +769,7 @@
     padding: 16px;
     border: 1px solid var(--border);
     border-radius: 8px;
-    background: var(--surface-sunk, rgba(0,0,0,0.02));
+    background: var(--surface-sunk);
   }
 
   .persona-editor-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
@@ -705,7 +779,7 @@
   .mcp-hint-inline { font-size: 11px; color: var(--muted, var(--text-3)); font-style: italic; }
 
   .button.tertiary.danger { color: var(--red); }
-  .button.tertiary.danger:not(:disabled):hover { background: rgba(139, 44, 31, 0.08); }
+  .button.tertiary.danger:not(:disabled):hover { background: var(--red-hover); }
 
   .settings-fields {
     display: grid;
@@ -818,10 +892,10 @@
     bottom: 0;
     left: 0;
     border-top: 1px solid var(--border);
-    background: rgba(245, 239, 228, 0.92);
+    background: var(--bar-glass);
     -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
-    box-shadow: 0 -6px 18px rgba(42, 38, 34, 0.05);
+    box-shadow: var(--shadow-bar);
   }
 
   .footer-inner {
@@ -1005,6 +1079,17 @@
     .stats-grid { grid-template-columns: minmax(0, 1fr); }
     .tool-row { grid-template-columns: minmax(0, 1fr) repeat(3, minmax(0, 1fr)); gap: 10px; }
   }
+
+  /* The brand-mark dodecahedron's strokes are baked hex (a generated
+     snapshot, not hand-tuned values). The dark theme re-tints them by
+     attribute selector: CSS properties outrank SVG presentation
+     attributes in the cascade, so the override needs no SVG edit — the
+     wireframe reads seal-on-charcoal instead of seal-on-paper. */
+  [data-theme="dark"] .brand-mark line[stroke="#3F6179"] { stroke: #9DBDD3; }
+  [data-theme="dark"] .brand-mark line[stroke="#537D96"] { stroke: #7FA9C4; }
+  [data-theme="dark"] .brand-mark line[stroke="#8B2C1F"] { stroke: #D07464; }
+  [data-theme="dark"] .brand-mark circle[fill="#537D96"] { fill: #7FA9C4; }
+  [data-theme="dark"] .brand-mark circle[fill="#8B2C1F"] { fill: #D07464; }
   </style>
 </head>
 <body>
@@ -1288,41 +1373,6 @@
       <section class="panel">
         <div class="panel-head">
           <div>
-            <div class="panel-title">Weather forecast</div>
-            <p class="panel-help">Inject a weekly Open-Meteo forecast into the agent context. Off by default — opt in by enabling and entering your location.</p>
-          </div>
-        </div>
-        <div class="panel-body toggle-list">
-          <label class="toggle-row">
-            <input id="weatherEnabled" type="checkbox">
-            <span>
-              <span class="toggle-title">Enable weekly forecast</span>
-              <span class="toggle-help">Adds a "This week's weather forecast for &lt;name&gt;…" system message to every turn. Forecast is cached for 30 minutes.</span>
-            </span>
-          </label>
-        </div>
-        <div class="panel-body settings-fields" id="weatherFields">
-          <div class="field">
-            <label class="field-label" for="weatherLatitude">Latitude</label>
-            <div class="field-help">Decimal degrees (e.g. 64.13 for Reykjavik).</div>
-            <input id="weatherLatitude" type="number" step="0.0001" min="-90" max="90" inputmode="decimal" placeholder="64.13">
-          </div>
-          <div class="field">
-            <label class="field-label" for="weatherLongitude">Longitude</label>
-            <div class="field-help">Decimal degrees (e.g. -21.94 for Reykjavik).</div>
-            <input id="weatherLongitude" type="number" step="0.0001" min="-180" max="180" inputmode="decimal" placeholder="-21.94">
-          </div>
-          <div class="field field-full">
-            <label class="field-label" for="weatherName">Display name</label>
-            <div class="field-help">Optional. Shown in the forecast header, e.g. "Reykjavik" instead of "64.130,-21.940".</div>
-            <input id="weatherName" type="text" placeholder="e.g. Reykjavik" autocomplete="off">
-          </div>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <div>
             <div class="panel-title">Web GUI</div>
             <p class="panel-help">How the browser chat surface behaves.</p>
           </div>
@@ -1335,6 +1385,36 @@
               <span class="toggle-help">After a session's first exchange, the memory-ops model writes a 2–6 word title that replaces the first-message preview in the sidebar.</span>
             </span>
           </label>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title" data-i18n="personalHeading">Personal data</div>
+            <p class="panel-help" data-i18n="personalHelp">The dashboard's calendar, kanban, and mail widgets — all local files, no online sync. The master switch gates the widgets; per-model read/write toggles (on each model card) gate what the agent itself may touch.</p>
+          </div>
+        </div>
+        <div class="panel-body toggle-list">
+          <label class="toggle-row">
+            <input id="personalEnabled" type="checkbox">
+            <span>
+              <span class="toggle-title" data-i18n="personalEnabledTitle">Allow access to personal data</span>
+              <span class="toggle-help" data-i18n="personalEnabledHelp">Unlocks the dashboard's calendar, kanban, and mail widgets. Everything stays on this machine.</span>
+            </span>
+          </label>
+        </div>
+        <div class="panel-body settings-fields" id="personalFields" hidden>
+          <div class="field">
+            <label class="field-label" for="personalCalendarDir" data-i18n="personalCalendarDirLabel">Calendar directory</label>
+            <div class="field-help" data-i18n="personalCalendarDirHelp">A local folder of .ics files. No CalDAV, no sync — the files are the calendar.</div>
+            <input id="personalCalendarDir" type="text" data-i18n-placeholder="personalCalendarDirPlaceholder" placeholder="e.g. ~/.a1/calendar" autocomplete="off">
+          </div>
+          <div class="field">
+            <label class="field-label" for="personalMailDir" data-i18n="personalMailDirLabel">Mail directory</label>
+            <div class="field-help" data-i18n="personalMailDirHelp">A local Maildir folder, read-only in the harness. Flags are never written back.</div>
+            <input id="personalMailDir" type="text" data-i18n-placeholder="personalMailDirPlaceholder" placeholder="e.g. ~/.a1/mail" autocomplete="off">
+          </div>
         </div>
       </section>
 
@@ -1705,6 +1785,20 @@ const I18N = {
     noStats: "No tool usage recorded yet.",
     thinkEnabledLabel: "Thinking enabled",
     thinkEnabledHelp: "Allow this model to use extended thinking.",
+    personalHeading: "Personal data",
+    personalHelp: "The dashboard's calendar, kanban, and mail widgets — all local files, no online sync. The master switch gates the widgets; per-model read/write toggles (on each model card) gate what the agent itself may touch.",
+    personalEnabledTitle: "Allow access to personal data",
+    personalEnabledHelp: "Unlocks the dashboard's calendar, kanban, and mail widgets. Everything stays on this machine.",
+    personalCalendarDirLabel: "Calendar directory",
+    personalCalendarDirHelp: "A local folder of .ics files. No CalDAV, no sync — the files are the calendar.",
+    personalCalendarDirPlaceholder: "e.g. ~/.a1/calendar",
+    personalMailDirLabel: "Mail directory",
+    personalMailDirHelp: "A local Maildir folder, read-only in the harness. Flags are never written back.",
+    personalMailDirPlaceholder: "e.g. ~/.a1/mail",
+    personalReadLabel: "Personal read",
+    personalReadHelp: "Let this model read the calendar, kanban board, and mail through personal tools.",
+    personalWriteLabel: "Personal write",
+    personalWriteHelp: "Let this model write calendar events and kanban cards. Mail stays read-only.",
   },
   zh: {
     documentTitle: "A1 配置中心",
@@ -1889,6 +1983,20 @@ const I18N = {
     noStats: "暂无工具使用记录。",
     thinkEnabledLabel: "启用思考",
     thinkEnabledHelp: "允许该模型使用扩展思考。",
+    personalHeading: "个人数据",
+    personalHelp: "仪表盘的日历、看板和邮件小组件——全部读取本地文件，不做在线同步。总开关控制小组件；每个模型卡片上的读/写开关控制模型本身能访问什么。",
+    personalEnabledTitle: "允许访问个人数据",
+    personalEnabledHelp: "解锁仪表盘的日历、看板和邮件小组件。一切数据都保留在本机。",
+    personalCalendarDirLabel: "日历目录",
+    personalCalendarDirHelp: "存放 .ics 文件的本地目录。没有 CalDAV、没有同步——文件即日历。",
+    personalCalendarDirPlaceholder: "例如 ~/.a1/calendar",
+    personalMailDirLabel: "邮件目录",
+    personalMailDirHelp: "本地 Maildir 目录，harness 只读。绝不回写邮件标志。",
+    personalMailDirPlaceholder: "例如 ~/.a1/mail",
+    personalReadLabel: "个人数据读取",
+    personalReadHelp: "允许该模型通过个人数据工具读取日历、看板和邮件。",
+    personalWriteLabel: "个人数据写入",
+    personalWriteHelp: "允许该模型写入日历事件和看板卡片。邮件始终只读。",
   },
 };
 
@@ -1911,6 +2019,7 @@ const dirty = {
   semantic: false,
   jev: false,
   browser: false,
+  personal: false,
 };
 
 function detectLang() {
@@ -2214,7 +2323,10 @@ function renderStats(snapshot) {
 
   if (!snapshot || (snapshot.totalCalls == null && Object.keys(snapshot.byTool || {}).length === 0)) {
     summary.innerHTML = "";
-    usage.innerHTML = el("div", { class: "stats-empty" }, t("noStats"));
+    // replaceChildren, not innerHTML: el() returns an ELEMENT, and assigning
+    // one to innerHTML stringifies it ("[object HTMLDivElement]" rendered as
+    // literal text — the empty-stats state every fresh setup sees).
+    usage.replaceChildren(el("div", { class: "stats-empty" }, t("noStats")));
     return;
   }
 
@@ -2243,7 +2355,7 @@ function renderStats(snapshot) {
   const tools = Object.keys(byTool).sort((a, b) => (byTool[b] || 0) - (byTool[a] || 0));
 
   if (tools.length === 0) {
-    usage.innerHTML = el("div", { class: "stats-empty" }, t("noStats"));
+    usage.replaceChildren(el("div", { class: "stats-empty" }, t("noStats")));
     return;
   }
 
@@ -2340,6 +2452,16 @@ function addModelRow(model) {
     type: "checkbox",
     "aria-label": t("imageEnabled"),
   });
+  const personalRead = el("input", {
+    id: "model-personal-read-" + id,
+    type: "checkbox",
+    "aria-label": t("personalReadLabel"),
+  });
+  const personalWrite = el("input", {
+    id: "model-personal-write-" + id,
+    type: "checkbox",
+    "aria-label": t("personalWriteLabel"),
+  });
   const def = el("input", { type: "radio", name: "default-model" });
   const fetchButton = el("button", {
     type: "button",
@@ -2372,6 +2494,8 @@ function addModelRow(model) {
   if (value.contextWindow) context.value = value.contextWindow;
   if (value.imageEnabled) image.checked = true;
   if (value.thinkEnabled != null) thinkEnabled.checked = value.thinkEnabled;
+  if (value.personalRead) personalRead.checked = true;
+  if (value.personalWrite) personalWrite.checked = true;
   if (value.default || (!model && modelRows.length === 0)) def.checked = true;
 
   const badge = el("span", { class: "model-badge", hidden: "hidden" }, t("startupModel"));
@@ -2390,6 +2514,12 @@ function addModelRow(model) {
     origImageEnabled: value.imageEnabled != null ? value.imageEnabled : null,
     thinkEnabledTouched: false,
     origThinkEnabled: value.thinkEnabled != null ? value.thinkEnabled : null,
+    personalRead,
+    personalWrite,
+    personalReadTouched: false,
+    origPersonalRead: value.personalRead != null ? value.personalRead : null,
+    personalWriteTouched: false,
+    origPersonalWrite: value.personalWrite != null ? value.personalWrite : null,
     def,
     fetchButton,
     modelPicker,
@@ -2426,6 +2556,8 @@ function addModelRow(model) {
     field("thinkEnabled", "thinkEnabledHelp", thinkEnabled, "field-think-enabled", thinkEnabled.id),
     field("contextWindow", "contextWindowHelp", context, "field-context", context.id, "tokens"),
     field("imageEnabled", "imageEnabledHelp", image, "field-image", image.id),
+    field("personalReadLabel", "personalReadHelp", personalRead, "field-personal-read", personalRead.id),
+    field("personalWriteLabel", "personalWriteHelp", personalWrite, "field-personal-write", personalWrite.id),
   );
 
   const defaultLabel = el("label", { class: "default-control" }, def, el("span", { "data-i18n": "setStartupModel" }, t("setStartupModel")));
@@ -2468,6 +2600,8 @@ function addModelRow(model) {
   });
   context.addEventListener("input", () => { markDirty("models"); });
   image.addEventListener("change", () => { row.imageTouched = true; markDirty("models"); });
+  personalRead.addEventListener("change", () => { row.personalReadTouched = true; markDirty("models"); });
+  personalWrite.addEventListener("change", () => { row.personalWriteTouched = true; markDirty("models"); });
   def.addEventListener("change", () => {
     markDirty("models");
     syncModelStates();
@@ -2635,16 +2769,19 @@ async function load(messageKey, expectedVersion) {
     // than an undefined that reads as off.
     $("autoExpand").checked = ui.autoExpandToolOutput == null ? true : !!ui.autoExpandToolOutput;
 
-    // Weather (Open-Meteo weekly forecast, default-off).
-    const weather = doc.weather || {};
-    $("weatherEnabled").checked = !!weather.enabled;
-    $("weatherLatitude").value = weather.latitude || "";
-    $("weatherLongitude").value = weather.longitude || "";
-    $("weatherName").value = weather.name || "";
-
     // Web GUI (smart session names default to on when the key is absent).
     const web = doc.web || {};
     $("autoNameSessions").checked = web.autoNameSessions == null ? true : !!web.autoNameSessions;
+
+    // Personal data (personal: section). The master switch gates the
+    // dashboard's calendar / kanban / mail widgets; the directory fields
+    // sit under it. Paths round-trip verbatim — ~ expansion happens at
+    // runtime parse, not in the editor.
+    const personal = doc.personal || {};
+    $("personalEnabled").checked = !!personal.enabled;
+    $("personalCalendarDir").value = personal.calendarDir || "";
+    $("personalMailDir").value = personal.mailDir || "";
+    $("personalFields").hidden = !$("personalEnabled").checked;
 
     updateModeHint();
     resetDirty();
@@ -2669,6 +2806,8 @@ function buildPayload() {
       thinkLevel: row.think.value.trim() || null,
       contextWindow: readOptionalInteger(row.context),
       imageEnabled: row.imageTouched ? row.image.checked : row.origImageEnabled,
+      personalRead: row.personalReadTouched ? row.personalRead.checked : row.origPersonalRead,
+      personalWrite: row.personalWriteTouched ? row.personalWrite.checked : row.origPersonalWrite,
       default: row.def.checked,
     })),
     skillPath: dirty.skillPath ? ($("skillPath").value.trim() || null) : (orig && orig.skillPath != null ? orig.skillPath : null),
@@ -2701,13 +2840,16 @@ function buildPayload() {
     } : (orig && orig.ui != null ? orig.ui : { autoExpandToolOutput: true }),
     web: dirty.autoName ? {
       autoNameSessions: $("autoNameSessions").checked,
+      // No theme form here — the chat UI's theme button owns darkMode.
+      // Round-trip whatever the file had so saving the auto-name toggle
+      // cannot reset the theme (the server carries it too; belt+braces).
+      darkMode: orig && orig.web != null ? (orig.web.darkMode ?? null) : null,
     } : (orig && orig.web != null ? orig.web : null),
-    weather: dirty.weather ? {
-      enabled: $("weatherEnabled").checked,
-      latitude: parseFloat($("weatherLatitude").value) || 0,
-      longitude: parseFloat($("weatherLongitude").value) || 0,
-      name: $("weatherName").value.trim() || null,
-    } : (orig && orig.weather != null ? orig.weather : null),
+    personal: dirty.personal ? {
+      enabled: $("personalEnabled").checked,
+      calendarDir: $("personalCalendarDir").value.trim() || null,
+      mailDir: $("personalMailDir").value.trim() || null,
+    } : (orig && orig.personal != null ? orig.personal : null),
     personas: orig && orig.personas != null ? orig.personas : null,
     // Checks + schedules have no form; round-trip whatever the file had so
     // a full-document save cannot wipe them.
@@ -2804,18 +2946,14 @@ $("browserProxy").addEventListener("input", () => markDirty("browser"));
 
 $("autoExpand").addEventListener("change", () => markDirty("autoExpand"));
 
-// Weather + Personas — new fields added when bringing the config editor
-// up to speed with the kami design language and the persona/weather agent
-// context injections. The fields are wired to the same dirty + payload
-// pipeline as the rest of the form so a save round-trips through /api/config
-// and the agent picks up the new values on the next turn (after the
-// webserver reloads the project config and refreshes the weather service).
-$("weatherEnabled").addEventListener("change", () => markDirty("weather"));
-$("weatherLatitude").addEventListener("input", () => markDirty("weather"));
-$("weatherLongitude").addEventListener("input", () => markDirty("weather"));
-$("weatherName").addEventListener("input", () => markDirty("weather"));
-
 $("autoNameSessions").addEventListener("change", () => markDirty("autoName"));
+
+$("personalEnabled").addEventListener("change", () => {
+  markDirty("personal");
+  $("personalFields").hidden = !$("personalEnabled").checked;
+});
+$("personalCalendarDir").addEventListener("input", () => markDirty("personal"));
+$("personalMailDir").addEventListener("input", () => markDirty("personal"));
 
 // ---- Persona manager (live registry via the web GUI's /api/personas) ----
 

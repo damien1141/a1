@@ -134,8 +134,9 @@ func TestSelectBuiltinToolsErrorListsAvailableNames(t *testing.T) {
         // Post-collapse (worklog Task 3): the available list is the
         // DefaultTools set, in registration order. Pre-collapse the list
         // included grep / ls / edit / find / etc.; those are now modes of
-        // search / read / write. Phase 1 added the git facade (19th).
-        assert.ErrorContains(t, err, "available: bash, git, read, write, search, ask_user, test, secret, fetch, browser, browser_navigate, browser_interact, browser_read, context, vector_search, code, docsync, document, permission")
+        // search / read / write. Phase 1 added the git facade; the
+        // scripttool steal added script (programmatic tool calling).
+        assert.ErrorContains(t, err, "available: bash, script, git, read, write, search, ask_user, test, secret, fetch, browser, browser_navigate, browser_interact, browser_read, context, vector_search, code, docsync, document, permission")
 }
 
 func TestSelectedBuiltinToolsStillAppendExternalTools(t *testing.T) {

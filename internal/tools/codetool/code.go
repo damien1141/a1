@@ -78,8 +78,13 @@ Code facts (path/glob/limit): api exported surface | deadcode unused symbols |
   nplusone N+1 queries | vuln govulncheck | token token-count
 Tests/build: coverage | testimpact tests to run | property skeletons
 Writes: scaffold templates | migration API migration
-judge: decision-model (JEV) classification of state or files (see the
-  judge tool's schema for questions/state/files).`
+judge: classification by the decision model, without loading content into
+  context. questions is a JSON object mapping names to definitions —
+  {"todo": {"type": "noul", "criteria": {"true": "mentions a TODO/FIXME"}}}
+  (types: noul yes/no, choice one-of list, score ordered levels best last) —
+  then either state (text or JSON, judged once) or files (comma-separated
+  globs, each judged independently). Answers carry confidence; report them
+  as given.`
 
 // codeModes is the list of accepted mode values. Listed here for the
 // schema's enum field so the LLM gets a constrained choice instead of a

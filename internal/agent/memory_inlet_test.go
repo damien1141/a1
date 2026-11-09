@@ -1,100 +1,87 @@
 package agent
 
 import (
+        "context"
+        "net/http"
+        "net/http/httptest"
         "os"
         "path/filepath"
         "testing"
+        "time"
 
         "github.com/stretchr/testify/assert"
         "github.com/stretchr/testify/require"
 
         "github.com/damien1141/a1/internal/llm"
+        "github.com/damien1141/a1/internal/memstore"
 )
 
-// TestInjectMemoryBeforeLastUser_NilMsg verifies that passing a nil memMsg
-// returns the input slice unchanged.
-func TestInjectMemoryBeforeLastUser_NilMsg(t *testing.T) {
-        msgs := []llm.Message{
-                {Role: llm.RoleSystem, Content: "system"},
-                {Role: llm.RoleUser, Content: "hello"},
-                {Role: llm.RoleAssistant, Content: "hi"},
-        }
-        got := injectMemoryBeforeLastUser(msgs, nil)
-        assert.Equal(t, msgs, got, "nil memMsg should return input unchanged")
+// TestBuildRuntimeRider_EmptyWithoutSections pins the skip: a turn with no
+// fresh memories and no job notices produces NO rider — an empty user
+// message in history would cost a cache-write round for zero content. The
+// clock and the forecast that used to guarantee a non-empty rider are fetch
+// engines now, so the empty rider is the common case, not the exception.
+func TestBuildRuntimeRider_EmptyWithoutSections(t *testing.T) {
+        sess, err := NewSession(WithCwd(t.TempDir()))
+        require.NoError(t, err)
+        eng, err := NewEngine(llm.ModelConfig{Name: "fake", BaseURL: "http://127.0.0.1:9", APIKey: "x"}, sess)
+        require.NoError(t, err)
+
+        rider, ok := eng.buildRuntimeRider(t.Context(), "hello")
+        assert.False(t, ok, "no fresh memories, no job notices: no rider at all")
+        assert.Empty(t, rider.Content)
 }
 
-// TestInjectMemoryBeforeLastUser_LastUserAtEnd covers the common case:
-// system + user + assistant + user (latest at the end). The memory block
-// should be inserted immediately before the last user message.
-func TestInjectMemoryBeforeLastUser_LastUserAtEnd(t *testing.T) {
-        msgs := []llm.Message{
-                {Role: llm.RoleSystem, Content: "system"},
-                {Role: llm.RoleUser, Content: "first question"},
-                {Role: llm.RoleAssistant, Content: "first answer"},
-                {Role: llm.RoleUser, Content: "second question"},
-        }
-        memMsg := &llm.Message{Role: llm.RoleSystem, Content: "memory block"}
-        got := injectMemoryBeforeLastUser(msgs, memMsg)
-        assert.Len(t, got, len(msgs)+1)
-        // Verify insertion point: the memory block is at index 3, right before
-        // the last user message which is now at index 4.
-        assert.Equal(t, "memory block", got[3].Content, "memory should be inserted before last user")
-        assert.Equal(t, "second question", got[4].Content, "last user msg should now be at index 4")
-        assert.Equal(t, llm.RoleUser, got[4].Role)
-}
+// TestBuildRuntimeRider_MemoryChangeGate pins the change gate: a memory
+// bundle identical to the last one persisted is NOT re-sent — it is already
+// frozen in history from the turn that injected it, and re-sending it would
+// duplicate the block forever. A cleared gate (persona switch) re-injects.
+func TestBuildRuntimeRider_MemoryChangeGate(t *testing.T) {
+        _, pstore, semStore := setupMemoryE2E(t)
 
-// TestInjectMemoryBeforeLastUser_NoUserMsg covers the edge case where
-// there's no user message at all. The memory block should be appended at
-// the end (rather than panic on a missing index).
-func TestInjectMemoryBeforeLastUser_NoUserMsg(t *testing.T) {
-        msgs := []llm.Message{
-                {Role: llm.RoleSystem, Content: "system"},
-                {Role: llm.RoleAssistant, Content: "answer"},
-        }
-        memMsg := &llm.Message{Role: llm.RoleSystem, Content: "memory block"}
-        got := injectMemoryBeforeLastUser(msgs, memMsg)
-        assert.Len(t, got, len(msgs)+1)
-        assert.Equal(t, "memory block", got[len(got)-1].Content, "with no user msg, memory appended at end")
-}
+        const memoryContent = "The user's name is Solis and they build Go agent harnesses."
+        srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                require.Equal(t, "/chat/completions", r.URL.Path)
+                w.Header().Set("Content-Type", "application/json")
+                _, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"{\"ops\":[{\"operation\":\"CREATE\",\"content\":\"` + memoryContent + `\",\"kind\":\"fact\",\"scope\":\"user\"}]}"},"finish_reason":"stop"}]}`))
+        }))
+        defer srv.Close()
 
-// TestInjectMemoryBeforeLastUser_UserThenAssistant covers the case where
-// the last user message is followed by an assistant message. The memory
-// block should be inserted before the user, not before the assistant.
-//
-// Before: [system, user, assistant] (indices 0, 1, 2)
-// After:  [system, memory, user, assistant] (indices 0, 1, 2, 3)
-func TestInjectMemoryBeforeLastUser_UserThenAssistant(t *testing.T) {
-        msgs := []llm.Message{
-                {Role: llm.RoleSystem, Content: "system"},
-                {Role: llm.RoleUser, Content: "what is 2+2"},
-                {Role: llm.RoleAssistant, Content: "4"},
-        }
-        memMsg := &llm.Message{Role: llm.RoleSystem, Content: "memory: user is 19"}
-        got := injectMemoryBeforeLastUser(msgs, memMsg)
-        assert.Len(t, got, len(msgs)+1)
-        // Find the last user msg in the result.
-        lastUserIdx := -1
-        for i, m := range got {
-                if m.Role == llm.RoleUser {
-                        lastUserIdx = i
-                }
-        }
-        assert.Equal(t, 2, lastUserIdx, "last user should be at index 2 (moved by the memory injection at index 1)")
-        assert.Equal(t, "memory: user is 19", got[lastUserIdx-1].Content,
-                "memory should be at index 1 (right before the user at index 2)")
-}
+        eng2 := newConsolidationEngine(t, pstore, srv.URL)
+        eng2.consolidateSemanticMemories(
+                "hey, my name is Solis and I build Go agent harnesses",
+                "Nice to meet you, Solis — noted.",
+                []string{"hey, my name is Solis and I build Go agent harnesses"},
+        )
+        ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+        defer cancel()
+        require.NoError(t, eng2.WaitForOutstandingOutlets(ctx))
 
-// TestInjectMemoryBeforeLastUser_DoesNotMutateInput verifies the input
-// slice is not mutated — the function must return a fresh slice.
-func TestInjectMemoryBeforeLastUser_DoesNotMutateInput(t *testing.T) {
-        msgs := []llm.Message{
-                {Role: llm.RoleSystem, Content: "system"},
-                {Role: llm.RoleUser, Content: "hello"},
-        }
-        originalLen := len(msgs)
-        memMsg := &llm.Message{Role: llm.RoleSystem, Content: "memory"}
-        _ = injectMemoryBeforeLastUser(msgs, memMsg)
-        assert.Equal(t, originalLen, len(msgs), "input slice must not be mutated")
+        const prompt = "what do I do again? Solis things"
+
+        first, ok := eng2.buildRuntimeRider(ctx, prompt)
+        require.True(t, ok, "a stored personal fact makes the rider non-empty")
+        assert.Equal(t, llm.RoleUser, first.Role, "the rider rides as a user message — system text gets hoisted into the cached system block")
+        assert.True(t, first.Runtime, "the rider is marked so transcript surfaces skip it")
+        assert.Contains(t, first.Content, "Solis", "a stored personal fact rides the rider")
+        assert.Contains(t, first.Content, "memories about the user")
+
+        second, ok := eng2.buildRuntimeRider(ctx, prompt)
+        assert.False(t, ok,
+                "an identical bundle is change-gated: it is already frozen in history, and with nothing else to say the rider is skipped")
+        assert.NotContains(t, second.Content, "Solis")
+
+        // The gate is the engine's last persisted bundle — clearing it (what a
+        // persona switch does) re-opens injection.
+        eng2.lastMemRider = ""
+        third, ok := eng2.buildRuntimeRider(ctx, prompt)
+        require.True(t, ok, "a cleared gate re-injects")
+        assert.Contains(t, third.Content, "Solis", "a cleared gate re-injects")
+
+        // The store still holds the memory; the gate only suppresses duplicates.
+        traces, err := semStore.Retrieve(ctx, prompt, memstore.ModeCompanion, memstore.Cues{}, time.Now())
+        require.NoError(t, err)
+        require.NotEmpty(t, traces)
 }
 
 // TestFindGitRoot_NoGitDir verifies findGitRoot returns "" when no .git

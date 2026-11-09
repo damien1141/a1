@@ -123,7 +123,7 @@ func DefaultContract(tool string) Contract {
                         Tool:         tool,
                         Contribution: Label{Trust: User, ReaderSet: TopReaderSet},
                 }
-        case "code", "context", "docsync", "vector_search", "secret", "ask_user", "contract", "budget":
+        case "code", "context", "docsync", "vector_search", "session_search", "secret", "ask_user", "contract", "budget":
                 // Read-only analysis tools collapsed under mode-dispatched parents
                 // (audit J5). Same shape as `read`: user-supplied args, top readers,
                 // no committed effect tokens — these tools inspect state without
@@ -243,6 +243,7 @@ func DefaultContracts() *ContractRegistry {
         r.Register("context", DefaultContract("context"))
         r.Register("docsync", DefaultContract("docsync"))
         r.Register("vector_search", DefaultContract("vector_search"))
+        r.Register("session_search", DefaultContract("session_search"))
         r.Register("secret", DefaultContract("secret"))
         r.Register("ask_user", DefaultContract("ask_user"))
         // Network fetch + browser family.

@@ -28,12 +28,17 @@ const (
 	StatusFailed    Status = "failed"
 	StatusCancelled Status = "cancelled"
 	StatusTimedOut  Status = "timed_out"
+	// StatusStalled is the stall monitor's terminal fold: the runner went
+	// silent past the stall window with no progress tokens, so "running"
+	// stopped being true. The wedged goroutine may still exist; the ledger
+	// no longer pretends it is working.
+	StatusStalled Status = "stalled"
 )
 
 // Terminal reports whether no further work will run.
 func (s Status) Terminal() bool {
 	switch s {
-	case StatusCompleted, StatusFailed, StatusCancelled, StatusTimedOut:
+	case StatusCompleted, StatusFailed, StatusCancelled, StatusTimedOut, StatusStalled:
 		return true
 	default:
 		return false
@@ -63,6 +68,11 @@ type Meta struct {
 	Kind string `json:"kind,omitempty"`
 	// ScheduleID links a KindSchedule job to the schedule that fired it.
 	ScheduleID string `json:"schedule_id,omitempty"`
+	// Owner stamps the owning process ("pid:starttime" on Linux, bare pid
+	// elsewhere) while the job is live, so a second manager over the same
+	// root can tell a dead owner's leftover from another live surface's
+	// running job. Cleared when a job is parked; re-stamped on resume.
+	Owner string `json:"owner,omitempty"`
 	// Attempt counts runs of this job: 0 until first start, +1 on every
 	// restart requeue, so a resumed job knows it is a retry.
 	Attempt int `json:"attempt,omitempty"`

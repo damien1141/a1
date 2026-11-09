@@ -1,0 +1,6 @@
+From: =?UTF-8?B?55Sw5Lit5aSq6YOO?= <tanaka@example.jp>
+To: user@example.org
+Subject: =?UTF-8?B?5Lya6K2w44Gu5qGI5YaF?=
+Date: Sun, 8 Nov 2026 01:10:00 +0900
+
+日本語の本文 — plain, unencoded; body charsets pass through verbatim.

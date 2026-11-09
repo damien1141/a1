@@ -4,6 +4,7 @@ import (
         "errors"
         "fmt"
         "os"
+        "path/filepath"
         "strconv"
         "strings"
         "time"
@@ -30,9 +31,9 @@ type Config struct {
         SemanticSearch SemanticSearchConfig
         Jev            jev.Settings
         Browser        BrowserConfig
+        Personal       PersonalConfig
         UI             UIConfig
         Web            WebConfig
-        Weather        *WeatherConfig
         Personas       *PersonasConfig
         Tools          ToolsConfig
         Checks         []CheckConfig
@@ -171,16 +172,6 @@ type ToolsConfig struct {
         MaxToolCalls int
 }
 
-// WeatherConfig controls the Open-Meteo weekly forecast injection into the
-// agent context. Default-off — the user must opt in by setting enabled: true
-// and providing latitude/longitude.
-type WeatherConfig struct {
-        Enabled   bool    `yaml:"enabled"`
-        Latitude  float64 `yaml:"latitude"`
-        Longitude float64 `yaml:"longitude"`
-        Name      string  `yaml:"name,omitempty"`
-}
-
 // PersonasConfig stores the active persona ID at the config-file level. The
 // persona registry itself (with avatars and per-persona memory banks) lives
 // under ~/.a1/personas/.
@@ -228,6 +219,122 @@ type BrowserConfig struct {
         Headless *bool `yaml:"headless,omitempty"`
 }
 
+// PersonalConfig is the personal-data section (personal:): the dashboard's
+// calendar / kanban / mail widgets and the agent-side personal tools all
+// hang off one master switch, plus the sources the calendar and mail
+// surfaces read. The calendar is deliberately local-file based; the mail
+// surface reads local Maildirs AND remote IMAP accounts (chunk 7 — the
+// v1 "local only" mail ruling was relaxed by the user's ask for multiple
+// accounts and mail servers; everything stays READ-ONLY either way).
+type PersonalConfig struct {
+        // Enabled is the master switch for personal-data surfaces. Nil means
+        // off: personal data stays locked until the user opts in — the section
+        // existing in config.yaml is not consent.
+        Enabled *bool `yaml:"enabled,omitempty"`
+        // CalendarDir is a local directory of .ics files the calendar widget
+        // (and, when the model is opted in, the calendar tool) reads. Empty =
+        // the feature reports "not configured".
+        CalendarDir string `yaml:"calendar_dir,omitempty"`
+        // MailDir is a local Maildir root the mail surface reads (read-only,
+        // always — flags are never written back). Empty = not configured.
+        // Legacy single-root spelling: it feeds ResolvedMailAccounts as one
+        // account named "local", so the two spellings compose.
+        MailDir string `yaml:"mail_dir,omitempty"`
+        // MailAccounts is the multi-account mail list (chunk 7): any mix of
+        // maildir roots and IMAP servers. Every account is read-only on every
+        // surface — the web reader shows bodies, the agent facade keeps to
+        // envelopes, and nothing anywhere writes back.
+        MailAccounts []MailAccount `yaml:"mail_accounts,omitempty"`
+}
+
+// MailAccount is one mail source: a local Maildir root or a remote IMAP
+// server. The two kinds share one shape so the web widget can treat them
+// identically — Type picks the reader, the rest fills in per kind.
+type MailAccount struct {
+        // Name is the display label and the ?account= key on the mail
+        // endpoints. Empty names default to the root's basename (maildir)
+        // or the host (imap); collisions get numeric suffixes at resolve
+        // time, so the key is always unique.
+        Name string `yaml:"name,omitempty"`
+        // Type is "maildir" (the default) or "imap". Anything else degrades
+        // that account to an honest per-account error, never a 500.
+        Type string `yaml:"type,omitempty"`
+        // Root is the Maildir root directory (maildir accounts).
+        Root string `yaml:"root,omitempty"`
+        // Host, Port, Username, Password are the IMAP server's address and
+        // credentials (imap accounts). Port defaults to 993 with TLS on,
+        // 143 with it off. The password sits in config.yaml beside the
+        // model api_keys — the config file is already this project's
+        // secret store.
+        Host     string `yaml:"host,omitempty"`
+        Port     int    `yaml:"port,omitempty"`
+        Username string `yaml:"username,omitempty"`
+        Password string `yaml:"password,omitempty"`
+        // TLS selects implicit TLS (the default) for imap accounts. There is
+        // no starttls spelling: implicit TLS or plaintext, stated plainly.
+        TLS *bool `yaml:"tls,omitempty"`
+        // Mailbox is the box the widget opens first for this account.
+        // Empty = "INBOX" (the IMAP convention; the maildir reader maps it
+        // to the box literally named inbox when INBOX is absent).
+        Mailbox string `yaml:"mailbox,omitempty"`
+}
+
+// ResolvedMailAccounts normalizes the mail configuration into the account
+// list the surfaces read: the legacy mail_dir (when set and not duplicated
+// by an explicit account) is PREPENDED as "local" so an existing setup's
+// widget default does not move, names are defaulted and de-duplicated, and
+// types default to maildir. Resolution is lenient — a malformed account
+// (an imap entry with no host, say) stays in the list and degrades to an
+// honest per-account error at read time; configuration mistakes must be
+// visible, never fatal to the whole surface.
+func (c PersonalConfig) ResolvedMailAccounts() []MailAccount {
+        var out []MailAccount
+        if root := strings.TrimSpace(c.MailDir); root != "" {
+                out = append(out, MailAccount{Name: "local", Type: "maildir", Root: root})
+        }
+        for i, a := range c.MailAccounts {
+                r := a
+                if strings.TrimSpace(r.Type) == "" {
+                        r.Type = "maildir"
+                }
+                r.Type = strings.ToLower(strings.TrimSpace(r.Type))
+                r.Name = strings.TrimSpace(r.Name)
+                if r.Name == "" {
+                        switch {
+                        case r.Type == "imap" && strings.TrimSpace(r.Host) != "":
+                                r.Name = strings.TrimSpace(r.Host)
+                        case strings.TrimSpace(r.Root) != "":
+                                r.Name = filepath.Base(strings.TrimSpace(r.Root))
+                        default:
+                                r.Name = fmt.Sprintf("account-%d", i+1)
+                        }
+                }
+                out = append(out, r)
+        }
+        // De-duplicate names: the ?account= key must be unambiguous. First
+        // occurrence keeps the bare name; later twins get "-2", "-3", …
+        seen := map[string]int{}
+        for i := range out {
+                n := out[i].Name
+                if _, dup := seen[n]; dup {
+                        seen[n]++
+                        out[i].Name = fmt.Sprintf("%s-%d", n, seen[n])
+                } else {
+                        seen[n] = 1
+                }
+        }
+        return out
+}
+
+// EnabledResolved resolves the master switch, defaulting to LOCKED when
+// the key is absent: personal data is opt-in, never opt-out.
+func (c PersonalConfig) EnabledResolved() bool {
+        if c.Enabled == nil {
+                return false
+        }
+        return *c.Enabled
+}
+
 // UIConfig controls transcript presentation.
 type UIConfig struct {
         // AutoExpandToolOutput starts file-editing rows expanded, so a diff is
@@ -254,6 +361,13 @@ type WebConfig struct {
         // after its first exchange (the sidebar and topbar show the generated
         // name instead of the first-message preview). Nil = on.
         AutoNameSessions *bool `yaml:"auto_name_sessions"`
+        // DarkMode is the web GUI's persisted theme choice, written by the
+        // theme button (and the Settings picker) via PUT /api/theme: true =
+        // dark, false = light, nil = no choice — the GUI follows the OS
+        // preference. It exists so a choice made in one browser reaches
+        // every other one (and the /settings config screen, which reads the
+        // file server-side): localStorage is per-browser and dies with it.
+        DarkMode *bool `yaml:"dark_mode,omitempty"`
 }
 
 // AutoNameSessionsResolved resolves the toggle, defaulting to on: smart
@@ -420,19 +534,31 @@ func parseConfigFile(path string) (*Config, error) {
                         Headless: raw.Browser.Headless,
                 }
         }
+        if raw.Personal != nil {
+                cfg.Personal = PersonalConfig{
+                        Enabled:     raw.Personal.Enabled,
+                        CalendarDir: ExpandHome(strings.TrimSpace(raw.Personal.CalendarDir)),
+                        MailDir:     ExpandHome(strings.TrimSpace(raw.Personal.MailDir)),
+                }
+                for _, a := range raw.Personal.MailAccounts {
+                        cfg.Personal.MailAccounts = append(cfg.Personal.MailAccounts, MailAccount{
+                                Name:     strings.TrimSpace(a.Name),
+                                Type:     strings.TrimSpace(a.Type),
+                                Root:     ExpandHome(strings.TrimSpace(a.Root)),
+                                Host:     strings.TrimSpace(a.Host),
+                                Port:     a.Port,
+                                Username: strings.TrimSpace(a.Username),
+                                Password: a.Password,
+                                TLS:      a.TLS,
+                                Mailbox:  strings.TrimSpace(a.Mailbox),
+                        })
+                }
+        }
         if raw.UI != nil {
                 cfg.UI = UIConfig{AutoExpandToolOutput: raw.UI.AutoExpandToolOutput}
         }
         if raw.Web != nil {
-                cfg.Web = WebConfig{AutoNameSessions: raw.Web.AutoNameSessions}
-        }
-        if raw.Weather != nil {
-                cfg.Weather = &WeatherConfig{
-                        Enabled:   raw.Weather.Enabled,
-                        Latitude:  raw.Weather.Latitude,
-                        Longitude: raw.Weather.Longitude,
-                        Name:      strings.TrimSpace(raw.Weather.Name),
-                }
+                cfg.Web = WebConfig{AutoNameSessions: raw.Web.AutoNameSessions, DarkMode: raw.Web.DarkMode}
         }
         if raw.Personas != nil {
                 cfg.Personas = &PersonasConfig{Active: strings.TrimSpace(raw.Personas.Active)}
@@ -447,6 +573,13 @@ func parseConfigFile(path string) (*Config, error) {
 
 func modelEntryToConfig(m modelEntry) llm.ModelConfig {
         cfg := llm.ModelConfig{Name: m.Name, APIKey: m.APIKey, BaseURL: m.BaseURL}
+        // api_keys are the credential pool's extras beyond the single api_key
+        // (ModelConfig.APIKeys is extras-only; consumers union it with APIKey).
+        // api_key stays required — it is the no-pool default and the
+        // configserver's validation anchor.
+        if len(m.APIKeys) > 0 {
+                cfg.APIKeys = append([]string(nil), m.APIKeys...)
+        }
         // A built-in preset supplies base_url / context_window / image_enabled / api
         // when the entry omits them; the explicit fields below still win so
         // users can override any default.
@@ -483,6 +616,12 @@ func modelEntryToConfig(m modelEntry) llm.ModelConfig {
                 cfg.Think.Mode = mode
                 cfg.Think.Enabled = mode != llm.Off
         }
+        if m.PersonalRead != nil {
+                cfg.PersonalRead = *m.PersonalRead
+        }
+        if m.PersonalWrite != nil {
+                cfg.PersonalWrite = *m.PersonalWrite
+        }
         if cfg.BaseURL == "" {
                 cfg.BaseURL = "https://api.openai.com/v1"
         }
@@ -498,20 +637,13 @@ type fileConfig struct {
         SemanticSearch *semanticSearchConfig `yaml:"semantic_search"`
         Jev            *jevConfig            `yaml:"jev"`
         Browser        *browserConfig        `yaml:"browser"`
+        Personal       *personalConfig       `yaml:"personal"`
         UI             *uiConfig             `yaml:"ui"`
         Web            *webConfig            `yaml:"web"`
-        Weather        *weatherConfig        `yaml:"weather"`
         Personas       *personasConfig       `yaml:"personas"`
         Tools          *toolsConfig          `yaml:"tools"`
         Checks         []CheckConfig         `yaml:"checks"`
         Schedules      []ScheduleConfig      `yaml:"schedules"`
-}
-
-type weatherConfig struct {
-        Enabled   bool    `yaml:"enabled"`
-        Latitude  float64 `yaml:"latitude"`
-        Longitude float64 `yaml:"longitude"`
-        Name      string  `yaml:"name,omitempty"`
 }
 
 type personasConfig struct {
@@ -538,6 +670,7 @@ type semanticSearchConfig struct {
 
 type webConfig struct {
         AutoNameSessions *bool `yaml:"auto_name_sessions"`
+        DarkMode         *bool `yaml:"dark_mode"`
 }
 
 // jevConfig mirrors the jev: block — the decision-model backend shared
@@ -560,6 +693,17 @@ type browserConfig struct {
         Headless *bool    `yaml:"headless,omitempty"`
 }
 
+// personalConfig mirrors the personal: block. Paths are trimmed and
+// home-expanded at parse (expandHome), so runtime consumers never see a
+// literal ~; the config editor, which round-trips the file directly,
+// preserves whatever spelling the user wrote.
+type personalConfig struct {
+        Enabled      *bool         `yaml:"enabled,omitempty"`
+        CalendarDir  string        `yaml:"calendar_dir,omitempty"`
+        MailDir      string        `yaml:"mail_dir,omitempty"`
+        MailAccounts []MailAccount `yaml:"mail_accounts,omitempty"`
+}
+
 type uiConfig struct {
         AutoExpandToolOutput *bool `yaml:"auto_expand_tool_output"`
 }
@@ -567,6 +711,7 @@ type uiConfig struct {
 type modelEntry struct {
         Name          string         `yaml:"name"`
         APIKey        string         `yaml:"api_key"`
+        APIKeys       stringList     `yaml:"api_keys"`
         BaseURL       string         `yaml:"base_url"`
         ContextWindow *int           `yaml:"context_window"`
         ImageEnabled  *bool          `yaml:"image_enabled"`
@@ -574,6 +719,8 @@ type modelEntry struct {
         Default       bool           `yaml:"default"`
         ThinkEnabled  *bool          `yaml:"think_enabled"`
         ThinkLevel    *string        `yaml:"think_level"`
+        PersonalRead  *bool          `yaml:"personal_read,omitempty"`
+        PersonalWrite *bool          `yaml:"personal_write,omitempty"`
 }
 
 type permConfig struct {
@@ -722,6 +869,17 @@ func applyEnvOverrides(c *Config) {
         if v := envWithDeprecation("A1_API_KEY", "PHI_API_KEY"); v != "" {
                 c.defaultEntry().APIKey = v
         }
+        // A1_API_KEYS extends the default model's credential pool (comma-
+        // separated); it never replaces A1_API_KEY, which stays the pool's
+        // first key.
+        if v := os.Getenv("A1_API_KEYS"); v != "" {
+                entry := c.defaultEntry()
+                for _, k := range strings.Split(v, ",") {
+                        if k = strings.TrimSpace(k); k != "" {
+                                entry.APIKeys = append(entry.APIKeys, k)
+                        }
+                }
+        }
         if v := envWithDeprecation("A1_BASE_URL", "PHI_BASE_URL"); v != "" {
                 c.defaultEntry().BaseURL = v
         }
@@ -741,6 +899,32 @@ func applyEnvOverrides(c *Config) {
                 entry := c.defaultEntry()
                 entry.Think.Enabled = v == "true" || v == "1" || v == "yes"
         }
+}
+
+// ExpandHome resolves a leading ~ to the user's home directory so config
+// paths can stay short (~/.a1/calendar). A ~ followed by anything other
+// than a path separator is left alone (no ~user lookups); an empty path or
+// one without the prefix is returned unchanged. Errors resolving the home
+// dir degrade to the original path — a config typo should not brick boot.
+// Exported since chunk 8: the web's mail configurator applies the same
+// rule to editor-typed roots, so "~" means the same thing on both sides
+// of the wire and there is one rule to test, not two that agree by luck.
+func ExpandHome(path string) string {
+        if path == "" || path[0] != '~' {
+                return path
+        }
+        if path == "~" {
+                if home, err := os.UserHomeDir(); err == nil {
+                        return home
+                }
+                return path
+        }
+        if rest, ok := strings.CutPrefix(path, "~/"); ok {
+                if home, err := os.UserHomeDir(); err == nil {
+                        return filepath.Join(home, rest)
+                }
+        }
+        return path
 }
 
 // envWithDeprecation reads newKey, falling back to the pre-rename PHI_*
@@ -956,6 +1140,96 @@ func findMapping(parent *yaml.Node, key string) *yaml.Node {
                 }
         }
         return nil
+}
+
+// SetMailAccounts persists personal.mail_accounts — the dashboard's mail
+// configurator (chunk 8). The list is replaced WHOLESALE: the caller sends
+// the complete account list it wants on disk, and this function makes it
+// so, mirroring how POST /api/config replaces the document. Fields are
+// written sparsely (empty keys omitted, tls only when explicitly set), so
+// a saved file looks hand-written. An empty list removes the sequence and
+// prunes the personal block when it empties (SetMaxToolCalls' pruning
+// discipline) — but never removes keys this function does not own:
+// mail_dir, calendar_dir, and enabled survive an empty save untouched.
+//
+// What this function does NOT do is validate: shape is the caller's
+// ruling (the webserver's configurator refuses known-bad entries with a
+// 400; hand-edited YAML keeps the read path's lenient degrade). And it
+// writes passwords as plain scalars on purpose — config.yaml is already
+// this project's secret store (the model api_keys live there); the file's
+// permissions are the boundary, same as every other credential it holds.
+func SetMailAccounts(global GlobalLayout, accts []MailAccount) error {
+        return modifyConfigYAML(global, func(root *yaml.Node) {
+                if len(accts) == 0 {
+                        personal := findMapping(root, "personal")
+                        if personal == nil {
+                                return
+                        }
+                        removeKey(personal, "mail_accounts")
+                        if len(personal.Content) == 0 {
+                                removeKey(root, "personal")
+                        }
+                        return
+                }
+                personal := getOrCreateMapping(root, "personal")
+                seq := getOrCreateSequence(personal, "mail_accounts")
+                seq.Content = nil
+                for _, a := range accts {
+                        m := &yaml.Node{Kind: yaml.MappingNode}
+                        if a.Name != "" {
+                                setScalar(m, "name", a.Name)
+                        }
+                        if a.Type != "" {
+                                setScalar(m, "type", a.Type)
+                        }
+                        if a.Root != "" {
+                                setScalar(m, "root", a.Root)
+                        }
+                        if a.Host != "" {
+                                setScalar(m, "host", a.Host)
+                        }
+                        if a.Port != 0 {
+                                setScalar(m, "port", a.Port)
+                        }
+                        if a.Username != "" {
+                                setScalar(m, "username", a.Username)
+                        }
+                        if a.Password != "" {
+                                setScalar(m, "password", a.Password)
+                        }
+                        if a.TLS != nil {
+                                setScalar(m, "tls", *a.TLS)
+                        }
+                        if a.Mailbox != "" {
+                                setScalar(m, "mailbox", a.Mailbox)
+                        }
+                        seq.Content = append(seq.Content, m)
+                }
+        })
+}
+
+// SetWebDarkMode persists web.dark_mode — the theme button's config-file
+// toggle. nil removes the key (the GUI follows the OS preference again) and
+// prunes an empty web block; true/false are the explicit choices. Like every
+// surgical setter it preserves comments, key order, and sibling keys
+// (auto_name_sessions survives a theme flip untouched), mirroring
+// SetMaxToolCalls' discipline.
+func SetWebDarkMode(global GlobalLayout, dark *bool) error {
+        return modifyConfigYAML(global, func(root *yaml.Node) {
+                if dark == nil {
+                        web := findMapping(root, "web")
+                        if web == nil {
+                                return
+                        }
+                        removeKey(web, "dark_mode")
+                        if len(web.Content) == 0 {
+                                removeKey(root, "web")
+                        }
+                        return
+                }
+                web := getOrCreateMapping(root, "web")
+                setScalar(web, "dark_mode", *dark)
+        })
 }
 
 // removeKey deletes the key/value pair named key from a mapping node.

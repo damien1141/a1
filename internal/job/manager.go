@@ -27,6 +27,18 @@ type Options struct {
 	// Recovery selects the restart policy for leftover non-terminal jobs.
 	// The agent glue (TUI, a1 run, a1 serve) passes RecoverRequeue.
 	Recovery RecoveryMode
+	// StallWindow folds a live job whose runner emitted no progress for
+	// the window into StatusStalled (0 → 10m default; negative disables
+	// the stall monitor). Progress tokens are runner OnProgress calls —
+	// any tool event resets the clock, however long the work takes.
+	StallWindow time.Duration
+	// WardenTick is the orphan-sweep / stall-check / delivery-GC cadence
+	// (0 → 15s). Tests shrink it; production never notices it.
+	WardenTick time.Duration
+	// DropAge is how long an uncollected delivery row may wait for its
+	// parent before the warden drops it (0 → 7d) — the outbox serves the
+	// living, not the archive.
+	DropAge time.Duration
 	// OnStoreError is called when a disk write fails after the job is live.
 	// Create/Spawn still return the create error directly.
 	OnStoreError func(op, jobID string, err error)
@@ -45,6 +57,27 @@ type Manager struct {
 	maxQueue      int
 	onStoreError  func(op, jobID string, err error)
 
+	// owner fingerprints this process for the liveness checks in
+	// recoverStale and the warden's orphan sweep; ownerStr is its persisted
+	// form, computed once.
+	owner    ownerIdentity
+	ownerStr string
+
+	// warden cadence and horizons (Options.WardenTick / StallWindow /
+	// DropAge with defaults applied).
+	wardenTick time.Duration
+	stallWin   time.Duration
+	dropAge    time.Duration
+	claimStale time.Duration
+
+	// wardenDone stops the loop (Close), wardenExit is closed by the loop
+	// on its way out so stopWarden can join it. wardenDone always exists;
+	// the loop itself only runs when Recovery != RecoverIgnore (nested
+	// managers must not sweep their parent's fleet).
+	wardenDone     chan struct{}
+	wardenExit     chan struct{}
+	wardenStopOnce sync.Once
+
 	mu     sync.Mutex
 	closed bool
 	slots  chan struct{}
@@ -61,6 +94,18 @@ type liveJob struct {
 	parentToolUseID string
 	cancel          context.CancelFunc
 	done            chan struct{}
+	// closeDone closes done exactly once — the stall monitor's fold may
+	// need to unblock Waiters before the wedged goroutine ever returns,
+	// and run()'s defer must not double-close behind it.
+	closeOnce sync.Once
+	// progressAt is the stall monitor's token clock: unix nanos of the
+	// last OnProgress call (armed at spawn/start). Silence past the stall
+	// window means wedged.
+	progressAt atomic.Int64
+	// terminalClaimed is the single-writer arbiter for the terminal fold:
+	// run()'s switch and forceFinalizeStalled race it; whoever wins the
+	// CAS owns the result/delivery/status sequence, the loser defers.
+	terminalClaimed atomic.Bool
 	// timeout is the SpawnRequest timeout, applied when the run actually
 	// starts — a queued job does not burn its wall-clock budget in the queue.
 	timeout time.Duration
@@ -71,6 +116,9 @@ type liveJob struct {
 	queued    bool
 	cancelled atomic.Bool
 }
+
+// closeDone closes the job's done channel exactly once.
+func (lj *liveJob) closeDone() { lj.closeOnce.Do(func() { close(lj.done) }) }
 
 // subscriber is one progress channel. closed is guarded by m.mu: emitProgress
 // sends while holding m.mu, and cancel/Close mark closed and close the channel
@@ -104,6 +152,23 @@ func New(opts Options) (*Manager, error) {
 	if maxQ <= 0 {
 		maxQ = defaultMaxQueue
 	}
+	tick := opts.WardenTick
+	if tick <= 0 {
+		tick = defaultWardenTick
+	}
+	stallWin := opts.StallWindow
+	if stallWin == 0 {
+		stallWin = defaultStallWindow
+	} // negative stays negative: the stall monitor is off
+	dropAge := opts.DropAge
+	if dropAge <= 0 {
+		dropAge = defaultDropAge
+	}
+	claimStale := 2 * tick
+	if claimStale < 50*time.Millisecond {
+		claimStale = 50 * time.Millisecond
+	}
+	owner := currentOwner()
 	m := &Manager{
 		store:         st,
 		runner:        opts.Runner,
@@ -112,6 +177,13 @@ func New(opts Options) (*Manager, error) {
 		maxDepth:      maxD,
 		maxQueue:      maxQ,
 		onStoreError:  opts.OnStoreError,
+		owner:         owner,
+		ownerStr:      owner.String(),
+		wardenTick:    tick,
+		stallWin:      stallWin,
+		dropAge:       dropAge,
+		claimStale:    claimStale,
+		wardenDone:    make(chan struct{}),
 		slots:         make(chan struct{}, maxC),
 		waiting:       make(chan *liveJob, maxQ),
 		jobs:          make(map[string]*liveJob),
@@ -120,6 +192,9 @@ func New(opts Options) (*Manager, error) {
 		if err := m.recoverStale(); err != nil {
 			return nil, err
 		}
+		// The warden keeps looking after construction: a surface that dies
+		// at 2am while this one runs is only visible to a sweep that ticks.
+		m.startWarden()
 	}
 	return m, nil
 }
@@ -128,6 +203,12 @@ func New(opts Options) (*Manager, error) {
 // MarkFailed force-fails them (the pre-Clock behavior, kept for embedders
 // that prefer no zombies), Requeue parks them as pending — attempt bumped,
 // resume flag ready — for [Manager.Resume] / [ResumePending] to pick up.
+//
+// Owner-liveness gates both folds: a job stamped with another LIVE process
+// is that surface's running work (the TUI while a1 serve is up), not a
+// leftover — it is left strictly alone. Only dead-owner (or unstamped,
+// pre-outbox) leftovers fold. Already-parked jobs are skipped too:
+// re-parking would bump the attempt counter on every restart.
 func (m *Manager) recoverStale() error {
 	ids, err := m.store.listIDs()
 	if err != nil {
@@ -141,14 +222,18 @@ func (m *Manager) recoverStale() error {
 			m.reportStore("readMeta", id, err)
 			continue
 		}
-		if meta.Status.Terminal() {
+		if meta.Status.Terminal() || meta.Status == StatusPending {
 			continue
+		}
+		if meta.Owner != "" && meta.Owner != m.ownerStr && parseOwner(meta.Owner).alive() {
+			continue // another live surface owns it
 		}
 		if requeue {
 			meta.Status = StatusPending
 			meta.Attempt++
 			meta.Error = ""
 			meta.FinishedAt = time.Time{}
+			meta.Owner = ""
 			if err := m.store.writeMeta(meta); err != nil {
 				return fmt.Errorf("job: recover %s: %w", id, err)
 			}
@@ -160,6 +245,15 @@ func (m *Manager) recoverStale() error {
 		meta.Status = StatusFailed
 		meta.FinishedAt = now
 		meta.Error = "interrupted: process restarted before job finished"
+		meta.Owner = ""
+		// The delivery row lands before the status flip: a parent learning
+		// its job failed deserves the same one-shot notice as one learning
+		// it finished.
+		if meta.ParentID != "" {
+			if err := m.store.publishDelivery(meta); err != nil {
+				m.reportStore("publishDelivery", id, err)
+			}
+		}
 		if err := m.store.writeMeta(meta); err != nil {
 			return fmt.Errorf("job: recover %s: %w", id, err)
 		}
@@ -233,6 +327,10 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (Info, error) {
 		Contract:    req.Contract,
 		Status:      StatusStarting,
 		CreatedAt:   now,
+		// The owner stamp marks this job as this process's live work from
+		// the first persist — a second manager over the root must not park
+		// it while we run.
+		Owner: m.ownerStr,
 	}
 	meta, err = m.store.create(meta)
 	if err != nil {
@@ -252,6 +350,13 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (Info, error) {
 			meta.Status = StatusCancelled
 			meta.FinishedAt = time.Now().UTC()
 			meta.Error = err.Error()
+			meta.Owner = ""
+			// Row before flip: a parent learning of the spawn
+			// abort gets its one-shot notice like any other
+			// terminal fold.
+			if meta.ParentID != "" {
+				_ = m.store.publishDelivery(meta)
+			}
 			m.persistMeta(meta)
 			return Info{}, err
 		}
@@ -262,6 +367,7 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (Info, error) {
 			timeout:         req.Timeout,
 			contract:        req.Contract,
 		}
+		lj.progressAt.Store(time.Now().UnixNano())
 		runCtx, cancel := runContextFor(lj.timeout)
 		lj.cancel = cancel
 		m.jobs[id] = lj
@@ -280,6 +386,7 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (Info, error) {
 		timeout:         req.Timeout,
 		contract:        req.Contract,
 	}
+	lj.progressAt.Store(time.Now().UnixNano())
 	select {
 	case m.waiting <- lj:
 		lj.queued = true
@@ -307,7 +414,7 @@ func runContextFor(timeout time.Duration) (context.Context, context.CancelFunc) 
 }
 
 func (m *Manager) run(ctx context.Context, lj *liveJob) {
-	defer close(lj.done)
+	defer lj.closeDone()
 	// Hand the slot to the oldest queued job, or release it. Ownership
 	// transfer (never release-then-reacquire) keeps FIFO order race-free:
 	// the slot does not return to the pool while waiters exist, so a
@@ -317,6 +424,10 @@ func (m *Manager) run(ctx context.Context, lj *liveJob) {
 	meta := lj.meta
 	meta.Status = StatusRunning
 	meta.StartedAt = time.Now().UTC()
+	// Re-stamp the owner at run start: a resumed job belongs to the
+	// process that resumed it, not the one that parked it.
+	meta.Owner = m.ownerStr
+	lj.progressAt.Store(time.Now().UnixNano())
 	m.persistMeta(meta)
 	m.setLiveMeta(meta)
 	m.persistEvent(meta, "running")
@@ -334,6 +445,10 @@ func (m *Manager) run(ctx context.Context, lj *liveJob) {
 			return err
 		},
 		OnProgress: func(p Progress) {
+			// Every progress event is a liveness token for the
+			// stall monitor — however slow the work, a runner
+			// that keeps reporting is not wedged.
+			lj.progressAt.Store(time.Now().UnixNano())
 			p.JobID = meta.ID
 			if p.ParentToolUseID == "" {
 				p.ParentToolUseID = lj.parentToolUseID
@@ -349,6 +464,17 @@ func (m *Manager) run(ctx context.Context, lj *liveJob) {
 	summary, err := m.runner.Run(ctx, env)
 
 	meta.FinishedAt = time.Now().UTC()
+
+	// Single-writer arbiter: if the stall monitor already claimed the
+	// terminal fold (the runner was silent past the window and the
+	// warden folded it), this unwind defers entirely — result,
+	// delivery row, status AND the unregister all belong to the fold.
+	// Deleting from the map here would race the fold's persist: a
+	// Get in between falls through to disk and reads a stale
+	// non-terminal meta. The goroutine just leaves.
+	if !lj.terminalClaimed.CompareAndSwap(false, true) {
+		return
+	}
 
 	switch {
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
@@ -387,6 +513,16 @@ func (m *Manager) run(ctx context.Context, lj *liveJob) {
 		}
 	}
 
+	// Commit-point ordering: the delivery row lands BEFORE the
+	// terminal status flip that makes it visible — a Wait or a
+	// collector polling the disk must never observe a terminal job
+	// with no result and no notice. (result.md already landed inside
+	// the completed branch above, for the same reason.)
+	if meta.ParentID != "" {
+		if err := m.store.publishDelivery(meta); err != nil {
+			m.reportStore("publishDelivery", meta.ID, err)
+		}
+	}
 	m.persistMeta(meta)
 	m.setLiveMeta(meta)
 
@@ -535,12 +671,14 @@ func (m *Manager) Resume(ctx context.Context, id string) (Info, error) {
 		return Info{}, fmt.Errorf("%w: %s is already live", ErrInvalid, id)
 	}
 	meta.Resume = true
+	meta.Owner = m.ownerStr // the resumer owns it now
 	lj := &liveJob{
 		meta:     meta,
 		done:     make(chan struct{}),
 		timeout:  time.Duration(meta.TimeoutSec) * time.Second,
 		contract: meta.Contract,
 	}
+	lj.progressAt.Store(time.Now().UnixNano())
 	// Same fast/slow split as Spawn: a free slot starts now, a full set
 	// parks the resume in the FIFO wait queue.
 	select {
@@ -626,6 +764,13 @@ func (m *Manager) Cancel(ctx context.Context, id string) error {
 			info.Status = StatusCancelled
 			info.FinishedAt = time.Now().UTC()
 			info.Error = "cancelled while pending resume"
+			info.Owner = ""
+			// Row before flip, same as every terminal fold.
+			if info.ParentID != "" {
+				if err := m.store.publishDelivery(info.Meta); err != nil {
+					m.reportStore("publishDelivery", id, err)
+				}
+			}
 			m.persistMeta(info.Meta)
 			m.persistEvent(info.Meta, "cancelled: while pending resume")
 			return nil
@@ -661,11 +806,18 @@ func (m *Manager) cancelQueued(lj *liveJob) {
 	meta.Status = StatusCancelled
 	meta.FinishedAt = time.Now().UTC()
 	meta.Error = "cancelled while queued"
+	meta.Owner = ""
 	delete(m.jobs, meta.ID)
 	m.mu.Unlock()
-	close(lj.done)
+	// Row before flip, same as every terminal fold.
+	if meta.ParentID != "" {
+		if err := m.store.publishDelivery(meta); err != nil {
+			m.reportStore("publishDelivery", meta.ID, err)
+		}
+	}
 	m.persistMeta(meta)
 	m.persistEvent(meta, "cancelled: while waiting for a concurrency slot")
+	lj.closeDone()
 }
 
 // retire hands a finishing job's concurrency slot directly to the oldest
@@ -709,8 +861,12 @@ func (m *Manager) startQueued(lj *liveJob) bool {
 	return true
 }
 
-// Close cancels all live jobs (running and queued) and waits for them to exit.
+// Close stops the warden, cancels all live jobs (running and queued)
+// and waits for them to exit. The warden halts first so no force-finalize
+// races the drain, and so its disk touches cannot outlive the manager
+// into a caller's directory cleanup.
 func (m *Manager) Close(ctx context.Context) error {
+	m.stopWarden()
 	m.mu.Lock()
 	m.closed = true
 	lives := make([]*liveJob, 0, len(m.jobs))
@@ -725,6 +881,7 @@ func (m *Manager) Close(ctx context.Context) error {
 			meta.Status = StatusCancelled
 			meta.FinishedAt = time.Now().UTC()
 			meta.Error = "cancelled while queued (manager closed)"
+			meta.Owner = ""
 			lj.meta = meta
 			queued = append(queued, lj)
 			delete(m.jobs, id)
@@ -746,9 +903,16 @@ func (m *Manager) Close(ctx context.Context) error {
 	m.mu.Unlock()
 
 	for _, lj := range queued {
+		// Row before flip, same as every terminal fold: a parent
+		// learns its queued job was cancelled at close.
+		if lj.meta.ParentID != "" {
+			if err := m.store.publishDelivery(lj.meta); err != nil {
+				m.reportStore("publishDelivery", lj.meta.ID, err)
+			}
+		}
 		m.persistMeta(lj.meta)
 		m.persistEvent(lj.meta, "cancelled: manager closed while queued")
-		close(lj.done)
+		lj.closeDone()
 	}
 
 	for _, lj := range lives {
@@ -836,4 +1000,55 @@ func (m *Manager) LiveCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return len(m.jobs)
+}
+
+// CollectNotices claims every undelivered row addressed to parentID and
+// returns the results for presentation — the consumer side of the durable
+// outbox. Each row is acked as it is collected: presentation is
+// at-least-once across crashes (a claim left by a dead claimant is
+// released by the warden's stale-delivery pass, and the row re-presents),
+// but never more than once per live collector — the fixed-name claim
+// mutex sees to that. Summary is the job's result.md when readable.
+func (m *Manager) CollectNotices(parentID string) []Delivery {
+	if parentID == "" {
+		return nil
+	}
+	now := time.Now()
+	rows, err := m.store.listDeliveries(parentID)
+	if err != nil {
+		m.reportStore("listDeliveries", "", err)
+		return nil
+	}
+	var out []Delivery
+	for _, row := range rows {
+		if !m.store.claimDelivery(row, m.claimStale, now) {
+			continue // another collector holds the claim
+		}
+		d := Delivery{
+			JobID:       row.JobID,
+			Description: row.Description,
+			Role:        row.Role,
+			Status:      row.Status,
+			Error:       row.Error,
+			FinishedAt:  row.FinishedAt,
+		}
+		if meta, err := m.store.readMeta(row.JobID); err == nil {
+			if summary, rerr := m.store.readResult(meta); rerr == nil {
+				d.Summary = summary
+			}
+		}
+		m.store.ackDelivery(row.JobID)
+		out = append(out, d)
+	}
+	return out
+}
+
+// AckDelivery marks one job's result as seen — the parent consumed it
+// directly (agent_wait) instead of at a turn boundary. A missing row is a
+// no-op: it may already have been collected, or the job never had one.
+func (m *Manager) AckDelivery(jobID string) {
+	if jobID == "" {
+		return
+	}
+	m.store.ackDelivery(jobID)
 }

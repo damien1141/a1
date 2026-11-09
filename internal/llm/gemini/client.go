@@ -325,7 +325,7 @@ func Stream(
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
 			raw, _ := io.ReadAll(httpResp.Body)
-			yield(llm.StreamEvent{}, llm.FormatAPIError("gemini", httpResp.StatusCode, raw))
+			yield(llm.StreamEvent{}, llm.FormatAPIErrorHeaders("gemini", httpResp.StatusCode, raw, httpResp.Header))
 			return
 		}
 		processStream(httpResp.Body, yield)
@@ -481,7 +481,7 @@ func CompactRequest(
 		return llm.CompactResult{}, err
 	}
 	if httpResp.StatusCode != http.StatusOK {
-		return llm.CompactResult{}, llm.FormatAPIError("gemini", httpResp.StatusCode, raw)
+		return llm.CompactResult{}, llm.FormatAPIErrorHeaders("gemini", httpResp.StatusCode, raw, httpResp.Header)
 	}
 	var resp chunk
 	if err := json.Unmarshal(raw, &resp); err != nil {

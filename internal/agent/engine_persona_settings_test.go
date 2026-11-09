@@ -93,26 +93,23 @@ func TestApplyPersonaSettings_AppliesPermissionMode(t *testing.T) {
                 "permission mode setter should be called with autopilot")
 }
 
-// TestApplyPersonaSettings_ClearsMemoryInlet verifies that the stale
-// memoryInletMsg from the previous persona is cleared on switch (the new
-// persona has its own semantic memory namespace; the old injection is
-// invalid).
-func TestApplyPersonaSettings_ClearsMemoryInlet(t *testing.T) {
+// TestApplyPersonaSettings_ResetsMemoryRiderGate verifies that the
+// memory-rider gate from the previous persona is cleared on switch (the
+// new persona has its own semantic memory namespace; a bundle it injected
+// must not suppress the new persona's first injection).
+func TestApplyPersonaSettings_ResetsMemoryRiderGate(t *testing.T) {
         eng, pstore, _, _ := setupTestEngine(t)
         p, err := pstore.Create("switch", "switch persona", "")
         require.NoError(t, err)
         require.NoError(t, pstore.SetActive(p.ID))
 
-        // Simulate a previous turn having set memoryInletMsg.
-        eng.memoryInletMsg = &llm.Message{
-                Role:    llm.RoleSystem,
-                Content: "stale memory from old persona",
-        }
-        require.NotNil(t, eng.memoryInletMsg, "inlet must be set before switch")
+        // Simulate a previous turn having persisted a memory rider.
+        eng.lastMemRider = "stale memory from old persona"
+        require.NotEmpty(t, eng.lastMemRider, "gate must be set before switch")
 
         require.NoError(t, eng.SetPersona(p.ID))
-        assert.Nil(t, eng.memoryInletMsg,
-                "memoryInletMsg must be cleared on persona switch")
+        assert.Empty(t, eng.lastMemRider,
+                "the memory-rider gate must be cleared on persona switch")
 }
 
 // TestApplyPersonaSettings_DefaultPersonaSkips verifies that switching
@@ -197,8 +194,8 @@ func TestApplyPersonaSettings_NoPersonaStoreNoOps(t *testing.T) {
 
         // Should not panic.
         eng.applyPersonaSettings()
-        // memoryInletMsg should still be cleared (step 1 happens before the
+        // The memory-rider gate is still cleared (step 1 happens before the
         // personaStore check).
-        assert.Nil(t, eng.memoryInletMsg,
-                "memoryInletMsg should be cleared even without persona store")
+        assert.Empty(t, eng.lastMemRider,
+                "the memory-rider gate should be cleared even without persona store")
 }

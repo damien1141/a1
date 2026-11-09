@@ -35,7 +35,6 @@ import (
         "github.com/damien1141/a1/internal/schedule"
         "github.com/damien1141/a1/internal/session"
         "github.com/damien1141/a1/internal/tools"
-        "github.com/damien1141/a1/internal/weather"
 
         "github.com/damien1141/a1/internal/vault"
 )
@@ -75,11 +74,9 @@ type Server struct {
         // servers must not interleave their saves.
         configMux sync.Mutex
 
-        // personaStore + weatherSvc back the per-session persona + weather
-        // context injections. Constructed once at Start from the project's
-        // global layout; the weather service is rebuilt from config on save.
+        // personaStore backs the per-session persona context injection.
+        // Constructed once at Start from the project's global layout.
         personaStore *persona.Store
-        weatherSvc   *weather.Service
 
         // memStore is the shared semantic memory bank (~/.a1/agent/
         // memories.db — the same file the TUI's memory toggle opens),
@@ -140,7 +137,6 @@ func newServer(proj *project.Project) (*Server, error) {
                 engines:      map[string]*liveEngine{},
                 pending:      map[string]chan permission.AskResult{},
                 personaStore: persona.NewStore(proj.Global().PersonasDir()),
-                weatherSvc:   weather.NewService(weatherConfigFromProject(proj), 0, nil),
         }
         // Bet 08 — the Vault: one durable store under ~/.a1/a1.db. Boot
         // runs the one-shot migration; failure degrades to the file layout.
@@ -257,6 +253,62 @@ func (s *Server) routes() http.Handler {
         mux.HandleFunc("POST /api/mode", s.guard(s.handleSetMode))
         mux.HandleFunc("GET /api/pins", s.handleGetPins)
         mux.HandleFunc("POST /api/pin", s.guard(s.handleTogglePin))
+        // Theme persistence (themeapi.go): the button's config-file toggle.
+        // A UI preference, not personal data — no personalGate — but a
+        // config write, so guard() applies like every mutating verb. Reads
+        // ride the page serve itself (themedPage stamps the choice), so
+        // there is no GET to register.
+        mux.HandleFunc("PUT /api/theme", s.guard(s.handleSetTheme))
+
+        // Personal-data surfaces (the dashboard's calendar / kanban / mail
+        // widgets). Status is ungated — the dashboard needs it to render
+        // locked states — while every content endpoint composes
+        // personalGate (dashboard chunks 2-4): the switch is enforced
+        // server-side, never just hidden in the UI.
+        mux.HandleFunc("GET /api/personal/status", s.handlePersonalStatus)
+        // Calendar (chunk 2): the agenda feed + the range window. Reads
+        // only — the write face is the agent tool's, behind the model's
+        // personal_write opt-in.
+        mux.HandleFunc("GET /api/personal/calendar", s.personalGate(s.handleCalendarAgenda))
+        mux.HandleFunc("GET /api/personal/calendar/range", s.personalGate(s.handleCalendarRange))
+        // Kanban (chunk 3): the one personal surface the web WRITES — the
+        // board is interactive by design, and the human driving their own
+        // dashboard needs no per-model opt-in (those flags govern the
+        // agent tool). The master switch still gates every route, and the
+        // mutating verbs compose guard() like every other write: a
+        // cross-origin page must not be able to rearrange the board.
+        mux.HandleFunc("GET /api/personal/kanban", s.personalGate(s.handleKanbanBoard))
+        mux.HandleFunc("POST /api/personal/kanban", s.personalGate(s.guard(s.handleKanbanAdd)))
+        mux.HandleFunc("PUT /api/personal/kanban/card", s.personalGate(s.guard(s.handleKanbanMoveEdit)))
+        mux.HandleFunc("DELETE /api/personal/kanban/card", s.personalGate(s.guard(s.handleKanbanDelete)))
+        // Mail (chunk 4): the read-only reader — the rail, one box's
+        // latest messages, and one message with its body. GETs only; the
+        // surface would not know how to write mail, and the agent's
+        // facade (personal_mail) does not even get the bodies.
+        mux.HandleFunc("GET /api/personal/mail/mailboxes", s.personalGate(s.handlePersonalMailboxes))
+        mux.HandleFunc("GET /api/personal/mail/messages", s.personalGate(s.handlePersonalMailMessages))
+        mux.HandleFunc("GET /api/personal/mail/message", s.personalGate(s.handlePersonalMailMessage))
+        // Mail accounts (chunk 8): the configurator — the keyring, not
+        // the letters. GET never carries a password, PUT replaces the
+        // saved list (guard()ed like every write — a cross-origin page
+        // must not be able to edit credentials), and the test dial
+        // persists nothing. The reads above stay the only mail surface
+        // that could ever matter to a message.
+        mux.HandleFunc("GET /api/personal/mail/accounts", s.personalGate(s.handleMailAccountsList))
+        mux.HandleFunc("PUT /api/personal/mail/accounts", s.personalGate(s.guard(s.handleMailAccountsSave)))
+        mux.HandleFunc("POST /api/personal/mail/test", s.personalGate(s.guard(s.handleMailAccountTest)))
+
+        // Files (chunk 5): the split-screen file browser's endpoints.
+        // Workspace machinery, not personal data — no personalGate — and
+        // deliberately NOT the /api/code viewer's project confinement:
+        // the ask was full-system navigation, so reads go anywhere the
+        // server's user may. The one write is guard()ed like every other
+        // mutating verb (a cross-origin page must not be able to edit
+        // files), and A1_FILES=off is the env kill-switch (A1_MCP
+        // precedent) covering reads and writes alike.
+        mux.HandleFunc("GET /api/files/list", s.filesGate(s.handleFilesList))
+        mux.HandleFunc("GET /api/files/read", s.filesGate(s.handleFilesRead))
+        mux.HandleFunc("PUT /api/files/write", s.filesGate(s.guard(s.handleFilesWrite)))
 
         // Slash-command surface (matches the TUI's command registry).
         // State + settings drive the footer chrome + Ctrl+K palette;
@@ -319,6 +371,12 @@ func (s *Server) routes() http.Handler {
         // dashboard. Loopback-only like the rest of this server's reads.
         mux.HandleFunc("GET /api/telemetry", s.handleTelemetry)
         mux.HandleFunc("GET /stats", s.handleStatsDashboard)
+
+        // The dashboard's usage heatmap: per-day activity counts rolled up
+        // from the vault (sessions, entries, tool runs). Read-only and
+        // loopbound like /api/telemetry; TTL-cached because it walks every
+        // entry payload.
+        mux.HandleFunc("GET /api/usage/daily", s.handleUsageDaily)
         return mux
 }
 
@@ -367,9 +425,8 @@ func (s *Server) configRoutes(mux *http.ServeMux) {
                 mux.HandleFunc(route, cfg.ServeHTTP)
         }
         // POST /api/config is wrapped so a successful save triggers a project
-        // config reload + weather service refresh: the web GUI persona picker
-        // and the weather system message need to reflect the new values on the
-        // next turn, without restarting the server.
+        // config reload: the web GUI persona picker needs to reflect the new
+        // values on the next turn, without restarting the server.
         mux.HandleFunc("POST /api/config", func(w http.ResponseWriter, r *http.Request) {
                 // Capture the response so we only refresh on success.
                 rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
@@ -381,19 +438,31 @@ func (s *Server) configRoutes(mux *http.ServeMux) {
         mux.HandleFunc("POST /api/models", cfg.ServeHTTP)
 }
 
-// onConfigSaved reloads the project config and refreshes the weather service
-// so the new weather.enabled / lat / lon take effect on the next turn. Best-
-// effort: errors are logged to stderr rather than surfaced, because the save
-// itself already succeeded by the time this runs.
+// onConfigSaved reloads the project config so the next turn reflects the
+// saved values without restarting the server. Best-effort: errors are
+// logged to stderr rather than surfaced, because the save itself already
+// succeeded by the time this runs. Live engines also rebind their tool
+// sets: the personal-data tools (chunk 2+) mount and unmount with the
+// master switch and the per-model flags, so a save is live on the next
+// turn of an OPEN chat, not only in new ones.
 func (s *Server) onConfigSaved() {
         if s.proj == nil {
                 return
         }
         if err := s.proj.LoadConfig(); err != nil {
                 fmt.Fprintf(os.Stderr, "web: reload config after save: %v\n", err)
-                return
         }
-        s.RefreshWeather()
+        var engines []*agent.Engine
+        s.mu.Lock()
+        for _, le := range s.engines {
+                if le != nil && le.engine != nil {
+                        engines = append(engines, le.engine)
+                }
+        }
+        s.mu.Unlock()
+        for _, e := range engines {
+                e.RefreshPersonalTools()
+        }
 }
 
 // statusRecorder wraps http.ResponseWriter so handlers can run unchanged
@@ -503,9 +572,6 @@ func (s *Server) liveFor(sessionID string) (*liveEngine, error) {
         if s.personaStore != nil {
                 opts = append(opts, agent.WithPersonaStore(s.personaStore))
         }
-        if s.weatherSvc != nil {
-                opts = append(opts, agent.WithWeather(s.weatherSvc))
-        }
         if sessionID != "" {
                 opts = append(opts, agent.WithResumeID(sessionID))
         }
@@ -574,6 +640,10 @@ func (s *Server) engineOptions(gate permission.Gate) []agent.EngineOption {
                 // opts in can have the bank attached while the global knob
                 // stays off.
                 agent.WithMemoryEnabled(s.stateStore().snapshot().MemoryEnabled),
+                // Personal-data tools (dashboard chunks 2+): the live
+                // section off the same project the gate reads — a config
+                // save flips mounts on the next refresh (onConfigSaved).
+                agent.WithPersonalConfig(func() project.PersonalConfig { return s.personalConfig() }),
         }
         // The Clock (Bet 01), when the daemon host wired it: fleet tools +
         // wake-ups for every engine this server builds.

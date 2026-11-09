@@ -15,7 +15,8 @@ import (
 // ("settings → max tool calls") with the common presets, a custom ladder for
 // less common budgets, and a /maxtoolcalls <n> slash command for arbitrary
 // values. The budget caps executed tool calls per turn in the agent engine;
-// yolo permission mode overrides it with unlimited at enforcement time.
+// unrestricted gates (yolo mode, allow-all overrides) ignore it at
+// enforcement time.
 type ToolBudgetCommands struct {
 	Ctrl *controller.EngineController
 	Bus  *controller.Bus
@@ -35,7 +36,7 @@ func (t *ToolBudgetCommands) Register(r *CommandRegistry) {
 	}
 	r.Register(Command{
 		Name:        "maxtoolcalls",
-		Description: "Max tool calls per turn (yolo = unlimited)",
+		Description: "Max tool calls per turn (yolo/allow-all = unlimited)",
 		Slash:       true,
 		NeedsArgs:   true,
 		Run: func(_ Context, args []string) error {
@@ -46,7 +47,7 @@ func (t *ToolBudgetCommands) Register(r *CommandRegistry) {
 			if len(args) > 0 {
 				return nil
 			}
-			items := []ArgItem{{Insert: "unlimited", Description: "no cap (yolo always runs unlimited)"}}
+			items := []ArgItem{{Insert: "unlimited", Description: "no cap (yolo and allow-all modes always run unlimited)"}}
 			for _, n := range append(append([]int{}, budgetPresets...), budgetLadder...) {
 				items = append(items, ArgItem{Insert: strconv.Itoa(n), Description: fmt.Sprintf("%d tool calls per turn", n)})
 			}

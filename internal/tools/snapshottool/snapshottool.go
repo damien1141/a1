@@ -71,8 +71,11 @@ func runSnapshot(ctx context.Context, input json.RawMessage) (tooldef.Result, er
 		return tooldef.Result{}, fmt.Errorf("action is required: create, rollback, list, or delete")
 	}
 
-	proj := project.GetDefaultProject()
-	if proj == nil {
+	// TryDefaultProject surfaces discovery failure (e.g. an unusable HOME) as
+	// this error instead of the process-wide panic GetDefaultProject would
+	// raise mid-request.
+	proj, err := project.TryDefaultProject()
+	if err != nil || proj == nil {
 		return tooldef.Result{}, fmt.Errorf("snapshot: project config not loaded")
 	}
 	root := proj.Root()

@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // maxAPIErrorBodyChars caps the raw-body fallback in FormatAPIError so a
@@ -21,6 +24,10 @@ type APIError struct {
 	Provider string
 	Status   int
 	Message  string
+	// RetryAfter is the provider's Retry-After hint when the response
+	// carried one (429s usually do). Zero means no hint. The credential
+	// pool honors it verbatim as the failing key's cooldown.
+	RetryAfter time.Duration
 }
 
 func (e *APIError) Error() string {
@@ -54,6 +61,39 @@ func FormatAPIError(provider string, status int, body []byte) error {
 		msg = "empty error response"
 	}
 	return &APIError{Provider: provider, Status: status, Message: msg}
+}
+
+// FormatAPIErrorHeaders is FormatAPIError with the response headers in
+// hand, so a provider Retry-After survives into the APIError the
+// credential pool rotates on. A nil header map reads as no hint.
+func FormatAPIErrorHeaders(provider string, status int, body []byte, header http.Header) error {
+	err := FormatAPIError(provider, status, body)
+	if apiErr, ok := err.(*APIError); ok && header != nil {
+		apiErr.RetryAfter = ParseRetryAfter(header.Get("Retry-After"))
+	}
+	return err
+}
+
+// ParseRetryAfter reads a Retry-After header value: delta-seconds or an
+// HTTP-date. It returns zero when the value is absent, unparsable, or
+// already past — never a negative wait.
+func ParseRetryAfter(v string) time.Duration {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 0
+	}
+	if secs, err := strconv.Atoi(v); err == nil {
+		if secs <= 0 {
+			return 0
+		}
+		return time.Duration(secs) * time.Second
+	}
+	if t, err := http.ParseTime(v); err == nil {
+		if d := time.Until(t); d > 0 {
+			return d
+		}
+	}
+	return 0
 }
 
 // apiErrorMessage extracts the human-readable message from a provider error

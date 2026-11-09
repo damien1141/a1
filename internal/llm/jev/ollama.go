@@ -288,9 +288,13 @@ type systemOneAnswer struct {
 
 // convertSystemOneAnswers checks the native reply against the questions
 // actually asked: every asked question present with a type-valid value.
+// Iteration is over sorted names — the hosted wire's rule — so the violation
+// a multi-question reply trips on is deterministic, not a map-order coin
+// flip.
 func convertSystemOneAnswers(reply map[string]systemOneAnswer, encoded map[string]any) (map[string]Answer, error) {
         answers := make(map[string]Answer, len(encoded))
-        for name, question := range encoded {
+        for _, name := range slices.Sorted(maps.Keys(encoded)) {
+                question := encoded[name]
                 asked, _ := question.(map[string]any)
                 want, _ := asked["type"].(string)
                 raw, ok := reply[name]
@@ -489,7 +493,10 @@ func parseOllamaAnswers(content string, encoded map[string]any) (map[string]Answ
         }
 
         answers := make(map[string]Answer, len(encoded))
-        for name, question := range encoded {
+        // Sorted names, as on the native and hosted wires: the violation a
+        // partial reply trips on must not depend on map iteration order.
+        for _, name := range slices.Sorted(maps.Keys(encoded)) {
+                question := encoded[name]
                 asked, _ := question.(map[string]any)
                 want, _ := asked["type"].(string)
                 raw, ok := reply[name]

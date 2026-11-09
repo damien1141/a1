@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 )
 
 // Materialize writes a PXB extension module under dir and builds its binary.
@@ -21,11 +22,7 @@ func Materialize(ctx context.Context, dir, name, version, mainGo string) error {
 	if err != nil {
 		return err
 	}
-	mod := fmt.Sprintf(
-		"module %s\n\ngo 1.26\n\nrequire github.com/damien1141/a1/ext/go v0.0.0\n\nreplace github.com/damien1141/a1/ext/go => %s\n",
-		name,
-		filepath.ToSlash(filepath.Join(phiRoot, "ext", "go")),
-	)
+	mod := extensionGoMod(name, filepath.Join(phiRoot, "ext", "go"))
 	//nolint:gosec // G306: throwaway generated test module files
 	if err := os.WriteFile(
 		filepath.Join(dir, "go.mod"),
@@ -64,6 +61,21 @@ func Materialize(ctx context.Context, dir, name, version, mainGo string) error {
 		filepath.Join(dir, "a1.yaml"),
 		[]byte(yaml),
 		0o644,
+	)
+}
+
+// extensionGoMod renders the go.mod of a scratch extension module. The SDK
+// path rides the replace directive as a double-quoted string: go.mod tokens
+// split on whitespace, so an unquoted checkout path like
+// ".../workspace-584a6da6 (1)/download/a1_extracted" (a browser's
+// duplicate-download suffix) used to break every extension-building test at
+// "usage: replace module/path ..." — quoting is always emitted, and a quoted
+// path is valid go.mod wherever the tree lives.
+func extensionGoMod(module, sdkDir string) string {
+	return fmt.Sprintf(
+		"module %s\n\ngo 1.26\n\nrequire github.com/damien1141/a1/ext/go v0.0.0\n\nreplace github.com/damien1141/a1/ext/go => %s\n",
+		module,
+		strconv.Quote(filepath.ToSlash(sdkDir)),
 	)
 }
 

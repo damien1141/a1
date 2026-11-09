@@ -2,7 +2,6 @@ package webserver
 
 import (
         "net/http"
-        "strconv"
         "strings"
 
         "github.com/damien1141/a1/internal/session"
@@ -99,11 +98,7 @@ func transcriptFromSnapshot(sessionID string, snap session.Snapshot) transcriptR
                         out = append(out, dto)
                         lastAssistant = len(out) - 1
                 case session.RoleCompaction:
-                        text := "Compacted context"
-                        if m.TokensBefore > 0 {
-                                text = "Compacted context (" + strconv.Itoa(m.TokensBefore) + " tokens)"
-                        }
-                        out = append(out, transcriptMessageDTO{Role: "system", Text: text})
+                        out = append(out, transcriptMessageDTO{Role: "system", Text: compactionDividerText(m.TokensBefore)})
                 }
         }
         // Leftover runs: attach to the nearest preceding assistant bubble (or a

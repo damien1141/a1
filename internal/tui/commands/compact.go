@@ -17,8 +17,8 @@ import (
 // free up the window first, or when a long tool run filled the context
 // faster than the gate expected.
 type CompactCommands struct {
-	Bus     *controller.Bus
-	Ctrl    *controller.EngineController
+	Bus  *controller.Bus
+	Ctrl *controller.EngineController
 	// StreamActive reports whether a reply or command is running. /compact
 	// is refused while a stream is active because compaction mutates the
 	// session tree the engine is mid-turn building, which would race.
@@ -42,18 +42,30 @@ func (c *CompactCommands) Register(r *CommandRegistry) {
 	})
 }
 
-// Run triggers a forced compaction and toasts the outcome.
+// Run triggers a forced compaction in the background and toasts the outcome.
 //
-// Three outcomes, each with a distinct toast:
+// The compaction itself is a full summarize round-trip — tens of seconds on
+// a large context — so it must never run on the UI goroutine: the previous
+// synchronous flow froze the whole TUI for the length of the call (the
+// reported "when you call /compact the tui just freezes"). Run arms the
+// controller's compacting flag synchronously (busy guards see it
+// immediately), toasts "Compacting context…" so the press registered, and
+// the outcome lands when the background call finishes:
+//
 //   - compaction ran: green "Context compacted"
 //   - nothing to summarize: warning "Nothing to compact"
+//   - already running: warning "Compaction already running"
 //   - error: red "Compaction failed: <err>"
 //
-// Refused entirely (warning toast, no compaction attempt) when a stream is
+// Refused outright (warning toast, no compaction attempt) when a stream is
 // active. Compaction while the engine is mid-turn would race the engine's
 // own session-tree mutation, so the guard is conservative.
 func (c *CompactCommands) Run(ctx context.Context) {
 	if c == nil {
+		return
+	}
+	if c.Ctrl != nil && c.Ctrl.Compacting() {
+		publishToast(c.Bus, "Compaction already running", toast.ToastWarning, 3*time.Second)
 		return
 	}
 	if c.StreamActive != nil && c.StreamActive() {
@@ -64,13 +76,17 @@ func (c *CompactCommands) Run(ctx context.Context) {
 		publishToast(c.Bus, "Compaction unavailable (engine not configured)", toast.ToastError, 3*time.Second)
 		return
 	}
-	err := c.Ctrl.ForceCompact(ctx)
-	switch {
-	case err == nil:
-		publishToast(c.Bus, "Context compacted", toast.ToastSuccess, 3*time.Second)
-	case errors.Is(err, controller.ErrNothingToCompact):
-		publishToast(c.Bus, "Nothing to compact", toast.ToastWarning, 3*time.Second)
-	default:
-		publishToast(c.Bus, "Compaction failed: "+err.Error(), toast.ToastError, 4*time.Second)
-	}
+	publishToast(c.Bus, "Compacting context…", toast.ToastInfo, 3*time.Second)
+	c.Ctrl.StartForceCompact(ctx, func(err error) {
+		switch {
+		case err == nil:
+			publishToast(c.Bus, "Context compacted", toast.ToastSuccess, 3*time.Second)
+		case errors.Is(err, controller.ErrNothingToCompact):
+			publishToast(c.Bus, "Nothing to compact", toast.ToastWarning, 3*time.Second)
+		case errors.Is(err, controller.ErrCompactionRunning):
+			publishToast(c.Bus, "Compaction already running", toast.ToastWarning, 3*time.Second)
+		default:
+			publishToast(c.Bus, "Compaction failed: "+err.Error(), toast.ToastError, 4*time.Second)
+		}
+	})
 }

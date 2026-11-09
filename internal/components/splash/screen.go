@@ -46,7 +46,10 @@ func wrapHint(s string, width int) []string {
 			cur = word
 			continue
 		}
-		if len(cur)+1+len(word) > width {
+		// Fit by display columns, not bytes: CJK runes take 2 columns but 3
+		// bytes (emoji 2 and 4), so byte arithmetic wrapped hints at the wrong
+		// place on the screen. The separator is a single space, width 1.
+		if xui.StringWidth(cur, xui.WidthUnicode)+1+xui.StringWidth(word, xui.WidthUnicode) > width {
 			lines = append(lines, cur)
 			cur = word
 			continue

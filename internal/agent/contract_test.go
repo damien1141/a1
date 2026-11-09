@@ -117,11 +117,18 @@ func TestContractToolRefusesInvalidAndNeverRemoves(t *testing.T) {
 
 func TestContractToolBadArgs(t *testing.T) {
         engine := newContractTestEngine(t)
-        msg, _, _ := engine.executor.Run(t.Context(), []llm.ToolCall{{
-                ID: "c1", Type: "function", Function: llm.Function{Name: "contract", Arguments: `{invalid`},
-        }}, func(session.ToolData) bool { return true })
-        require.Len(t, msg, 1)
-        assert.Contains(t, msg[0].Content, "contract:")
+        // Valid JSON of the wrong shape reaches the tool and is refused in
+        // its own voice.
+        msg := runToolCall(t, engine.executor, "contract", `"not-an-object"`)
+        assert.Contains(t, msg.Content, "contract: arguments must be")
+        assert.Empty(t, engine.TurnContract())
+
+        // Unparseable arguments are refused one layer up, by the executor's
+        // malformed-arguments guard — same outcome (no contract held), with
+        // the guard naming what arrived and the shape to re-issue.
+        msg = runToolCall(t, engine.executor, "contract", `{invalid`)
+        assert.Contains(t, msg.Content, "malformed arguments")
+        assert.Contains(t, msg.Content, `"checks"`)
         assert.Empty(t, engine.TurnContract())
 }
 

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/damien1141/a1/internal/graph"
@@ -89,8 +91,10 @@ func runGraph(ctx context.Context, input json.RawMessage) (tooldef.Result, error
 		query = "show project dependency overview"
 	}
 
-	proj := project.GetDefaultProject()
-	if proj == nil {
+	// TryDefaultProject surfaces discovery failure as an error instead of the
+	// process-wide panic GetDefaultProject would raise mid-request.
+	proj, err := project.TryDefaultProject()
+	if err != nil || proj == nil {
 		return tooldef.Result{}, fmt.Errorf("graph: project config not loaded")
 	}
 	root := proj.Root()
@@ -106,12 +110,14 @@ func runGraph(ctx context.Context, input json.RawMessage) (tooldef.Result, error
 	if target == "" {
 		target = guessTargetFromQuery(query, g.AllFiles())
 	}
+
+	resolver := graph.NewPathResolver(root)
 	if target == "" {
 		// Fallback: show top imported files as an overview.
 		return tooldef.Result{
-			Content: renderOverview(g),
+			Content: renderOverview(g, resolver),
 			Detail:  fmt.Sprintf("%d files indexed", g.Len()),
-			Output:  renderOverview(g),
+			Output:  renderOverview(g, resolver),
 		}, nil
 	}
 
@@ -124,27 +130,42 @@ func runGraph(ctx context.Context, input json.RawMessage) (tooldef.Result, error
 		limit = defaultLimit
 	}
 
-	resolver := graph.NewPathResolver(root)
+	// importsOf accepts both spellings: file paths index g.edges directly,
+	// and a module-path target is retried once through the resolver, which
+	// maps it to the file whose edges the user meant.
+	importsOf := func(t string) []string {
+		edges := g.Imports(t)
+		if len(edges) == 0 {
+			if f := resolver.Resolve(t); f != "" {
+				edges = g.Imports(f)
+			}
+		}
+		return edges
+	}
 	var results []string
 	switch direction {
 	case "imports":
-		for _, imp := range g.Imports(target) {
+		for _, imp := range importsOf(target) {
 			if r := resolver.Resolve(imp); r != "" {
 				results = append(results, r)
 			}
 		}
 	case "imported_by":
-		for _, src := range g.ImportedBy(target) {
-			results = append(results, src)
+		for _, key := range reverseKeys(resolver, target) {
+			for _, src := range g.ImportedBy(key) {
+				results = append(results, src)
+			}
 		}
 	default:
-		for _, imp := range g.Imports(target) {
+		for _, imp := range importsOf(target) {
 			if r := resolver.Resolve(imp); r != "" {
 				results = append(results, r)
 			}
 		}
-		for _, src := range g.ImportedBy(target) {
-			results = append(results, src)
+		for _, key := range reverseKeys(resolver, target) {
+			for _, src := range g.ImportedBy(key) {
+				results = append(results, src)
+			}
 		}
 	}
 
@@ -175,6 +196,33 @@ func runGraph(ctx context.Context, input json.RawMessage) (tooldef.Result, error
 	return tooldef.Result{Content: content, Detail: detail, Output: content}, nil
 }
 
+// reverseKeys expands a user target into every key the graph's reverse index
+// may hold for it. The index is keyed by raw import strings — for Go the
+// module-qualified package directory ("<module>/internal/auth") — while this
+// tool's docs steer users at file paths ("internal/auth/auth.go"), so a
+// file-path target never matches unless its package directory and the
+// module-prefixed form of each spelling are probed too. The direction query's
+// dedup loop absorbs any overlap between candidates.
+func reverseKeys(resolver *graph.PathResolver, target string) []string {
+	forms := []string{target}
+	if dir := path.Dir(filepath.ToSlash(target)); dir != "." && dir != "/" && dir != target {
+		// A "." directory candidate could only ever match Python root-package
+		// relative imports ("from . import x"), which have nothing to do with
+		// the target the user named — pure false-positive surface.
+		forms = append(forms, dir)
+	}
+	if mod := resolver.ModulePath(); mod != "" {
+		base := len(forms)
+		for _, f := range forms[:base] {
+			if f == mod || strings.HasPrefix(f, mod+"/") {
+				continue
+			}
+			forms = append(forms, mod+"/"+f)
+		}
+	}
+	return forms
+}
+
 func guessTargetFromQuery(query string, files []string) string {
 	q := strings.ToLower(query)
 	for _, f := range files {
@@ -198,23 +246,34 @@ func renderGraphResults(target, direction string, paths []string) string {
 	return sb.String()
 }
 
-func renderOverview(g *graph.Graph) string {
+func renderOverview(g *graph.Graph, resolver *graph.PathResolver) string {
 	var sb strings.Builder
 	sb.WriteString("Project dependency overview\n")
 	sb.WriteString(strings.Repeat("=", 60))
 	sb.WriteString("\n\n")
 	sb.WriteString(fmt.Sprintf("Indexed files: %d\n\n", g.Len()))
 
-	// Show top imported files.
+	// Show top imported files. The reverse index is keyed by raw import
+	// paths, so a file's importers are whatever ImportedBy holds under any
+	// of its key spellings (file path, package dir, module-prefixed forms) —
+	// the same expansion reverseKeys applies to direction queries. One
+	// importer may surface under several keys for the same file; dedupe by
+	// importer so the count is "how many files import this one", not a
+	// count of key spellings.
 	type count struct {
 		path  string
 		count int
 	}
 	counts := make([]count, 0)
 	for _, f := range g.AllFiles() {
-		c := len(g.ImportedBy(f))
-		if c > 0 {
-			counts = append(counts, count{path: f, count: c})
+		seen := make(map[string]struct{})
+		for _, key := range reverseKeys(resolver, f) {
+			for _, src := range g.ImportedBy(key) {
+				seen[src] = struct{}{}
+			}
+		}
+		if len(seen) > 0 {
+			counts = append(counts, count{path: f, count: len(seen)})
 		}
 	}
 	if len(counts) > 0 {

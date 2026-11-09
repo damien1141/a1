@@ -69,7 +69,7 @@ func CompactRequest(
 		return llm.CompactResult{}, err
 	}
 	if httpResp.StatusCode != http.StatusOK {
-		return llm.CompactResult{}, llm.FormatAPIError("LLM", httpResp.StatusCode, respBody)
+		return llm.CompactResult{}, llm.FormatAPIErrorHeaders("LLM", httpResp.StatusCode, respBody, httpResp.Header)
 	}
 
 	var resp compactResponse
@@ -149,7 +149,7 @@ func Stream(
 
 		if httpResp.StatusCode != http.StatusOK {
 			respBody, _ := io.ReadAll(httpResp.Body)
-			yield(llm.StreamEvent{}, llm.FormatAPIError("LLM", httpResp.StatusCode, respBody))
+			yield(llm.StreamEvent{}, llm.FormatAPIErrorHeaders("LLM", httpResp.StatusCode, respBody, httpResp.Header))
 			return
 		}
 
@@ -204,7 +204,12 @@ func processStream(body io.Reader, yield func(llm.StreamEvent, error) bool) {
 
 	for data, parseErr := range util.ParseDataStream(body) {
 		if parseErr != nil {
-			yield(llm.StreamEvent{}, parseErr)
+			// Mid-stream deaths carry a typed Error event, the same shape
+			// anthropic, gemini, and the chat-completions path emit, so
+			// consumers branching on ev.Type see them; the iter error rides
+			// along for range-over-func consumers. Pre-stream failures keep
+			// the zero-value shape.
+			yield(llm.StreamEvent{Type: llm.StreamEventTypeError, Err: parseErr.Error()}, parseErr)
 			return
 		}
 		payload := bytes.TrimSpace(data)
@@ -352,7 +357,10 @@ func processStream(body io.Reader, yield func(llm.StreamEvent, error) bool) {
 			if ev.Code != "" {
 				msg = "Error Code " + ev.Code + ": " + msg
 			}
-			yield(llm.StreamEvent{}, errors.New(msg))
+			// Provider-signaled deaths mid-stream carry the typed Error event,
+			// matching anthropic/gemini — consumers branching on ev.Type must see
+			// these, not only the ones that also check the iter error.
+			yield(llm.StreamEvent{Type: llm.StreamEventTypeError, Err: msg}, errors.New(msg))
 			return
 
 		case "response.failed":
@@ -364,7 +372,7 @@ func processStream(body io.Reader, yield func(llm.StreamEvent, error) bool) {
 					msg = "incomplete: " + d.Reason
 				}
 			}
-			yield(llm.StreamEvent{}, errors.New(msg))
+			yield(llm.StreamEvent{Type: llm.StreamEventTypeError, Err: msg}, errors.New(msg))
 			return
 		}
 	}

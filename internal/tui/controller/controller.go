@@ -27,7 +27,6 @@ import (
         "github.com/damien1141/a1/internal/schedule"
         "github.com/damien1141/a1/internal/session"
         "github.com/damien1141/a1/internal/tools/tooldef"
-        "github.com/damien1141/a1/internal/weather"
 
         "github.com/damien1141/a1/internal/vault"
 )
@@ -70,16 +69,20 @@ type EngineController struct {
         // palette updates it live: it rebinds the running engine and persists
         // to config.yaml in one step.
         maxToolCalls atomic.Int64
+        // compacting is set while a user-initiated compaction runs (the
+        // synchronous ForceCompact call, wherever its goroutine came from).
+        // Busy guards read it so a prompt submitted in the same frame as
+        // /compact - before the CompactionStarted event lands in the snapshot
+        // - still refuses rather than racing the tree mutation.
+        compacting atomic.Bool
         extRunner    atomic.Pointer[extension.Runner]
         mcpPool      *mcp.Pool
         memStore     *memstore.Store // opened lazily when MemoryEnabled() turns on
 
-        // personaStore + weatherSvc back the agent's persona framing and weekly
-        // forecast context injections. They are constructed once in
-        // NewController from the project's global layout and updated in place
-        // when the config file changes (the underlying services cache).
+        // personaStore backs the agent's persona framing injection. It is
+        // constructed once in NewController from the project's global
+        // layout.
         personaStore *persona.Store
-        weatherSvc   *weather.Service
 
         lastJobProgress sync.Map // job slot key → last published signature
 }
@@ -130,7 +133,6 @@ func NewController(bus *Bus, proj *project.Project, cwd string) (*EngineControll
                 session.SetDefaultVault(v)
                 c.personaStore.AttachVault(v)
         }
-        c.weatherSvc = weather.NewService(weatherConfigFromProject(proj), 0, nil)
         // TUI defaults to bypass; palette → settings → permissions toggles it.
         c.allowAll.Store(true)
 
@@ -170,7 +172,7 @@ func NewController(bus *Bus, proj *project.Project, cwd string) (*EngineControll
                 _, serr := jobs.Spawn(ctx, job.SpawnRequest{
                         Prompt:      sc.Prompt,
                         Description: sc.Description,
-                        ParentID:    "schedule:" + sc.ID,
+                        ParentID:    session.ScheduleParentPrefix + sc.ID,
                         Role:        role,
                         WorkDir:     sc.WorkDir,
                         WarmFrom:    "",
@@ -1088,9 +1090,6 @@ func (c *EngineController) openEngine(
         if c.personaStore != nil {
                 opts = append(opts, agent.WithPersonaStore(c.personaStore))
         }
-        if c.weatherSvc != nil {
-                opts = append(opts, agent.WithWeather(c.weatherSvc))
-        }
         if resumeID != "" {
                 opts = append(opts, agent.WithResumeID(resumeID))
         }
@@ -1109,6 +1108,15 @@ func (c *EngineController) openEngine(
                 agent.WithMCP(c.mcpPool),
                 agent.WithHooks(model.HooksFor(cfg.Name)),
                 agent.WithMemoryStore(c.openMemoryStore()),
+                // Personal-data tools (dashboard chunks 2+): the live
+                // section off the controller's project — the same config
+                // the web gate reads when the TUI hosts the web surface.
+                agent.WithPersonalConfig(func() project.PersonalConfig {
+                        if c.proj == nil || c.proj.Config() == nil {
+                                return project.PersonalConfig{}
+                        }
+                        return c.proj.Config().Personal
+                }),
                 // Config-defined evidence checks (config.yaml `checks:`).
                 agent.WithEvidenceChecks(c.proj.Config().EvidenceChecks()),
                 // The RAW global toggle; the engine folds it with the active
@@ -1127,11 +1135,18 @@ func (c *EngineController) openEngine(
         )
 }
 
+// ReplaySnapshot projects the session for a resumed transcript. It walks the
+// FULL leaf-to-root branch (AllEntries), not the compaction-cut context path:
+// the transcript is the human's scrollback, and a compaction cuts only the
+// MODEL's context — pre-compaction messages stay above the cut marker (the
+// same divider a reload renders), while PathEntries, what the next request
+// sends, still stops at the retained tail. Replaying the context path made a
+// resumed TUI open with its early history silently gone.
 func (c *EngineController) ReplaySnapshot() session.Snapshot {
         if c.engine == nil || c.engine.Session() == nil {
                 return session.Snapshot{}
         }
-        return session.ReplaySnapshot(c.engine.Session().PathEntries(), c.engine.ToolDetail)
+        return session.ReplaySnapshot(c.engine.Session().AllEntries(), c.engine.ToolDetail)
 }
 
 func (c *EngineController) StartPrompt(text string, pendingSkills []string, images []llm.Image) {
@@ -1179,10 +1194,20 @@ var ErrNothingToCompact = errors.New("nothing to compact")
 // session tree (appends a CompactionEntry) and rewrites the context the
 // engine is mid-turn building, which would race. The slash command guards
 // against this with the StreamActive check.
+// ErrCompactionRunning is returned when a ForceCompact is attempted while
+// another one is still in flight. The engine's own compactMu serializes the
+// tree mutation; this error keeps the caller from queueing a pointless
+// second summarize round-trip behind the first.
+var ErrCompactionRunning = errors.New("compaction already running")
+
 func (c *EngineController) ForceCompact(ctx context.Context) error {
         if c == nil || c.engine == nil {
                 return errors.New("compaction: engine not configured")
         }
+        if !c.compacting.CompareAndSwap(false, true) {
+                return ErrCompactionRunning
+        }
+        defer c.compacting.Store(false)
         did, err := c.engine.ForceCompact(ctx, func(ev session.Event, _ error) bool {
                 if c.bus != nil && ev != nil {
                         c.publish(SessionEventMsg{Event: ev})
@@ -1196,6 +1221,63 @@ func (c *EngineController) ForceCompact(ctx context.Context) error {
                 return ErrNothingToCompact
         }
         return nil
+}
+
+// Compacting reports whether a user-initiated compaction is in flight. The
+// submitter folds this into IsBusy so Enter during a background /compact
+// refuses (keeping the typed text in the composer) instead of appending a
+// turn mid-compaction.
+func (c *EngineController) Compacting() bool {
+        return c != nil && c.compacting.Load()
+}
+
+// StartForceCompact runs a user-initiated compaction on a background
+// goroutine and reports the outcome through done (nil = compacted,
+// ErrNothingToCompact = no-op, ErrCompactionRunning = refused double-run,
+// any other error = failure). The compacting flag is armed synchronously
+// before it returns, so busy guards see the compaction immediately - no
+// one-frame window where a fast Enter could race the tree.
+//
+// This is the entry point for the /compact slash command. The old flow ran
+// ForceCompact synchronously on the UI goroutine, freezing the whole TUI
+// for the length of the summarize round-trip - the reported "when you call
+// /compact the tui just freezes".
+func (c *EngineController) StartForceCompact(ctx context.Context, done func(error)) {
+        if c == nil || c.engine == nil {
+                if done != nil {
+                        done(errors.New("compaction: engine not configured"))
+                }
+                return
+        }
+        if !c.compacting.CompareAndSwap(false, true) {
+                if done != nil {
+                        done(ErrCompactionRunning)
+                }
+                return
+        }
+        go func() {
+                defer c.compacting.Store(false)
+                did, err := c.engine.ForceCompact(ctx, func(ev session.Event, _ error) bool {
+                        if c.bus != nil && ev != nil {
+                                c.publish(SessionEventMsg{Event: ev})
+                        }
+                        return true
+                })
+                switch {
+                case err != nil:
+                        if done != nil {
+                                done(err)
+                        }
+                case !did:
+                        if done != nil {
+                                done(ErrNothingToCompact)
+                        }
+                default:
+                        if done != nil {
+                                done(nil)
+                        }
+                }
+        }()
 }
 
 func (c *EngineController) Close() {

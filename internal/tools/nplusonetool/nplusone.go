@@ -180,8 +180,12 @@ func collectGoFiles(root, glob string) ([]string, error) {
 	return files, err
 }
 
+// queryRe detects query-shaped calls on a single line. The db.* ORM group
+// matters because idiomatic GORM code holds the *gorm.DB in a receiver named
+// db (or tx) — `db.Find(&users)`, `db.Where(...)` — while the gorm.* entries
+// only ever matched code that literally named the package `gorm`.
 var queryRe = regexp.MustCompile(
-	`(?i)(db\.Query|db\.QueryRow|db\.Exec|sql\.Query|sql\.QueryRow|gorm\.Find|gorm\.First|gorm\.Where|\.Raw\(|\.Scan\(|\.Select\(|\.Create\(|\.Save\(|\.Update\(|\.Delete\()`,
+	`(?i)(db\.Query|db\.QueryRow|db\.Exec|sql\.Query|sql\.QueryRow|gorm\.Find|gorm\.First|gorm\.Where|\.Raw\(|\.Scan\(|\.Select\(|\.Create\(|\.Save\(|\.Update\(|\.Delete\(|db\.(?:Find|First|Where|Take|Last|Raw|Create|Save|Update|Delete))`,
 )
 
 func scanFileForNPlusOne(path string) ([]nplusoneHit, error) {

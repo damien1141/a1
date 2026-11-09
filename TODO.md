@@ -4,6 +4,738 @@ Working backlog. Everything here is user-reported unless noted. Each item ships
 with tests. See [CHANGELOG.md](CHANGELOG.md) for what already landed and
 [doc/history-*.md](doc/) for the archived work logs.
 
+## Active: the Dashboard — the new landing page of a new chat (2026-11-05) — PLANNED, CHUNKED, NOT STARTED
+
+User directive: "next we should get to work on a new section of the webui. I call
+it the dashboard its the new landing page of a new chat … calendar, kanban, and
+emails fall under personal info … we add another checkbox that allows access to
+the personal stuff … massive scope I know … we gotta chunk it - so we dont lose
+our minds - lets plan it in the todo.md." The dashboard replaces the welcome
+screen: the chatbox docks bottom-center with a bigger avatar, a GitHub-commit-
+style usage tracker, pinned sessions, calendar + kanban + a mini mail client
+(the "personal stuff"), and a split-screen file browser that opens on the
+server's current directory with full-system navigation and syntax-highlighted
+preview/edit. Personal data is gated by one new checkbox on the config webpage
+beside the thinking/image toggles. Supersedes the "Web dashboard" bullet in the
+roadmap horizons below (mailboxes now defined: local Maildir, read-only).
+
+### Decisions locked (so a context reset doesn't relitigate them)
+
+- **The dashboard is the SPA welcome state, not a new route.** The app has no
+  URL router — the Overlay union (App.tsx:51-63) is the navigation — so the
+  welcome branch (App.tsx:692-741) becomes `<Dashboard/>`. Submitting from the
+  docked chatbox is today's exact flow: `selectSession('')` + `sendPrompt` and
+  the chat view takes over. No routing framework, no second page.
+- **One switch governs all personal data:** config.yaml `personal.enabled`
+  (nil ⇒ false — locked until the user opts in), with `personal.calendar_dir`
+  and `personal.mail_dir` in the same section. Enforced SERVER-side: a
+  `personalGate` helper 403s every `/api/personal/*` handler when disabled; the
+  checkbox only hides widgets client-side. Never trust the UI.
+  `GET /api/personal/status` is the one ungated endpoint (the dashboard needs
+  it to render locked states). Agent-side personal tools are RULED IN
+  (2026-11-05, the chunk-0 go): each model card gains personal_read /
+  personal_write checkboxes in the thinking/image visual language — the
+  model's autonomy is opt-in per model, mail stays read-only even for the
+  model (writes touch calendar events and kanban cards only), and the
+  master switch stays a precondition: tools mount only when
+  personal.enabled AND the model's flags are on.
+- **Calendar = a local directory of .ics files, read-only.** No online sync, no
+  CalDAV — the user ruled "I dont use online sync- so we can forget about it."
+  v1 parses single events (DTSTART/DTEND, all-day, TZID); RRULE is chunk 6.
+- **Mail = Maildir, read-only v1.** No SMTP send, no writes back to the
+  Maildir — flags untouched, mark-as-read stays client-side until a later
+  ruling. The mailbox is on disk; the harness only reads it.
+- **Kanban = vault-backed** (subsystem-owned table, the job/schedule pattern
+  from `internal/job/rows.go`), three fixed columns v1: todo / doing / done.
+- **The file browser is deliberately unconfined.** `/api/code` stays
+  project-root confined for the agent; the browser gets NEW endpoints
+  (list/read/write) that may traverse the whole filesystem — that is the
+  feature on a loopback server, and `a1 serve`'s non-loopback token auth covers
+  them like every other route. Writes refuse when the live permission mode is
+  readonly. Env kill-switch `A1_FILES=off` (the `A1_MCP=off` precedent).
+- **Highlighting: vendor highlight.js** through the existing bun build (no
+  CDN, offline-first), theme tokens matched to paper/ink. CodeMirror 6 is a
+  parked stretch, not a dependency of the epic.
+
+### Ground rules — binding for every chunk
+
+- Trio law: every new Go package ships `trio_test.go` (internal/calendar,
+  internal/kanban, internal/maildir, …); new webserver handlers get covered in
+  a webserver trio file. Names: `Test<Subject>_<Case>_Positive|_Negative|
+  _Differential`; `scripts/test-trio-coverage.sh` must exit 0 at every chunk
+  boundary.
+- Config law: the personal section follows the BrowserConfig pattern (public
+  struct + yaml mirror + parse branch + `*Resolved()` in
+  `internal/project/config.go`); configserver `ConfigDoc` gains the section,
+  config.html gains the card, carry-forward keeps sections the form doesn't
+  own; harness-config's `references/config-reference.md` updated in the same
+  commit — unknown keys are silently ignored, so a doc lag is how dead
+  settings happen.
+- Vault law: kanban owns its DDL + `EnsureKanban` on the shared handle; no
+  ALTERs of core tables; a1.db is never hand-edited.
+- Build law: dist artifacts are committed (`internal/webserver/dist` via
+  go:embed in render.go) — every UI chunk ends with `cd web && bun run build`
+  and commits the rebuilt dist.
+- Definition of done per chunk: go build, go test on touched packages, vet,
+  trio gate green, dist rebuilt when UI moved, one CHANGELOG Unreleased entry.
+
+### Chunk 0 — groundwork: personal config, the gate, the status endpoint (LANDED 2026-11-05)
+
+- [x] `internal/project/config.go`: `PersonalConfig{Enabled *bool;
+      CalendarDir, MailDir string}` + mirror struct + parse branch +
+      `EnabledResolved()`; paths TrimSpace'd and ~-expanded (`expandHome`,
+      a leading ~ only — no ~user lookups, home-dir failure degrades to the
+      raw path). Landed: also `personal_read`/`personal_write` on
+      modelEntry → `llm.ModelConfig.PersonalRead/PersonalWrite` (the
+      ruled-in per-model guardrail).
+- [x] configserver: `PersonalDoc` on ConfigDoc; "Personal data" section card
+      in config.html after the Web GUI panel (master checkbox + conditional
+      calendar_dir/mail_dir fields, EN/ZH strings), and per-model
+      personal_read/personal_write checkboxes on every model card in the
+      exact thinking/image tri-state touched pattern; round-trip test
+      `config_personal_test.go` beside `config_jev_test.go`.
+- [x] webserver: `GET /api/personal/status` → `{enabled, calendarDir,
+      mailDir}` (ungated, reads the live config — a config save hot-reloads
+      it) + the `personalGate` helper (403 personal-data-disabled);
+      `internal/webserver/personalapi.go`, chunk 2-4 endpoints compose it.
+- [x] Trio: `internal/project/personal_config_test.go` (4 positive incl.
+      explicit-off + per-model flags, type-garbage negative,
+      expandHome-vs-hand-written-grid differential),
+      `internal/configserver/config_personal_test.go` (round-trips,
+      type-garbage 400, golden-block untouched-save differential),
+      `internal/webserver/personal_test.go` (status + gate pass/block,
+      gate-matches-resolver differential over every section spelling).
+      harness-config's SKILL.md Map + config-reference.md teach the section
+      in the same commit.
+
+### Chunk 1 — dashboard shell + pinned sessions + usage heatmap (LANDED 2026-11-07)
+
+- [x] `Dashboard.tsx` replaces the welcome branch: hero (bigger dodec), widget
+      grid on the paper-card tokens, docked bottom InputBar (bigger icon, per
+      the ask), quick actions (settings via `window.open('/settings')`, file
+      browser hook stub for chunk 5). Landed: the composer dock is the old
+      welcome flow verbatim (`selectSession('')` + send — the chat view takes
+      over, no new routing); the heatmap scrolls to its newest weeks on mount
+      so today is visible without dragging; the personal trio renders honest
+      locked/coming states off `/api/personal/status` with zero gated
+      fetches.
+- [x] Pinned sessions widget: `fetchPins` + `fetchSessions`, pinned-first,
+      click resumes via `selectSession(id)`; the star toggle already ships
+      (pins.json + `/api/pins`, modeapi.go:164/173) — the widget is pure
+      composition, zero backend.
+- [x] Usage tracker: `GET /api/usage/daily?days=371` → per-day {sessions,
+      messages, tool_calls, tokens} — sessions from `sessions.created_at`,
+      tool calls from `tool_runs.at`; messages/tokens from
+      `session_entries` payload via `json_extract` where
+      kind='EntryMessage' (JSON1 verified in the modernc build). Landed
+      with two correctness rulings the plan had left open: every day keys
+      on the UTC day via SQLite `date()` — entry timestamps marshal with
+      LOCAL offsets, so the planned `substr(at,1,10)` would mis-bucket a
+      +01:00 entry onto the wrong day; and every `json_extract` sits
+      behind a `CASE WHEN json_valid()` guard — json_extract RAISES on
+      malformed JSON, and a corrupt payload row must be skipped, never
+      fatal. The naive Go scan ships as the runtime fallback (not just
+      the test oracle). 60s in-memory TTL cache. UI: 53×7 seal-tone
+      heatmap, hover tooltip + selected-day readout, click filters the
+      session list to that day via the row's new `data-mtime` ISO
+      attribute (render.go).
+- [x] Placeholder cards for calendar/kanban/mail with honest locked/coming
+      states — no dead fetches.
+- [x] Trio: webserver usage handler — differential: SQL aggregate vs a naive
+      Go scan over a fixture vault with known entries (the flagship oracle;
+      fixture seeds non-UTC entry timestamps, tool-role rows, runtime
+      riders, a corrupt payload, out-of-window rows, a NULL tool timestamp,
+      across 7 window sizes); negative: hostile days (0, -5, "abc", absent,
+      4001), corrupt payload rows skipped not fatal, empty vault ⇒ zeros,
+      degraded (nil) vault ⇒ zeros.
+
+### Chunk 2 — calendar (.ics from a local dir) (LANDED 2026-11-08)
+
+- [x] `internal/calendar`: RFC 5545 subset — line unfolding, VEVENT blocks,
+      DTSTART/DTEND (DATE vs DATE-TIME, Z vs TZID → time.LoadLocation,
+      floating ⇒ server local), all-day, SUMMARY/LOCATION/DESCRIPTION
+      unescaping; `Scan(dir)` with an mtime memo + per-file size cap;
+      malformed lines skip-with-count, never fatal. Landed with the write
+      side the agent tool needs: Create (one-event files, atomic
+      temp+rename) and Update (surgical property-line patching inside the
+      matching VEVENT — RRULE/VALARM/X- lines and other events preserved
+      byte-for-byte, DTSTAMP bumped, result re-parsed to verify itself).
+- [x] Endpoints (gated): `GET /api/personal/calendar?days=N` (agenda asc),
+      `/range?from&to` for the month grid. Hostile inputs follow the usage
+      endpoint's doctrine (fallback/clamp, never 5xx); both are READ-ONLY —
+      the write face is the agent tool's.
+- [x] Widget: agenda card (next 14 days, today highlighted, all-day badge,
+      location subtitle); month grid as a stretch. Locked / not-configured
+      states read off /api/personal/status with zero gated fetches; a mid-
+      flight 403 folds back to locked.
+- [x] Trio: parser differential over golden testdata .ics (DST crossings,
+      unknown TZID ⇒ UTC + warning field, folded lines, all-day boundaries);
+      handler trio (gate off, dir missing, dir emptied at runtime, hostile
+      dir path) + endpoint-vs-library differential. Plus the calendartool
+      trio (call-time flag refusals; facade-vs-library parity) and
+      permission tests for the new ActionPersonal class.
+- [x] Agent tool `personal_calendar` (chunk 0's flags gate it): agenda /
+      range reads when the model has personal_read; create/update .ics
+      events when personal_write — the flags are enforced at the tool call,
+      not just at mount, so a mis-mounted tool still cannot write. Writes
+      clear a new ActionPersonal permission class: consented by the config
+      opt-ins (no per-call prompt in interactive mode), denied in readonly.
+      A config save rebinds live web engines (RefreshPersonalTools) so the
+      switch flips mounts on the next turn of an open chat.
+
+### Chunk 3 — kanban (vault-backed board) (LANDED 2026-11-08)
+
+- [x] `internal/kanban`: `kanban_cards` DDL (id TEXT PK, col TEXT CHECK'd to
+      the three columns, position INTEGER, title, notes, timestamps) +
+      `EnsureKanban(v.DB())`; List/Add/Move/Edit/Delete; Move renumbers the
+      target column in one transaction.
+- [x] Endpoints (gated): GET/POST `/api/personal/kanban`, PUT
+      `/api/personal/kanban/card` (move + edit), DELETE `…/card?id=`.
+- [x] Widget: three columns, HTML5 drag & drop, inline add, edit via the
+      existing Modal component, two-step delete confirm (the session-delete
+      UX precedent).
+- [x] Trio: store — differential: position-invariant oracle (after any op
+      sequence, positions are dense 0..n-1 per column, cross-checked against
+      a naive re-sort); negative: unknown column, duplicate id, nil vault,
+      hostile positions. Plus the kanbantool trio (call-time refusals,
+      facade-vs-library parity) and permission/engine mount tests.
+- [x] Agent tool `personal_kanban`: list when personal_read; add/move/edit/
+      delete cards when personal_write — same enforcement shape as the
+      calendar tool.
+
+### Chunk 4 — mail (Maildir, read-only mini client) (LANDED 2026-11-08)
+
+- [x] `internal/maildir`: mailboxes = subdirs with cur/new (tmp ignored);
+      `List(box, limit)` = latest-N headers (Maildir `:2,:S` filename flags +
+      net/mail for From/Subject/Date — RFC2047 comes free with the stdlib);
+      `Open(box, id)` = body, text/plain preferred, text/html stripped to
+      text v1 (no remote content rendering, ever — privacy ruling); size
+      caps. Landed with the rules the plan left implicit, all pinned by the
+      trio: dotfiles in cur/new are mailbox metadata, never messages
+      (.keep placeholders); a header block that runs past the 128 KiB cap
+      without a blank line is a runaway disk dump — skipped with a count,
+      never slurped (and unaddressable by id: what List refuses to show is
+      not a message); a file past the 8 MiB whole-file cap answers
+      headers-only with Truncated set, never a body cut mid-sentence; a
+      missing Date header falls back to the file's mtime so ordering stays
+      total; and `Summary(box, id)` is the envelope-only read the agent
+      facade is built on.
+- [x] Endpoints (gated): `/api/personal/mail/mailboxes`,
+      `/mail/messages?box&limit`, `/mail/message?box&id`; per-request scan
+      with an mtime memo — no vault persistence until profiling demands it.
+      limit follows the usage doctrine (unparsable/non-positive ⇒ 50, clamp
+      200); traversal-shaped names are 400s, missing boxes/messages are
+      404s, an unconfigured root is configured:false, and a degraded box
+      answers 200 with honest stats.
+- [x] Widget: mailbox rail + message list + read pane; dashboard card holds
+      the latest preview and expands into the overlay for the three-pane
+      layout. The card prefers the box named inbox (falling back to the
+      rail's first), shows unread badges and the envelope flags; the reader
+      overlay is rail | list | read with the degraded note, the truncated
+      refusal note, and locked / not-configured states with zero gated
+      fetches (a mid-flight 403 folds back to locked).
+- [x] Trio: differential vs a golden fixture Maildir tree (flags, colons in
+      filenames, missing Date header, encoded subjects); negative: missing
+      root/box, path-traversal box names rejected, oversized body refused
+      with header-only fallback. The differential side adds hand-computed
+      UTC literals + FixedZone constructions for every dated fixture
+      message, the limit-prefix law (every limit is a prefix of the full
+      latest-first order), and a seeded 20-tree generator whose plan is the
+      oracle (boxes, flags, ties, no-Date mtimes, junk, dotfiles, subdirs,
+      tmp decoys, new/-only boxes, empty boxes) — model versus
+      implementation, field by field. Plus the mailtool and handler trios.
+- [x] Agent tool `personal_mail`: mailboxes / messages / headers reads when
+      personal_read; NO write surface exists even with personal_write —
+      the Maildir is read-only by ruling, for the model exactly as for the
+      webui. The ruling is structural: Deps has no write hook at all, and
+      one privacy line goes further — the model reads the ENVELOPE, never
+      the letter (Summary, not Open; bodies are a webui privilege). All
+      three actions extract as ordinary ActionRead (unknown actions ride
+      ActionPersonal so readonly still denies them).
+
+### Chunk 5 — file browser + split screen (LANDED 2026-11-08)
+
+- [x] `internal/webserver/filesapi.go`: `GET /api/files/list?path=` (name /
+      dir / symlink target / size / mtime; empty path ⇒ server cwd — "current
+      directory" per the ask), `GET /api/files/read?path=` (utf-8 sniff,
+      NUL-byte binary refusal, 2MB preview cap, language by extension),
+      `PUT /api/files/write {path, content}` (guard()ed, symlink-refusing,
+      readonly-mode-refusing at write time via /api/mode's mode source; no
+      implicit mkdir -p). Landed with the rulings the plan left implicit,
+      all pinned by the trio: dir means NAVIGABILITY not dirent type (a
+      symlink to a directory lists as a dir AND carries its target — broken
+      ones keep the target and list as plain rows); size/mtime are the
+      entry's own lstat values (ls -l semantics); the preview cap is
+      REFUSED not truncated (exactly 2 MiB passes, one byte over is a 413
+      — a half file presented as the file is the one lie a viewer cannot
+      tell); the write preserves an existing file's permissions (editing a
+      script never strips its execute bit) via atomic temp+rename in the
+      target directory; and the kill-switch is A1_FILES (the A1_MCP
+      precedent: trimmed, lowercased, "0/false/off/no", 503 on reads too).
+- [x] SPA: split-screen state + header button + dashboard quick action; the
+      right pane is the FileBrowser: absolute-path address bar (full-system
+      navigation per the ask), breadcrumbs, dirs-first listing; click →
+      highlight.js preview; Edit → textarea + Save + dirty indicator + error
+      toasts. The pane is a sibling of main, not an overlay (it stays up
+      while the user chats); below lg it covers the screen. highlight.js is
+      vendored the sparse way — core + exactly the languages the server's
+      extension map rules (tsx/jsx/toml alias to TS/JS/ini, the honest best
+      available), and the token theme is derived from the palette's own
+      channel variables so light and dark both hold with one rule set.
+      Leaving with unsaved edits is refused by disabled buttons + a toast,
+      not a modal.
+- [x] Trio: write→read byte-fidelity round-trip and list vs os.ReadDir oracle;
+      negative: binary/oversized preview refused, readonly-mode write refused,
+      symlink write refused, unreadable dir, `A1_FILES=off`. The differential
+      earned its keep on landing day: it caught the handler's sort comparator
+      written backwards (files first, dirs last) — the oracle expected dirs
+      first and the diff flipped.
+
+### Chunk 6 — polish pass + RRULE + docs sweep (LANDED 2026-11-08)
+
+- [x] `internal/calendar/recur.go`: RRULE common subset (DAILY/WEEKLY/
+      MONTHLY, BYDAY, COUNT/UNTIL/INTERVAL) with hand-computed golden
+      differentials — full RFC compliance is NOT claimed and the doc says
+      so. Landed with the semantics the RFC leaves room for pinned in
+      recur.go's doc: occurrences generate from the rule restricted to
+      ≥ DTSTART (a non-matching anchor is not force-included), COUNT
+      counts the whole series from the first match (a window that opens
+      mid-series consumes the earlier occurrences against the budget),
+      UNTIL is inclusive in both spellings (DATE-form bounds a timed
+      DTSTART at the whole last day), expansion happens in DTSTART's own
+      zone (09:00 wall clock survives the DST boundary — pinned), and
+      WKST is fixed at MO. BYDAY under DAILY is a filter, under WEEKLY
+      the day set, under MONTHLY the ordinal forms (2TU, -1FR, plain
+      every-Friday). Anything else (YEARLY, BYSETPOS, BYMONTH, RDATE,
+      WKST≠MO, COUNT+UNTIL together) degrades to the first occurrence
+      with a Warnings entry — the honest subset boundary. En route the
+      sweep found and fixed a real overlap bug: a zero-End all-day event
+      compared end==start==from and FAILED end.After(from), so an
+      all-day event on the window's FIRST day vanished from its own
+      agenda — the filter now spans [its day, next midnight) as the doc
+      always claimed (master and occurrences share the one helper).
+      Trio: recur_test.go — the hand-computed golden table (every
+      expectation worked out from the 2026 calendar: the second
+      Tuesdays, the last Fridays, the Mondays, the 31st skipping short
+      months, COUNT-from-DTSTART mid-series windows, UNTIL boundary
+      seconds, DST wall-clock preservation across America/New_York's
+      fall-back), ParseRule refusals (21 hostile rules), Agenda
+      degradation negatives, the step cap (a daily series anchored in
+      the year 1300 yields nothing, bounded time), and the memo
+      stability pin. Downstream pins flipped with the behavior: the
+      calendar trio's agenda membership (the weekly golden event now
+      expands 4×/2× across its windows) and the webserver fixture count
+      (the 14-day window sees the recur anchor plus its +7d occurrence;
+      the range window's midnight to-bound excludes the second).
+- [x] Locked-state sweep across all personal widgets (status.enabled=false
+      renders locked cards, fires zero gated fetches); responsive (widgets
+      single-column on mobile; split screen becomes a full overlay); light +
+      dark themes verified. Browser-verified on all axes: personal off
+      renders three locked cards with exactly ONE /api/personal/* request
+      on the wire (the ungated status — zero gated fetches, server-side
+      403s confirmed by direct curl); 375px shows the new off-canvas
+      session drawer (hamburger bar, scrim, Escape, pick-to-close — main
+      is full-width 375px, no more 135px pinch), a single-column widget
+      grid, and the file browser covering the whole screen; dark and
+      light round-trip on body palette AND hljs token colors (one rule
+      set, channel-variable derived); RRULE verified through the real
+      widget (Weekly sync ×2, all-day Monday standup ×2, Sprint block
+      DAILY;COUNT=4 ×4, the unsupported YEARLY degraded ×1, nine Repeat
+      icons — every occurrence marked). The drawer is chunk 6's one new
+      frontend surface: below lg the sidebar slides over main (fixed,
+      z-50, shadow, translate-x transition), above lg it is the static
+      column and the state is inert.
+- [x] doc/dashboard.md design note; README feature list; CHANGELOG
+      per-chunk entries reconciled; config-reference.md re-verified against
+      config.go. dashboard.md documents the epic's rulings (the surface
+      map, the write-permission ladder calendar/kanban/mail/files, the
+      honest states, the RRULE subset claim, the responsive sweep, the
+      chunk ledger). README's Web GUI paragraph (en + zh-CN) now carries
+      the dashboard, the personal trio, the split screen, and the
+      responsive layout. CHANGELOG gained the chunk 3 (kanban) and
+      chunk 4 (mail) entries the sweep found missing. config-reference
+      cross-checked key-by-key against config.go's fileConfig — all 14
+      top-level blocks documented, no drift, no edit needed.
+- [x] Full gate: go test ./..., -race, vet, trio gate, bun build + dist
+      commit. 145 ok / 0 fail, -race 145 ok / 0 races, vet clean, trio
+      gate 146/146, dist rebuilt and committed, browser-verified end to
+      end (zero console errors across every phase).
+
+### Chunk 7 — the webUI tightening pass (LANDED 2026-11-08)
+
+The user's own screenshots drove this one, item by item:
+
+- **The sidebar overlap** — the drawer floated at z-50, above the z-40
+  modal layer, so open dialogs ran underneath it. The z-ladder is now
+  page < edge zone (z-20) < drawer (z-30) < modals (z-40) < toasts
+  (z-50), and the drawer is collapsed by default at EVERY viewport —
+  it opens from a left-edge hover zone (a quiet pill brightens as the
+  pointer lands), closes on pick / X / Escape / pointer-leave with a
+  300ms grace so crossing the gap never flickers, and slides on an
+  ease-out-quint 260ms. Below lg the hamburger + scrim remain the
+  touch-friendly exits.
+- **The second dodecahedron** beside the composer is gone — the hero is
+  the one brand mark, and the docked composer takes its full width.
+- **The file-browser toggle** moved from the (now-collapsed) sidebar
+  header into the composer, left of the send button — pressed-state
+  styling and aria-pressed intact.
+- **The heatmap autoselects today** — the newest cell wears the cinnabar
+  ring on load and the day-filter readout opens filled with the day's
+  sessions instead of leaving the card floor blank.
+- **The calendar is the ask's month grid** — ‹ month ›  navigation with
+  a today jump, every day a button (event dots, +n overflow), the
+  selected day's events listed under the grid, one
+  `/api/personal/calendar/range` fetch per visible month, today
+  autoselected on the current month. Locked / not-configured / failed /
+  degraded states all carry over unchanged.
+- **Highlighted editing** — the file browser's editor now colors while
+  you type (the classic overlay: a live-highlighted pre under a
+  transparent-text textarea, identical metrics, scroll-locked,
+  pointer-events-none), capped at 256 kB past which it says so honestly
+  and edits plain.
+- **Multi-account mail** — `personal.mail_accounts` mixes local Maildirs
+  and remote IMAP servers (name, type, root | host/port/username/
+  password/tls/mailbox); the legacy `mail_dir` resolves as the "local"
+  account so existing configs do not move. New `internal/imapmail`
+  (emersion/go-imap v2) is read-only to the bone: read-only SELECTs,
+  BODY.PEEK fetches, one stateless connection per call, 10s/30s
+  timeouts, UID as the message id. Both transports return the maildir
+  package's own types, so the web handlers and the widget carry ONE
+  wire shape and the semantics cannot drift. The rail answers 200 with
+  a per-account error (one dead server renders its outage inline, the
+  others stay clickable); list/read answer 502 for a dead or rejecting
+  server, 404 for a missing box/message, 400 for unknown accounts and
+  malformed ids. The agent facade is unchanged (envelopes only, legacy
+  mail_dir) — the docs say so.
+
+Tests: the imapmail trio (a real in-process emersion imapserver as the
+fixture, hand-written golden letters, and the flagship differential —
+the SAME letter set through both transports, disk vs wire, entry-by-
+entry incl. bodies), the account-resolution trio in project (defaults,
+de-dup, the legacy-vs-modern differential), and the webserver
+multi-account suite (default rail, per-account selection, the outage
+that renders instead of blanking, unknown-account 400s, dead-server
+502s). Full gates: build PASS, vet PASS, go test ./... all green
+(146 ok / 0 fail), -race all green, trio gate 147/147 (+imapmail),
+dist rebuilt and committed, browser-verified end to end on the user's
+own list (single dodec, today selected on the heatmap, month-grid day
+clicks listing their events, three account pills with the dead-server
+outage inline and per-account rails in the reader, the composer's pane
+toggle open/close, the highlighted editor screenshot-verified, drawer
+open/close on edge hover, drawer z=30 under modal z=40, zero console
+errors).
+
+### Anti-goals (permanent for this epic)
+
+- No online WRITES to personal data and no sync: no CalDAV, no SMTP, no
+  flags pushed back — reads went online in chunk 7 (IMAP, by the user's
+  ask) and stay read-only to the bone; the calendar is a directory of
+  .ics files, mail accounts are read-only Maildirs and IMAP boxes.
+- No HTML email with remote content; no sending mail in v1.
+- No per-widget permission grants; the one switch governs all of it.
+- No agent autonomy without opt-in: personal tools mount only when the
+  master switch is on AND the per-model personal_read (and personal_write
+  for writes) checkboxes are checked; absent flags mean locked. Mail DATA
+  (messages, flags) has no write surface at any flag setting — the one
+  mail write anywhere is the web's account-list configurator (chunk 8),
+  which no agent flag can reach.
+- No new JS frameworks; Preact + vendored highlight.js is the ceiling.
+
+### Chunk 8 — the mail configurator (LANDED 2026-11-09)
+
+User directive: "still cant configure email servers/accounts and app
+passwords- but that should be easily fixable." Chunk 7's multi-account
+mail was config-file driven; this chunk is the configurator itself.
+
+- [x] **The ruling: the keyring, not the letters.** Chunk 4's "nobody
+      writes here" governs MAIL — messages, flags — and stands untouched
+      (BODY.PEEK, read-only SELECTs, no handler that could send, move, or
+      mark). The account LIST is configuration, the same object the
+      /settings editor edits; the configurator writes it so the user
+      stops hand-editing YAML for it. Write ladder for mail: config yes
+      (web only), data never (anywhere, any flag).
+- [x] **The credential contract — the wire never carries a password it
+      did not have to.** GET /api/personal/mail/accounts returns
+      hasPassword, never the password (an editor that cannot show a
+      secret cannot leak one). PUT entries carry password (set) or
+      keepPassword (preserve), resolved by name for named accounts and
+      by type-and-server fingerprint for unnamed ones, landing only on a
+      UNIQUE match — row edits and deletions cannot shuffle credentials
+      onto the wrong account the way an index-anchored keep could; the
+      cost is stated in the UI (renaming does not carry the password).
+      The browser pass caught the unnamed collision for real: two
+      accounts saved without names both key on "", and the first-match
+      rule handed the IMAP account the maildir's empty password — the
+      fingerprint rule and its ambiguity-refusal are pinned by
+      TestMailAccountsUnnamedKeepFingerprint_Negative. The test dial takes
+      the same single-spec body with the same keep resolution, because
+      "test the saved account without retyping its app password" is the
+      honest test — and it persists NOTHING.
+- [x] **Endpoints.** GET accounts (the read model: entries sans
+      passwords, the legacy mail_dir as a pinned read-only row, the
+      resolved pills the rail serves), PUT accounts (whole-list
+      replacement, personalGate(guard()) — the kanban's composition; on
+      success onConfigSaved() reloads the project config and rebinds live
+      engines' personal tools, so the new account is on the rail and in
+      the agent's facade without a restart), POST test (one spec, 10s
+      timeout, dead server = 200 ok:false — the answer the button exists
+      to fetch). Validation is deliberately stricter than the read
+      path's lenient degrade: the configurator refuses known-bad shapes
+      (unknown type, imap sans host, maildir sans root, port out of
+      range, >32 accounts) with a 400 — hand-edited YAML keeps its
+      lenient degrade; this surface saves only what it knows is good.
+- [x] **project.SetMailAccounts** — the surgical YAML write
+      (modifyConfigYAML): sparse keys, wholesale sequence replacement,
+      empty save prunes the sequence and the personal block only when it
+      empties (SetMaxToolCalls' discipline); enabled/calendar_dir/
+      mail_dir are not this call's to move and survive untouched.
+      Passwords land as plain scalars beside the model api_keys — the
+      config file is already the project's secret store. expandHome was
+      exported (one "~ means home" rule on both sides of the wire).
+- [x] **The editor** (web/src/components/MailAccountsEditor.tsx): rows
+      with edit/remove, Add account (IMAP server | Local Maildir
+      segmented), the app-password field (type password + reveal, blank
+      + saved = keep), the Test connection button with inline verdict
+      ("Reached it — 3 mailboxes (…)" / the server's own error), Save =
+      one PUT of the whole list, saved-flash + the dashboard refetches
+      behind the modal (mailVersion). Doors: the card's not-configured
+      state (primary action is now "Add mail account"), the card header
+      gear, "Manage accounts" at the rail's foot inside the reader, and
+      the command palette. The legacy mail_dir renders as a pinned
+      read-only row.
+
+Tests: the project trio (SetMailAccounts write→parse round-trip
+differential against loadConfig, wholesale replacement, empty-save
+pruning with siblings kept), the webserver trio (list+save+keep positive
+with the live-reload proof through the rail, the test-dial positive with
+a fake IMAP listener that records the LOGIN line — the keep rule's
+server-side merge proven ON THE WIRE, the gate/guard/validation
+negatives, and the endpoint-vs-file differential: the test's own YAML
+parse of config.yaml compared entry-by-entry with the GET, plus the
+resolved pills vs the rail's account list — two endpoints, one truth).
+Full gates: build PASS, vet PASS, go test ./... all green (146 ok /
+0 fail), -race all green (146 ok / 0 races), trio gate 147/147, dist
+rebuilt and committed, browser-verified end to end (add-account form,
+maildir save landing on disk and the card refetching to the new account
+live, the dead-server test verdict, the keep-password flow through a
+saved account, zero console errors).
+
+## Active: bug-kill — every find from the test-trio audit fixed (2026-11-05) — LANDED, AWAITING USER VERIFY
+
+User directive: "alright lets kill those bugs we found." All seventeen
+found-along-the-way bugs from the W1–W4 trio waves, plus four same-class
+siblings found while fixing, are dead: production code fixed, the pins that
+documented each bug flipped to assert the fixed behavior, full gate re-run
+(go test ./... = 139 ok / 0 fail; -race = 139 ok / 0 races; vet clean;
+trio-coverage gate exits 0 — the trio survived every pin flip). Details per
+fix in CHANGELOG Unreleased → Fixed; the wave notes below now carry
+"FIXED 2026-11-05" markers.
+
+- [x] **engineaccess nil clear + agent typed-nil forwarding.** Registry
+      stores through an engineBox (nil representable); agent.SetActiveEngine
+      forwards a literal nil on the clear path. Pins flipped: "nil store
+      panics" → "nil clears"; differential extended to oracle-check the
+      literal-nil clear. Collateral: permissiontool trio comments updated,
+      its cleanup clears properly now.
+- [x] **graphtool imported_by + overview.** reverseKeys expands a target
+      into every reverse-index key spelling (file, package dir,
+      module-prefixed); both directions union/retry accordingly.
+      renderOverview counts through the same expansion (was always zero on
+      Go modules). Differential extended with file-path and bare-dir
+      aliases; overview pin flipped to expect "base/base.go (2 importers)".
+- [x] **project.TryDefaultProject.** Non-panicking lazy discovery;
+      snapshottool, graphtool, and batchtool (same unreachable guard found
+      in the sweep) use it. UnusableHome pins flipped from Panics to the
+      tool errors. GetDefaultProject keeps the boot-surface contract.
+- [x] **chat cursor clamps.** LineStart/LineEnd clamp negative offsets;
+      ReplaceRange clamps both bounds before the swap. Oracles extended to
+      negative offsets; both-negative / negative-end / start-past-end cases
+      pinned. Composer's "currently panics" caveat unpinned — hostile
+      carets (999, -9) pinned from the composer side.
+- [x] **status negative Frame.** modNonNeg at Draw, Glyph, and
+      ForEachFlowCell's head; -1/-11 pins wrap to the last frame.
+- [x] **transcript nil entries.** Skipped at every dereference site (Draw
+      viewport loop, both Handle loops); copy sites verified nil-safe.
+      NotPanics pins.
+- [x] **splash display columns.** xui.StringWidth(WidthUnicode); the
+      differential's width assertion switched to columns plus a
+      greedy-packing check (a break is only legal when the next word
+      doesn't fit by columns).
+- [x] **depstool grouped imports.** go/parser (ImportsOnly) with the regex
+      as malformed-file fallback; aliased/blank/dot imports seen. The
+      deps_test dot-import pin that only passed by regex blindness
+      re-anchored on a true relative import.
+- [x] **deadcode + doctool + apitool parseExports → AST.** Top-level
+      FuncDecl/GenDecl names, grouped var/const members individually, kind
+      from the group keyword, regex fallback. Raw-string decoys stay
+      strings. apitool was a sibling find (same code shape) — fixed in the
+      adjudication pass with its own fixture pins.
+- [x] **apitool comment mentions.** util.CountGoReferences strips comments
+      via go/scanner before matching (strings keep their contents;
+      per-line count-once semantics unchanged); scanner failure falls back
+      to raw matching.
+- [x] **nplusone db.* shapes.** db.Find/First/Where/Take/Last/Raw/Create/
+      Save/Update/Delete added to the alternation; db.Find classifies
+      "gorm".
+- [x] **ranktool double-star globs.** Single-segment patterns keep exact old
+      base-name behavior; path-shaped globs match the root-relative slash
+      path with ** = zero-or-more segments. Golden differential cases for
+      **/*.go, cmd/*.go, sub/**; doc example is now true.
+- [x] **readtool progress guarantee.** First-line-over-cap hard-splits
+      (prefix + marker, Next offset advances past the line); mid-stream
+      over-long lines keep the old notice (the re-read hard-splits). Oracle
+      mirrored; 60 KiB first-line differential case added.
+- [x] **openai typed Error events.** Both providers (chat completions +
+      responses) yield the typed event on mid-stream parse failures,
+      matching anthropic/gemini; pre-stream failures stay zero-value
+      (all providers' shape). The responses provider's own "error" /
+      "response.failed" events had the same bug — fixed in the adjudication
+      pass with a three-case negative test.
+- [x] **anthropic whitespace-only system skip.** Whitespace-only
+      RoleSystem messages skipped; block gated on trimmed content; real
+      content byte-identical (goldens + new equality subtests).
+- [x] **memstore mood override costs the weakest slot.** Replacement scans
+      from the end; bundle keeps descending-activation order, top scorer
+      retained. Reference oracle flipped; differential re-pinned.
+- [x] **tokentool determinism.** Base weights declared as an ordered
+      slice (extras name-sorted); sort tie-breaks on tool name. Tie
+      caveats became golden tables + a 5-call determinism pin.
+- [x] Verification: whole repo builds; vet clean; 139 ok / 0 fail;
+      -race 139 ok / 0 races; trio-coverage gate green. ~48 files across
+      21 packages; the only formatting-only diffs are gofmt reindents of
+      files that were space-indented at baseline.
+
+User gates: `make test` on the real tree; live spot-checks worth an eye —
+(1) `graph imported_by internal/auth/auth.go` in a session returns
+importers; (2) reading a file with a >50 KiB line advances on the hint;
+(3) the splash hint with CJK wraps at the visual margin; (4) an OpenAI
+stream drop surfaces as a typed error in the transcript.
+
+## LANDED: test trio — every package gets positive + negative + differential (2026-11-03 → 2026-11-05)
+
+Goal ("this should catch 99% of bugs"): every package in the module carries at
+least one test of each category, so the suite exercises happy paths, failure
+paths, and implementation-vs-oracle agreement. Audit of all 140 packages:
+
+- 22 already pass the bar.
+- 11 have zero tests (need the full trio).
+- 36 need negative + differential.
+- 7 need negative only.
+- 64 need differential only.
+- Total ≈ 176 new test functions.
+
+### Definitions (binding for this effort)
+
+- **Positive** — valid input, expected behavior asserted. Existing happy-path
+  tests count; new `_Positive` functions only for untested packages.
+- **Negative** — invalid, hostile, or boundary input, and the package's
+  documented failure mode is asserted: returned `error`, tool result carrying
+  an error message, rejected write, graceful fallback. No panic, no silent
+  partial state.
+- **Differential** — the implementation is checked against an *independent*
+  oracle, named in a `// oracle:` comment on the test:
+  - (a) naive reference implementation written in the test (O(n²) loop, string
+    building) compared on randomized + edge-case inputs;
+  - (b) stdlib/known-good equivalence (`encoding/json`, `filepath.Walk`,
+    `regexp`, `strings`…) on the same inputs;
+  - (c) round-trip through genuinely distinct code paths (our encode vs
+    `encoding/json` decode);
+  - (d) golden literal — expected output hand-written in the test, not
+    regenerated by the code under test (rendered `View()` strings for widgets).
+- Banned as "differential": `f(x)` compared to `f(x)` (tautology), expected
+  values computed by calling the same function under test.
+
+### Conventions
+
+- New tests live in one file per package: `trio_test.go` (only missing
+  categories are added). Names end `_Positive` / `_Negative` / `_Differential`.
+- testify (`assert`/`require`) only, per AGENTS.md. No new module deps.
+- `scripts/test-trio-coverage.sh` reports per-package P/N/D status and exits 1
+  on a gap — the gate that proves this item done.
+- Exemptions require a one-line rationale in the coverage report (e.g.
+  `cmd/jev` if it stays an empty placeholder package; `version` negative —
+  data-only constant, no failure surface — its README-parity check is the
+  differential).
+
+### Waves (disjoint package sets, parallelizable)
+
+- [x] **W1 — zero-test packages, full trios (11)**: cmd/jev*, cmd/toolaudit,
+      internal/components/layout, internal/debuglog, internal/engineaccess,
+      internal/tools/{batchtool,graphtool,memtool,permissiontool,vectortool},
+      internal/version* — DONE 2026-11-03, all green. Found along the way
+      (both FIXED 2026-11-05 — see the bug-kill section):
+      `engineaccess.SetActiveEngine(nil)` panics though its doc says "pass nil
+      to clear" (production code calls it with a typed nil instead);
+      graphtool `imported_by` is keyed by raw import path, so file-path
+      queries never match on Go modules.
+- [x] **W2 — components/ + tui/ gaps (27)**: N+D: components{,/app,/branchlist,
+      /chat,/chrome,/codeview,/diffview,/listpicker,/mention,/palette,
+      /sessionlist,/splash,/status,/toast,/transcript,/tree}, tui/{codepane,
+      diffpane,editor,footer,overlays,pathutil,transcript}; N-only:
+      tui/{composer,submit}; D-only: components/{block,text} — DONE
+      2026-11-03, all green. Notable pins (all four FIXED 2026-11-05 — see
+      the bug-kill section): chat.LineStart/LineEnd and
+      ReplaceRange can panic on out-of-range cursors (invariant maintained
+      only by callers); status.Spinner panics on negative Frame;
+      transcript panics on a nil Widget intersecting the viewport;
+      splash.wrapHint measures bytes not display columns (CJK wraps early).
+- [x] **W3 — tools/ gaps (48)**: N+D: runtimetool, skilltool, snapshottool;
+      N-only: tooldef; D-only: the other 44 tool packages — DONE 2026-11-03,
+      all green (full ./internal/tools/... tree ok). Notable finds:
+      depstool's import regex misses grouped `import (...)` blocks entirely;
+      deadcode/doctool regex parsing sees declarations inside raw strings and
+      misses grouped var/const; nplusonetool misses idiomatic `db.Find(&x)`;
+      apitool counts comment mentions as references; ranktool's documented
+      `**/*.go` glob example can never match (base-name matching);
+      readtool's byte-cap hint can loop forever if one line exceeds 50 KiB;
+      snapshottool's "project config not loaded" guard is unreachable
+      (GetDefaultProject panics instead). All FIXED 2026-11-05 — see the
+      bug-kill section.
+- [x] **W4 — llm/ + top-level internal + util/ (rest)**: N+D: llm/{anthropic,
+      openai}, memfsck, memstore, project/model, toolguard, contextbreakdown,
+      graph, util/{githubrelease,update}; N-only: configserver, skillstats,
+      telemetry, vault; D-only: agent/prompt, bw, evidence, llm, llm/{gemini,
+      jev,openai/responses,skills}, mcp, snapshot, toolmanager, tools,
+      util/{archive,clipboard,diffreview,filesearch,gitx,image} — DONE
+      2026-11-05, all green (one agent was killed by a sandbox restart
+      mid-wave; memfsck/memstore recovered from its files, project/model and
+      toolguard re-run). Notable pins/finds (all four FIXED 2026-11-05 —
+      see the bug-kill section): anthropic vs openai mid-stream
+      failure shapes diverge (zero-value event + iter error vs a typed Error
+      event — consumers branching on ev.Type miss openai deaths); provider
+      system-message join/skip semantics differ (anthropic keeps
+      whitespace-only system messages, which can pin a cache breakpoint);
+      memstore's mood-congruency override replaces the FIRST non-positive
+      slot positionally (the raw top scorer is displaced, the injected trace
+      renders at rank 0); tokentool allocations are nondeterministic under
+      tied weights (map-range order + unstable sort — differential is
+      tie-aware; a name secondary key would make it reproducible).
+- [x] **W5 — verification**: `go test ./...` = 139 ok / 0 fail (cmd/jev
+      exempt, no files); `go test -race ./...` = 139 ok / 0 races;
+      `go vet ./...` clean; every new trio_test.go gofmt-clean;
+      `scripts/test-trio-coverage.sh` exits 0 ("all packages carry the test
+      trio"). golangci-lint/gofumpt are not installed in this sandbox —
+      `make lint` / `make fmt-check` not run (fmt-check is red at baseline
+      per AGENTS.md anyway).
+
+**DONE 2026-11-05.** Final state: 140 packages, 2 exemptions on file
+(cmd/jev — empty placeholder; internal/version negative — data-only
+constant), ~190 new test functions across ~115 trio_test.go files plus
+additions to judgetool_test.go and tokentool's suite. The gate
+(`scripts/test-trio-coverage.sh`) enforces the trio going forward.
+
+### Differential oracles per area (guidance, not straitjacket)
+
+- Tool packages: run the tool, compare against direct stdlib/filesystem
+  equivalents computed in the test (e.g. findtool vs `filepath.Walk`+pattern
+  match, greptool vs `regexp` over the same corpus, tokentool vs a char/word
+  count reference).
+- LLM providers: request-building vs hand-written known-good JSON literals;
+  stream decoding vs `encoding/json` decode of the same events.
+- Widgets/components: `View()` output for a fixed state vs golden literal.
+- Algorithm packages (memstore, graph, bw): optimized path vs naive reference
+  on randomized inputs, property-style.
+
 ## Active: JEV extensions — file-ops scale, compaction boundary, bash risk guard (2026-11-02) — LANDED, AWAITING USER VERIFY
 
 User question: which of the sketched JEV extension concepts were worth
@@ -464,8 +1196,10 @@ below is built. Pick these up only on an explicit go.
   write-tool runs in the transcript JSONL carry file paths, and
   snapshots know what a turn created. "Mailboxes" has NO existing
   data source — closest is the schedule/job system (async fires
-  landing results for review); needs a user definition before
-  building.
+  landing results for review); **PLANNED 2026-11-05** — the full chunked
+  build now lives as the Dashboard epic at the top of this file: mailboxes
+  = a local Maildir (read-only), recent documents folded into the
+  split-screen file browser, pins and the heatmap chunk 1.
 - **JEV integration — DONE, scope locked by the user.** Wired into
   exactly TWO places (fetch classify + evidence admission, this pass);
   the user said "those are the only two places I think jev should be

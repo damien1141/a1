@@ -17,6 +17,10 @@ type Request struct {
 	Stream    bool        `json:"stream,omitempty"`
 	Store     bool        `json:"store"`
 	Reasoning *Reasoning  `json:"reasoning,omitempty"`
+	// PromptCacheKey routes the provider's prompt cache for this request
+	// (see llm.PromptCacheKey). Empty on every endpoint that is not
+	// api.openai.com — the wire stays byte-identical to the pre-scope body.
+	PromptCacheKey string `json:"prompt_cache_key,omitempty"`
 	// MaxOutputTokens caps the completion length. Compaction sets it so a
 	// runaway summary cannot outgrow the context the summary is meant to free.
 	MaxOutputTokens int `json:"max_output_tokens,omitempty"`

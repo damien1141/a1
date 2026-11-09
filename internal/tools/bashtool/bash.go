@@ -47,12 +47,12 @@ func BashTool() tooldef.Tool {
 				Properties: llm.Object{
 					"command": llm.Object{
 						"type":        "string",
-						"description": "Shell command to run (modes run/start). Example: go test ./...",
+						"description": "Shell command (run/start modes), e.g. go test ./...",
 					},
 					"mode": llm.Object{
 						"type":        "string",
 						"enum":        []string{"run", "start", "ps", "attach", "kill"},
-						"description": "run (default): execute and wait. start: run detached in the background. ps: list background shells. attach: read a background shell's output. kill: stop one.",
+						"description": "See tool description for the modes.",
 					},
 					"shell_id": llm.Object{
 						"type":        "string",
@@ -64,7 +64,7 @@ func BashTool() tooldef.Tool {
 					},
 					"cwd": llm.Object{
 						"type":        "string",
-						"description": "Working directory for this command (absolute, or relative to the session cwd). Example: internal/auth",
+						"description": "Working directory (absolute or session-relative), e.g. internal/auth",
 					},
 					"stdin": llm.Object{
 						"type":        "string",
@@ -72,7 +72,7 @@ func BashTool() tooldef.Tool {
 					},
 					"env": llm.Object{
 						"type":                 "object",
-						"description":          "Extra environment variables for this call, merged over the inherited environment. Example: {\"CI\": \"1\"}",
+						"description":          "Extra env vars merged over the inherited environment, e.g. {\"CI\": \"1\"}",
 						"additionalProperties": llm.Object{"type": "string"},
 					},
 					"timeout": llm.Object{

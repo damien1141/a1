@@ -32,6 +32,12 @@ type SessionHeader struct {
         Timestamp     string `json:"timestamp"`
         Cwd           string `json:"cwd"`
         ParentSession string `json:"parentSession,omitempty"`
+        // CacheScope is the session's logical prompt-cache scope, persisted so
+        // the scope survives reloads. Empty except where a caller explicitly
+        // pins one: Fork stamps the parent's resolved scope so the branch keeps
+        // the root conversation's cache bucket instead of minting a cold one.
+        // When empty, the scope is derived (see Manager.CacheScope).
+        CacheScope string `json:"cache_scope,omitempty"`
 }
 
 // GetType implements MessageEntry.

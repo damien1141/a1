@@ -9,6 +9,7 @@ import (
         "github.com/damien1141/a1/internal/mcp"
         "github.com/damien1141/a1/internal/memstore"
         "github.com/damien1141/a1/internal/permission"
+        "github.com/damien1141/a1/internal/project"
         "github.com/damien1141/a1/internal/schedule"
         "github.com/damien1141/a1/internal/tools"
         "github.com/damien1141/a1/internal/tools/tooldef"
@@ -43,6 +44,18 @@ type engineConfig struct {
         // Ctrl+K toggle.
         memoryEnabled    bool
         memoryEnabledSet bool
+        // Learning-loop intervals (learning.go): 0 = the default
+        // (defaultLearnNudgeInterval). Positive values tighten or widen the
+        // review windows.
+        learnMemInterval   int
+        learnSkillInterval int
+        // consolidationInterval pins the memory-consolidation cadence
+        // (memory_outlet.go): 0 = auto — every completed turn when the ops
+        // endpoint is remote, every localConsolidationInterval-th turn when
+        // it is local (a different-prefix call on a local server evicts the
+        // whole conversation's prompt cache, so per-turn consolidation would
+        // re-prefill everything on every turn). 1 = per turn, N = every Nth.
+        consolidationInterval int
         embedder         memstore.Embedder // for opening per-persona SQLite stores lazily
         windowProber     WindowProber
         // evidence overrides the engine's default evidence ledger. Nil = the
@@ -77,6 +90,11 @@ type engineConfig struct {
         // corresponding persona setting is silently ignored on switch.
         personaModelResolver PersonaModelResolver
         permissionModeSetter PermissionModeSetter
+        // personalCfg supplies the live personal-data section (the master
+        // switch + calendar/mail dirs). Read at tool-mount time and again
+        // at every personal-tool call — a nil provider mounts no personal
+        // tools at all.
+        personalCfg func() project.PersonalConfig
         // basePermissionMode is the mode the surface ran before any persona
         // override. A switch to a persona WITHOUT a mode override (or to the
         // default persona) restores it, so a readonly persona's restriction
@@ -98,6 +116,15 @@ type PersonaModelResolver func(name string) (llm.ModelConfig, bool)
 // APPA trajectory). Called by SetPersona when the active persona has a
 // non-empty PermissionMode field.
 type PermissionModeSetter func(mode permission.Mode)
+
+// WithConsolidationInterval pins the memory-consolidation cadence:
+// 1 = every completed turn, N = every Nth, 0 = auto (the default —
+// per-turn on remote endpoints, batched on local ones; see
+// memory_outlet.go). Tests use 1 to pin outlet mechanics on loopback
+// fake servers regardless of the local batching policy.
+func WithConsolidationInterval(n int) EngineOption {
+        return func(c *engineConfig) { c.consolidationInterval = n }
+}
 
 // WithGate sets the permission gate (nil = allow all).
 func WithGate(gate permission.Gate) EngineOption {
@@ -132,8 +159,8 @@ func WithMaxRounds(n int) EngineOption {
 
 // WithMaxToolCalls sets the per-turn tool-call budget (0 = unlimited).
 // Unlike the round budget this counts individual executed calls, so a round
-// that batches several calls consumes several budget slots. Yolo permission
-// mode ignores the cap entirely.
+// that batches several calls consumes several budget slots. Unrestricted
+// gates (yolo mode, allow-all overrides) ignore the cap entirely.
 func WithMaxToolCalls(n int) EngineOption {
         return func(c *engineConfig) { c.maxToolCalls = n }
 }
@@ -149,6 +176,16 @@ func WithJobs(jobs *job.Manager) EngineOption {
 // fleet's backpressure and run headless-strict by default.
 func WithScheduler(s *schedule.Scheduler) EngineOption {
         return func(c *engineConfig) { c.scheduler = s }
+}
+
+// WithPersonalConfig supplies the live personal-data configuration
+// (config.yaml `personal:`) behind the agent-side personal tools. The
+// provider is read when tools mount AND re-read on every call, so a
+// config flip between turns lands without restarting the session.
+// Surfaces should hand in a closure over their live project config, not
+// a snapshot.
+func WithPersonalConfig(fn func() project.PersonalConfig) EngineOption {
+        return func(c *engineConfig) { c.personalCfg = fn }
 }
 
 // WithAgentDepth sets this engine's depth in the agent fleet (0 = top-level
@@ -184,6 +221,21 @@ func WithHooks(hooks llmclient.Hooks) EngineOption {
 // no memory tools are registered and no retrieval happens.
 func WithMemoryStore(store *memstore.Store) EngineOption {
         return func(c *engineConfig) { c.memStore = store }
+}
+
+// WithMemoryNudgeInterval sets how many user turns without a memory-tool
+// dispatch may pass before a turn ends with a background memory review
+// (learning.go). Zero or absent keeps the default.
+func WithMemoryNudgeInterval(turns int) EngineOption {
+        return func(c *engineConfig) { c.learnMemInterval = turns }
+}
+
+// WithSkillNudgeInterval sets how many model rounds without skill use
+// (reading a SKILL.md or writing under the skills root) may pass before a
+// turn ends with a background skill review (learning.go). Zero or absent
+// keeps the default.
+func WithSkillNudgeInterval(iterations int) EngineOption {
+        return func(c *engineConfig) { c.learnSkillInterval = iterations }
 }
 
 // WithMemoryEnabled sets the surface's raw memory toggle — the global knob

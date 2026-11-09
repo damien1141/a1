@@ -55,8 +55,15 @@ func PrepareCompact(
         pathEntries []session.MessageEntry,
         settings Settings,
 ) (*CompactionPreparation, error) {
+        // A session with no path entries has nothing to compact: the cut logic
+        // below indexes pathEntries[cutPoint.firstKeptEntryIndex], which panics
+        // on an empty slice - /compact on a brand-new session crashed the engine
+        // before this guard existed.
+        if len(pathEntries) == 0 {
+                return &CompactionPreparation{}, nil
+        }
         // already compacted, skip
-        if len(pathEntries) > 0 && pathEntries[len(pathEntries)-1].GetType() == session.EntryCompaction {
+        if pathEntries[len(pathEntries)-1].GetType() == session.EntryCompaction {
                 return &CompactionPreparation{}, nil
         }
 
@@ -91,10 +98,16 @@ func PrepareCompact(
                 historyEnd = cutPoint.turnStartIndex
         }
 
+        // Runtime-context riders (clock, weather, memories, job notices) are
+        // consumed with the turn they belong to, never summarized: they are
+        // ambient per-turn context, not task state, and a zone that reduces to
+        // a rider alone is not a conversation worth a summarizer round trip.
+        // The strip also guards the empty-preparation early return below: a
+        // rider-only history zone now correctly reports nothing to summarize.
         var messagesToSummarize []llm.Message
         for i := start; i < historyEnd; i++ {
                 msg := getMessageFromEntry(pathEntries[i])
-                if msg != nil {
+                if msg != nil && !msg.Runtime {
                         messagesToSummarize = append(messagesToSummarize, *msg)
                 }
         }
@@ -104,7 +117,7 @@ func PrepareCompact(
         if cutPoint.isMidTurnCut {
                 for i := cutPoint.turnStartIndex; i < cutPoint.firstKeptEntryIndex; i++ {
                         msg := getMessageFromEntry(pathEntries[i])
-                        if msg != nil {
+                        if msg != nil && !msg.Runtime {
                                 turnPrefixMessages = append(turnPrefixMessages, *msg)
                         }
                 }

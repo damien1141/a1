@@ -78,6 +78,95 @@ when the stream provides both, matching round-trip needs for
 Gemini without a preset name still needs `api: Gemini` and a valid base URL;
 thinking then uses the budget style by default.
 
+## Credential pool
+
+A model can carry extra API keys beyond its single `api_key`. The pool
+rotates them under provider rate limits (429) and auth failures (401/403):
+a key that answers badly cools down and the next request moves to another
+key — invisibly when nothing has streamed yet, so a turn survives a
+rate-limited key. Cooldowns take the longer of the provider's `Retry-After`
+(when sent) and a backoff ladder (1m doubling, capped at 15m); auth
+failures quarantine a key for 10 minutes. Pool state lives on the engine
+and survives model switches and tool rebinds; configs naming the same keys
+in different orders share one pool.
+
+```yaml
+models:
+  - name: gpt-4o
+    api_key: sk-primary      # required; the pool's first key
+    api_keys:                # extras, rotated in when the primary cools
+      - sk-backup-1
+      - sk-backup-2
+    default: true
+```
+
+`A1_API_KEYS` (comma-separated) extends the default model's pool the same
+way. The transport's own retry budget runs first on each key, then the
+pool rotates — additive patience, never a replacement.
+
+## Prompt-cache scope
+
+Every session carries a logical prompt-cache scope — the bucket its
+OpenAI-wire requests route under via the provider's `prompt_cache_key`.
+The scope is derived, not configured: a plain session scopes to its own
+id; a scheduler fire (`ParentSession: "schedule:<id>"`) scopes to the
+schedule, so recurring fires of one job re-read one warm bucket instead of
+each minting a cold one; and a fork pins its parent's resolved scope on
+the session header, so a branch's first request — it replays the parent's
+entries — re-reads the parent's cached prefix instead of starting cold.
+Real parent sessions are deliberately not walked: sibling sub-agents share
+a parent id, and collapsing them onto one bucket would let their divergent
+request streams evict each other's cached prefixes.
+
+The wire key is content-addressed (`pck_` + a sha256 prefix) over the
+scope, the system prompt, and the name-sorted tool surface, so the
+chat-completions and Responses routes of one model derive the same key and
+share the bucket across modes. It is sent only to `api.openai.com` — every
+other endpoint (strict compat servers, aggregators, local models) keeps
+the exact pre-scope request bytes — and only on streaming turns:
+compaction and memory-consolidation requests are one-shot (nothing ever
+reads their cache write back), so they carry no key. Anthropic and Gemini
+are untouched; their caching is breakpoint-driven, and a1 already pins
+those breakpoints (system + last user block + last tool). The Anthropic
+markers carry ttl=1h, and the request sends the `extended-cache-ttl`
+beta header whenever a marker does — the field is beta-gated on native
+Anthropic and documented by Anthropic-compatible gateways, so the header
+follows the TTL wherever it lands (a TTL-free request, like compact's,
+sends nothing). The scope rides the session header and survives
+persist/reload in both the file and vault
+backings, and every client rebuild a rebind triggers re-pins it — the
+bucket outlives the rebuild, the same contract the credential pool has.
+
+## Turn recovery and the guardrail stack
+
+The second hermes steal batch closed the loop between what a model can do
+to a turn and what the harness does about it. Failures classify
+(`llm.Classify`): one pipeline turns every error into a recovery verdict,
+so the engine retries exactly what the HTTP layer cannot see — 408s,
+mid-stream drops, wrapped transport errors — and never what it already
+spent patience on (429/5xx are DoWithRetry's), never auth, never a turn
+whose text was already delivered (the partial persists as the reply body).
+Empty completions walk a budgeted ladder that fails fast on usage-proven
+deterministic emptiness and persists a sentinel row instead of a blank
+one; repetition loops are cut mid-stream at 16k scale with a placeholder
+persisted, never the looped bytes; and an overflow whose provider-stated
+limit the recovery compaction cannot shrink 5% in request bytes surfaces
+instead of re-sending almost the same payload.
+
+On the executor side, the toolguard controller watches call patterns per
+turn: identical failures warn then block, runaway same-tool streaks halt
+unattended engines, byte-identical large results become reference stubs,
+and fetch/spawn spending is capped outright. The verify-on-stop gate
+covers the undeclared finish — code edited, no check passed since — by
+holding the answer as an interim row and re-opening the turn, twice, then
+letting it stand. The learning loop ticks opportunity counters (turns
+without memory use, rounds without skill use) and fires a cache-parity
+review fork: byte-identical request prefix, one review instruction, and a
+dispatch whitelist whose denials name their substitutes. And the script
+tool collapses tool chains: one Python script calling real tools as
+functions over a loopback RPC, every in-script call through the same
+permission pipeline the model's own calls face.
+
 ## Thinking level
 
 Provider-agnostic knobs on each model (and session UI):
@@ -127,6 +216,42 @@ For a local llama.cpp run at `-c 65536`, no config is needed: the probe picks
 the window up and folding runs at K=9830 / T=8192 / G=19660 / floor=29491
 from the first turn. For remote models without a preset, set
 `context_window:` explicitly to skip the 32K assumption.
+
+## Local endpoints
+
+A loopback or private-network `base_url` (llama.cpp, Ollama, LM Studio,
+vLLM on the LAN) changes the economics of every request: the server keeps
+the conversation's prompt cache warm only while nothing else touches it,
+and prefill runs at hardware speed — a 15K-token context at ~600 tok/s is
+twenty seconds of dead time per cold turn. The harness keys several
+behaviors off endpoint locality (`llm.IsLocalBaseURL`):
+
+| Behavior | Remote | Local |
+| --- | --- | --- |
+| Memory consolidation | every completed turn | every 10th turn (batched — each outlet call is a different-prefix request that would evict the cache and re-prefill the whole context next turn) |
+| Web session naming | LLM-generated after the first exchange | skipped — the first-message preview titles the session; a naming call evicts the cache between turns 1 and 2 |
+| Fleet concurrency | 4 parallel sub-agents | 1 — interleaved child prefixes thrash a single-slot server's cache into full re-prefills per round, and prefill saturates the box anyway, so serialization costs ~nothing |
+| Context-window probe | no (refused for public hosts) | llama.cpp `/props`, ollama `/api/show` |
+| `prompt_cache_key` | api.openai.com only | never sent — local servers cache by byte-identical prefix, and strict ones may reject unknown fields |
+
+The request wire is byte-stable on both routes (pinned by
+`engine_cache_stability_test.go` for the Anthropic wire and
+`engine_cache_stability_openai_test.go` for the OpenAI wire), so a local
+server's automatic prefix caching holds across turns — that is the whole
+game: keep the prefix untouched and the second turn prefills only its
+delta.
+
+Getting per-turn memory freshness back on a local box: route the ops
+traffic off the conversation endpoint — set a persona **memory model**
+pointed at a second (or remote) server. `LocalOpsEndpoint()` follows that
+routing, and consolidation plus LLM naming return to per-turn behavior
+immediately.
+
+Server-side advice, briefly: llama.cpp's `--parallel N` gives N isolated
+slots (concurrent harness traffic stops evicting each other at N > 1),
+Ollama keeps a 5-minute idle cache per model (`OLLAMA_KEEP_ALIVE` to
+extend), and LM Studio caches prefixes automatically. None of these
+replace the byte-stable wire — they multiply it.
 
 ## Related
 

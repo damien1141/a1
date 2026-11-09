@@ -68,6 +68,13 @@ func BuildRequest(
 	var msgs []llm.Message
 	for _, m := range messages {
 		if m.Role == llm.RoleSystem {
+			// Whitespace-only system content is skipped entirely — join byte
+			// included — matching the openai builder. Appending it would put a
+			// system block on the wire whose only payload is the cache_control
+			// breakpoint, a cache write pinned on nothing.
+			if strings.TrimSpace(m.Content) == "" {
+				continue
+			}
 			if systemText.Len() > 0 {
 				systemText.WriteByte('\n')
 			}
@@ -76,7 +83,11 @@ func BuildRequest(
 		}
 		msgs = append(msgs, m)
 	}
-	if systemText.Len() > 0 {
+	// The gate trims, not byte-counts: only whitespace may ever reach this
+	// point through the skips above, but the trim keeps a future path from
+	// pinning the cache breakpoint on blank content. Real content is never
+	// trimmed, so genuine system text serializes byte-identically.
+	if strings.TrimSpace(systemText.String()) != "" {
 		req.System = []sysBlock{{
 			Type:         "text",
 			Text:         systemText.String(),
@@ -88,8 +99,13 @@ func BuildRequest(
 		m := msgs[i]
 		switch m.Role {
 		case llm.RoleUser:
+			// Non-empty text always serializes as a text block — the same
+			// message must produce the same bytes whether it is the request
+			// tail (where the cache pin needs a block) or mid-history next
+			// turn. A bare-string shape for non-tail messages flips at exactly
+			// the previous pin position, busting every cross-turn cache read.
 			msg := anthropicMessage{Role: "user"}
-			if len(m.Images) > 0 {
+			if len(m.Images) > 0 || m.Content != "" {
 				blocks := make([]anthropicContentBlock, 0, len(m.Images)+1)
 				if m.Content != "" {
 					blocks = append(blocks, anthropicContentBlock{Type: "text", Text: m.Content})
@@ -111,8 +127,10 @@ func BuildRequest(
 			req.Messages = append(req.Messages, msg)
 
 		case llm.RoleAssistant:
+			// Same position-independence rule as user messages: text rides
+			// a block whether or not tool calls follow it.
 			msg := anthropicMessage{Role: "assistant"}
-			if len(m.ToolCalls) > 0 {
+			if len(m.ToolCalls) > 0 || m.Content != "" {
 				var blocks []anthropicContentBlock
 				if m.Content != "" {
 					blocks = append(blocks, anthropicContentBlock{Type: "text", Text: m.Content})
@@ -174,25 +192,29 @@ func BuildRequest(
 		}
 	}
 
-	// Pin prompt caching to the tail of the last user message. Image blocks
-	// cannot carry cache_control, so
-	// the pin lands on the last non-image block (text or tool_result).
+	// Pin prompt caching to the tail of the request — the longest prefix the
+	// next request should read back at cache price instead of re-billing as
+	// fresh input. Image blocks cannot carry cache_control, so the pin lands
+	// on the last non-image block (text, tool_result, or tool_use). Both
+	// terminal shapes matter: a user tail (the common round — the newest
+	// prompt or tool results) and an assistant tail (continuation-style
+	// requests); the old user-only check left assistant-tailed requests
+	// without a write breakpoint, so their whole conversation re-billed on
+	// the next turn.
 	if len(req.Messages) > 0 {
 		last := &req.Messages[len(req.Messages)-1]
-		if last.Role == "user" {
-			if blocks, ok := last.Content.([]anthropicContentBlock); ok && len(blocks) > 0 {
-				for i, b := range slices.Backward(blocks) {
-					if b.Type == "image" {
-						continue
-					}
-					blocks[i].CacheControl = cc
-					break
+		if blocks, ok := last.Content.([]anthropicContentBlock); ok && len(blocks) > 0 {
+			for i, b := range slices.Backward(blocks) {
+				if b.Type == "image" {
+					continue
 				}
-				last.Content = blocks
-			} else if text, ok := last.Content.(string); ok {
-				last.Content = []anthropicContentBlock{
-					{Type: "text", Text: text, CacheControl: cc},
-				}
+				blocks[i].CacheControl = cc
+				break
+			}
+			last.Content = blocks
+		} else if text, ok := last.Content.(string); ok && text != "" {
+			last.Content = []anthropicContentBlock{
+				{Type: "text", Text: text, CacheControl: cc},
 			}
 		}
 	}
@@ -225,14 +247,17 @@ func toolUseInput(arguments string) json.RawMessage {
 	if arguments == "" {
 		return json.RawMessage("{}")
 	}
-	if json.Valid([]byte(arguments)) {
+	// Anthropic's tool_use input is an object. Valid JSON that is not an
+	// object (a bare string, a number) and invalid JSON (a stream truncated
+	// mid-arguments) both fail that contract; encoding the raw string — the
+	// old fallback — produced a JSON string where an object is required, a
+	// 400 the caller cannot recover from. "{}" keeps the request parseable;
+	// the paired tool result already tells the model what actually arrived.
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(arguments), &obj); err == nil && obj != nil {
 		return json.RawMessage(arguments)
 	}
-	encoded, err := json.Marshal(arguments)
-	if err != nil {
-		return json.RawMessage("{}")
-	}
-	return encoded
+	return json.RawMessage("{}")
 }
 
 // buildThinkingConfig maps a ThinkMode to Anthropic's thinking parameter.
@@ -260,7 +285,7 @@ func buildThinkingConfig(mode llm.ThinkMode) *thinkingConfig {
 	}
 }
 
-func newMessagesHTTPRequest(ctx context.Context, cfg llm.ModelConfig, body []byte, stream bool) (*http.Request, error) {
+func newMessagesHTTPRequest(ctx context.Context, cfg llm.ModelConfig, body []byte, stream bool, cacheTTL string) (*http.Request, error) {
 	httpReq, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
@@ -275,6 +300,16 @@ func newMessagesHTTPRequest(ctx context.Context, cfg llm.ModelConfig, body []byt
 	httpReq.Header.Set("Anthropic-Version", apiVersion)
 	if stream {
 		httpReq.Header.Set("Accept", util.ContentEventStream)
+	}
+	// The ttl field on a cache_control marker is beta-gated: native
+	// Anthropic rejects a request that carries one without this header,
+	// and Anthropic-compatible gateways (nano-gpt among them) document
+	// the same pair. Sent only when a marker actually sets a TTL, so a
+	// TTL-free request stays byte-identical to the pre-header era —
+	// headers ride outside the cached prefix, but minimal diffs are
+	// their own kindness to gateways that log them.
+	if cacheTTL != "" {
+		httpReq.Header.Set("anthropic-beta", "extended-cache-ttl-2025-04-11")
 	}
 	return httpReq, nil
 }
@@ -294,7 +329,7 @@ func Stream(
 			return
 		}
 
-		httpReq, err := newMessagesHTTPRequest(ctx, cfg, body, true)
+		httpReq, err := newMessagesHTTPRequest(ctx, cfg, body, true, req.cacheTTL())
 		if err != nil {
 			yield(llm.StreamEvent{}, err)
 			return
@@ -309,7 +344,7 @@ func Stream(
 
 		if httpResp.StatusCode != http.StatusOK {
 			respBody, _ := io.ReadAll(httpResp.Body)
-			yield(llm.StreamEvent{}, llm.FormatAPIError("anthropic", httpResp.StatusCode, respBody))
+			yield(llm.StreamEvent{}, llm.FormatAPIErrorHeaders("anthropic", httpResp.StatusCode, respBody, httpResp.Header))
 			return
 		}
 
@@ -498,18 +533,23 @@ func Compact(
 	if maxTokens <= 0 {
 		maxTokens = defaultMaxTokens
 	}
-	body, err := json.Marshal(AnthropicRequest{
+	// No cache markers on the compact request: a one-shot compaction
+	// call has no prefix a later request would read back, so pinning a
+	// breakpoint would be a cache write nobody reuses — and cacheTTL()
+	// honestly reports "" for it.
+	areq := AnthropicRequest{
 		Model:     cfg.Name,
 		MaxTokens: maxTokens,
 		Messages: []anthropicMessage{
 			{Role: "user", Content: req.Prompt},
 		},
-	})
+	}
+	body, err := json.Marshal(areq)
 	if err != nil {
 		return llm.CompactResult{}, err
 	}
 
-	httpReq, err := newMessagesHTTPRequest(ctx, cfg, body, false)
+	httpReq, err := newMessagesHTTPRequest(ctx, cfg, body, false, areq.cacheTTL())
 	if err != nil {
 		return llm.CompactResult{}, err
 	}
@@ -525,7 +565,7 @@ func Compact(
 		return llm.CompactResult{}, err
 	}
 	if httpResp.StatusCode != http.StatusOK {
-		return llm.CompactResult{}, llm.FormatAPIError("anthropic", httpResp.StatusCode, respBody)
+		return llm.CompactResult{}, llm.FormatAPIErrorHeaders("anthropic", httpResp.StatusCode, respBody, httpResp.Header)
 	}
 
 	var resp struct {

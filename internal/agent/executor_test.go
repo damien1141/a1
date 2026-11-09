@@ -651,6 +651,88 @@ func TestExecutorRefusesNullArguments(t *testing.T) {
 	assert.Contains(t, msgs[0].Content, `"path"`)
 }
 
+// Truncated arguments — a stream cut mid-JSON, the exact shape long sessions
+// surfaced as "permission check failed: write args: unexpected end of JSON
+// input" — are not empty (emptyToolArgs passes them) and not any tool's real
+// call shape. The guard must refuse them before the permission extractor and
+// answer with what actually arrived plus the shape to re-issue.
+func TestExecutorRefusesTruncatedArguments(t *testing.T) {
+	var ran atomic.Int32
+	ex := NewExecutor(readRegisteredRequiredTool(&ran), permission.AllowAll{}, nil, nil, nil)
+
+	var statuses []session.ToolStatus
+	msgs, _, _ := ex.Run(t.Context(), []llm.ToolCall{{
+		ID:       "c1",
+		Function: llm.Function{Name: "read", Arguments: `{"path": "/home/solis/Documentos/Code/secret_sauce/README.md`},
+	}}, func(td session.ToolData) bool {
+		statuses = append(statuses, td.Run.Status)
+		return true
+	})
+
+	assert.Equal(t, int32(0), ran.Load(), "the tool must not run on malformed arguments")
+	require.Len(t, msgs, 1)
+	assert.Contains(t, msgs[0].Content, "malformed arguments")
+	assert.Contains(t, msgs[0].Content, "not valid JSON")
+	assert.Contains(t, msgs[0].Content, "README.md", "the message shows what actually arrived")
+	assert.Contains(t, msgs[0].Content, `{"path": <value>}`, "the message shows the shape to re-issue")
+	assert.Contains(t, msgs[0].Content, "not executed")
+	assert.Contains(t, statuses, session.ToolError)
+	assert.NotContains(t, statuses, session.ToolDone)
+}
+
+// Two objects concatenated — a gateway that streams delta fragments and then
+// echoes the complete message — is invalid JSON the same way a truncated
+// prefix is; the guard refuses it identically.
+func TestExecutorRefusesConcatenatedArguments(t *testing.T) {
+	var ran atomic.Int32
+	ex := NewExecutor(readRegisteredRequiredTool(&ran), permission.AllowAll{}, nil, nil, nil)
+
+	msgs, _, _ := ex.Run(t.Context(), []llm.ToolCall{{
+		ID:       "c1",
+		Function: llm.Function{Name: "read", Arguments: `{"path": "a"}{"path": "b"}`},
+	}}, func(session.ToolData) bool { return true })
+
+	assert.Equal(t, int32(0), ran.Load())
+	require.Len(t, msgs, 1)
+	assert.Contains(t, msgs[0].Content, "malformed arguments")
+}
+
+// Valid JSON that is not an object is still the tool's own parse error to
+// report in its own voice — the malformed guard must not swallow it. The
+// tool name is outside permission.ExtractAt's switch (no object extraction)
+// so the call's fate is the tool's, not the gate's.
+func TestExecutorRunsValidNonObjectArguments(t *testing.T) {
+	var ran atomic.Int32
+	reg := tools.Registry{
+		"widget": {
+			Definition: llm.ToolDefinition{
+				Name: "widget",
+				Params: &llm.FunctionParameters{
+					Type: "object",
+					Properties: llm.Object{
+						"path": llm.Object{"type": "string"},
+					},
+					Required: []string{"path"},
+				},
+			},
+			Run: func(_ context.Context, input json.RawMessage) (tools.Result, error) {
+				ran.Add(1)
+				return tools.Result{Content: "ran"}, nil
+			},
+		},
+	}
+	ex := NewExecutor(reg, permission.AllowAll{}, nil, nil, nil)
+
+	msgs, _, _ := ex.Run(t.Context(), []llm.ToolCall{{
+		ID:       "c1",
+		Function: llm.Function{Name: "widget", Arguments: `"/etc/hosts"`},
+	}}, func(session.ToolData) bool { return true })
+
+	assert.Equal(t, int32(1), ran.Load(), "valid JSON reaches the tool even when it is not an object")
+	require.Len(t, msgs, 1)
+	assert.Equal(t, "ran", msgs[0].Content)
+}
+
 // A call that carries any field at all passes the guard even when required
 // fields are missing: mode-dispatched tools accept shapes their schema cannot
 // express (read with mode=ls lists the cwd with no path), so only the fully

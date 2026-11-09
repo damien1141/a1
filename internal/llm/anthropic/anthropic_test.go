@@ -2,6 +2,9 @@ package anthropic
 
 import (
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -315,4 +318,90 @@ func TestBuildRequestToolResultWithoutImagesStaysString(t *testing.T) {
 	str, ok := results[0].Content.(string)
 	require.True(t, ok, "plain tool results keep their string content, got %T", results[0].Content)
 	assert.Equal(t, "plain", str)
+}
+
+// ---------- prompt-cache TTL beta header ----------
+
+// The ttl field on a cache_control marker is beta-gated: native Anthropic
+// rejects a request carrying one without the extended-cache-ttl header, and
+// Anthropic-compatible gateways document the same pair. The header must ride
+// exactly when a TTL rides, and never otherwise.
+func TestCacheTTLWalksEveryMarkerSite(t *testing.T) {
+	cc := &cacheControl{Type: "ephemeral", TTL: "1h"}
+
+	var r AnthropicRequest
+	assert.Equal(t, "", r.cacheTTL(), "empty request carries no TTL")
+
+	r.System = []sysBlock{{Type: "text", Text: "s", CacheControl: cc}}
+	assert.Equal(t, "1h", r.cacheTTL(), "system marker detected")
+
+	r.System = nil
+	r.Messages = []anthropicMessage{{Role: "user", Content: []anthropicContentBlock{{Type: "text", Text: "hi", CacheControl: cc}}}}
+	assert.Equal(t, "1h", r.cacheTTL(), "message-block marker detected")
+
+	r.Messages = []anthropicMessage{{Role: "user", Content: "bare string"}}
+	assert.Equal(t, "", r.cacheTTL(), "string content cannot carry a marker")
+
+	r.Tools = []anthropicTool{{Name: "read", Description: "d", InputSchema: json.RawMessage("{}"), CacheControl: cc}}
+	assert.Equal(t, "1h", r.cacheTTL(), "tool marker detected")
+
+	r.Tools[0].CacheControl = &cacheControl{Type: "ephemeral"}
+	assert.Equal(t, "", r.cacheTTL(), "a plain ephemeral marker (5m default) needs no header")
+}
+
+func TestStreamSendsCacheTTLBetaHeader_Positive(t *testing.T) {
+	var gotHeader string
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeader = r.Header.Get("anthropic-beta")
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &gotBody)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(strings.Join([]string{
+			`data: {"type":"message_start","message":{"usage":{"input_tokens":1}}}`,
+			``,
+			`data: {"type":"content_block_start","index":0,"content_block":{"type":"text"}}`,
+			``,
+			`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}`,
+			``,
+			`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}`,
+			``,
+			`data: {"message_stop"}`,
+			``,
+		}, "\n")))
+	}))
+	defer srv.Close()
+
+	cfg := llm.ModelConfig{Name: "claude-sonnet-4", APIKey: "k", BaseURL: srv.URL}
+	req := BuildRequest(cfg, "system", []llm.Message{{Role: llm.RoleUser, Content: "hi"}}, nil)
+	assert.Equal(t, "1h", req.cacheTTL(), "BuildRequest pins a 1h TTL on its markers")
+
+	var last llm.StreamEvent
+	for ev, err := range Stream(t.Context(), srv.Client(), cfg, &req) {
+		require.NoError(t, err)
+		last = ev
+	}
+	assert.Equal(t, llm.StreamEventTypeDone, last.Type)
+
+	assert.Equal(t, "extended-cache-ttl-2025-04-11", gotHeader,
+		"a request whose markers carry ttl=1h must send the beta header")
+	require.Contains(t, gotBody, "system", "the request itself must have arrived")
+}
+
+func TestCompactOmitsCacheTTLBetaHeader_Negative(t *testing.T) {
+	var gotHeader = "sentinel"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeader = r.Header.Get("anthropic-beta")
+		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"summary"}],"stop_reason":"end_turn"}`))
+	}))
+	defer srv.Close()
+
+	_, err := Compact(
+		t.Context(),
+		srv.Client(),
+		llm.ModelConfig{Name: "claude-sonnet-4", APIKey: "k", BaseURL: srv.URL},
+		llm.CompactRequest{Prompt: "summarize"},
+	)
+	require.NoError(t, err)
+	assert.Empty(t, gotHeader, "a TTL-free request (compact's) must not send the beta header")
 }

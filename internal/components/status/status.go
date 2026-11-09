@@ -22,6 +22,17 @@ type Spinner struct {
 
 const flowTrail = 3
 
+// modNonNeg returns v mod n in [0, n). Go's % keeps the sign of the dividend,
+// so a hostile negative Frame would index the frame table (or cluster list)
+// out of range; wrap the remainder back into the table instead.
+func modNonNeg(v, n int) int {
+	m := v % n
+	if m < 0 {
+		m += n
+	}
+	return m
+}
+
 // NewSpinner returns a spinner with a 1-cell braille glyph.
 func NewSpinner(style xui.Style) *Spinner {
 	return &Spinner{
@@ -46,7 +57,7 @@ func (*Spinner) Handle(_ *components.EventContext, _ xui.Event) {}
 func (s *Spinner) Draw(_ components.DrawContext) components.Surface {
 	ch := "⋯"
 	if len(s.frames) > 0 {
-		ch = s.frames[s.Frame%len(s.frames)]
+		ch = s.frames[modNonNeg(s.Frame, len(s.frames))]
 	}
 	st := s.Style
 	if st == (xui.Style{}) {
@@ -62,7 +73,7 @@ func (s *Spinner) Glyph() string {
 	if s == nil || len(s.frames) == 0 {
 		return "⋯"
 	}
-	return s.frames[s.Frame%len(s.frames)]
+	return s.frames[modNonNeg(s.Frame, len(s.frames))]
 }
 
 // ForEachFlowCell walks text with a traveling highlight for the status slot.
@@ -77,7 +88,7 @@ func (s *Spinner) ForEachFlowCell(text string, fn func(ch string, lit bool)) {
 	}
 	head := 0
 	if s != nil {
-		head = s.Frame % len(clusters)
+		head = modNonNeg(s.Frame, len(clusters))
 	}
 	for i, ch := range clusters {
 		behind := head - i

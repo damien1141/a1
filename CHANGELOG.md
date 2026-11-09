@@ -10,6 +10,130 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- **The tool layer got its clarity-and-tokens pass: phantom tool names
+  purged from the prompt, an uncomposable mode documented, schema
+  duplication trimmed, and the audit now sees the personal trio.** The
+  system prompt's Tools section told the model to reach for `grep`,
+  `ls`, `find`, and `judge` as if they were registered tools — they are
+  modes of `search`/`read`/`code`, and a literal model burned a round on
+  `tool 'grep' not found` before mapping the reference itself. The
+  section now names only tools that exist: `read` mode=ls for listings,
+  `search` for text/symbol/filename, `code` mode=judge for
+  classification, and `git` (not bash) for git work — pinned by a new
+  prompt test that fails if a phantom name ever returns. The `code`
+  tool's judge line pointed at "the judge tool's schema" for the
+  questions grammar, but judge is not a registered tool — the mode was
+  uncomposable without the grammar it referenced; the description now
+  inlines it (questions as a JSON object of name→{type: noul/choice/
+  score, criteria}, then state or files) at +85 tokens, the honest price
+  of a mode that works. The trims: bash and search schemas no longer
+  repeat what their tool descriptions and enums already carry (mode
+  semantics, glob syntax — −70 tokens together), and fetch's `body`
+  param gained the description it never had. cmd/toolaudit now prices
+  the personal trio and session_search too (stub deps, definitions
+  only), so the audit's number reflects a personal-enabled session —
+  7193 tokens across 25 tools — with the memory/agent/schedule/
+  contract/budget sets documented as excluded (their constructors need
+  live machinery); its differential oracle mirrors the extension. Net on
+  the default set: +25 tokens for two broken references fixed, three
+  schemas tightened, one gap filled.
+
+- **Anthropic requests now send the cache-TTL beta header their markers
+  require.** The client pins `cache_control {type: ephemeral, ttl: "1h"}`
+  on the system block, the request tail, and the last tool — but never
+  sent `anthropic-beta: extended-cache-ttl-2025-04-11`, the header that
+  gates the ttl field: native Anthropic rejects a request carrying the
+  field without it, and Anthropic-compatible gateways (nano-gpt among
+  them) document the same pair. The header is now sent exactly when a
+  marker actually carries a TTL: a structural walk (`cacheTTL()` over
+  system blocks, message content blocks, and tools) decides, so a future
+  marker placed anywhere turns the header on by existing, and a TTL-free
+  request — compact's one-shot, or a plain 5m ephemeral — stays
+  byte-identical to the pre-header era. Pinned three ways: the walk unit
+  test (every marker site, the plain-ephemeral negative), a streaming
+  positive through a capturing httptest server, and compact's negative.
+  doc/models.md's prompt-cache scope section carries the ruling.
+
+- **The file browser's pane now opens and closes as a guided reveal —
+  the abrupt unmount is gone.** The pane used to mount with a vertical
+  rise that fought its horizontal split (the chat column snapped narrow
+  the same frame) and to close by simply vanishing: `filesOpen &&` meant
+  unmount, and no element can animate an exit it never gets to run. The
+  pane is keep-alive now — mounted from app load with `open` as a pure
+  class flip, the session drawer's architecture — and one `.file-pane`
+  transition (the drawer's ease-out-quint settle, 280ms) drives both
+  viewports: at `lg` the reveal is a WIDTH animation, the pane growing
+  from the screen's right edge while the chat reflows around it, with
+  the inner column fixed-width and right-anchored inside the clipping
+  shell so the content is uncovered by the sweeping edge and no glyph
+  ever re-wraps mid-flight; below `lg` the full-screen sheet slides from
+  the right, the way drawers slide. Keep-alive settles two behaviors as
+  rulings rather than accidents: reopening returns to the folder (and
+  file, and edit draft) the pane was left in — a pane you tuck away, not
+  a screen you reboot — and the composer's files toggle, which never
+  carried the close button's dirty guard, can no longer silently drop a
+  draft, because closing no longer destroys anything. While closed the
+  shell carries `inert` (out of the tab order and the accessibility
+  tree) and the listing fetch is gated on `open`, so a pane nobody opens
+  costs nothing; `prefers-reduced-motion` collapses the reveal to a
+  frame under the existing global rule.
+
+- **Weather and time/date became fetch subtools — ambient context is now
+  empty by default.** Both used to ride the runtime-context rider: a fresh
+  clock stamp on every turn and, when configured, a weekly Open-Meteo
+  forecast, persisted into history where they stayed at cache-read price
+  forever — and the forecast needed `weather:` config (enabled + latitude +
+  longitude) nobody wanted to maintain. Both are fetch engines now, first
+  in the router's priority order: `"what time is it"` answers from the
+  local clock with zero network (weekday spelled out, ISO week, zone named,
+  UTC companion line when the offset is non-zero; `"time in Tokyo"`
+  geocodes the place through Open-Meteo's free keyless geocoder and answers
+  in its zone, degrading to the local answer rather than erroring), and
+  `"weather"` / `"weather in Reykjavik"` geocodes the named place — or
+  auto-locates via IP geolocation (ipwho.is with an ipapi.co fallback) when
+  the query names none, so it works with no configuration at all — then
+  renders the same compact 7-day forecast block the rider used to inject,
+  TTL-cached 30 minutes per place with stale-degrade on refetch failure.
+  Predicates are deliberately tight because a matching engine always
+  answers and the router never falls through past it: the time shapes are
+  end-anchored or question-headed (`"what time is it"`, `"today's date"`;
+  `"what is the time complexity of quicksort"` and `"compile time in go"`
+  correctly do not match), and the weather engine carries a dev-signal
+  veto so `"open-meteo api docs"` routes to the docs, not the forecast.
+  Consequences, in order: the rider is now only the change-gated memory
+  bundle and delivered job notices, and a turn with neither appends no
+  rider at all (an empty user message would cost a cache-write round for
+  zero content); `internal/weather` and the `weather:` config block, its
+  config-editor panel, and the `WithWeather` plumbing through session,
+  controller, and webserver are gone (yaml parsing is non-strict, so an
+  old `weather:` block in config.yaml is simply ignored, and the next
+  full-document editor save drops it); and the system prompt + the fetch
+  tool description now tell the model no clock is injected and to fetch
+  one before date-, time-, or weather-sensitive work. Pinned by engine
+  tests (predicates, place extraction, geocode + forecast + IP fixtures
+  against httptest servers, cache behavior, stale-degrade, truncated-array
+  rendering), updated rider tests (empty-rider skip, change-gate), and the
+  cache-stability contract, which now asserts the clock appears in NO
+  request message and the cross-turn delta is exactly final assistant +
+  new prompt.
+
+- **/context shows the prompt-cache read/write split live.** The breakdown
+  ends with a provider-reported section — `last request` (the live number)
+  and `session` (every reported request summed) — each rendering
+  `read · write · fresh` with the hit-rate percentage, so watching the
+  cache work no longer means digging through the Anthropic console. The
+  buckets come from the usage that rides assistant messages and are
+  disjoint by construction (`llm.Usage` splits providers that fold cache
+  into prompt_tokens back apart), so read+write+fresh is the whole prompt
+  and the percentage is what caching actually answered. The section only
+  appears once some request has reported a cache bucket: providers without
+  prompt caching keep /context estimate-only instead of printing a
+  permanent misleading `0% hit`. The category table above it is unchanged
+  and still labelled as the byte-ratio estimate it is — the new section is
+  explicitly marked `provider-reported, exact` so the two claims cannot be
+  conflated. Pinned by tests for the hit-rate math, the last-is-newest
+  selection, and the absence case.
+
 - **The executor refuses tool calls that arrive with no arguments.** Long
   sessions occasionally put a literally empty argument object on the wire —
   a `read {}` that executes, fails the tool's own "path is required" guard,
@@ -74,6 +198,380 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   in bashtool.
 
 ### Added
+
+- **The mail configurator — chunk 8: mail accounts editable in the app,
+  the keyring never the letters.** The user's words: "still cant
+  configure email servers/accounts and app passwords- but that should be
+  easily fixable." Chunk 7's multi-account mail was real but
+  config-file driven; now the mail card's not-configured state leads
+  with "Add mail account", the card header carries a gear, the reader's
+  rail ends in "Manage accounts", and the command palette has the door —
+  all opening one modal that edits the saved list (rows with edit/
+  remove, the IMAP-vs-Maildir segmented form, one Save that PUTs the
+  whole list). The ruling that lets it exist beside chunk 4's "nobody
+  writes here": that law governs MAIL — messages, flags — and stands
+  untouched; the account LIST is configuration, the same object the
+  /settings editor edits. The credential contract is the chunk's sharpest
+  line: GET /api/personal/mail/accounts returns hasPassword, never the
+  password (an editor that cannot show a secret cannot leak one); PUT
+  entries carry password (set) or keepPassword (preserve), resolved by
+  name for named accounts and by type-and-server fingerprint for
+  unnamed ones — the collision the browser pass caught: two accounts
+  saved without names both key on the empty string, and a first-match
+  rule handed the IMAP account the maildir's empty password — landing
+  only on a unique match so row edits and deletions cannot shuffle
+  credentials onto the wrong account an index-anchored keep could
+  (renaming does not carry the password — the UI says so); and
+  POST /api/personal/mail/test takes the same single-spec body with the
+  same keep resolution, so a saved account is tested without its app
+  password ever crossing the wire — while persisting nothing (a dead
+  server answers 200 ok:false with the reason; the button exists to
+  fetch exactly that). A successful save runs the config-reload path
+  (onConfigSaved — live engines rebind their personal tools too), so the
+  new account is on the rail and in the agent's envelope-only facade
+  without a restart; the dashboard refetches behind the still-open modal.
+  Writes compose personalGate(guard()) — the kanban's composition — and
+  validation is deliberately stricter than the read path's lenient
+  degrade: the configurator refuses known-bad shapes (unknown type, imap
+  sans host, maildir sans root, port out of range, >32 accounts) with a
+  400, because a configurator that saved known-bad entries would be a
+  slower way to hand-edit YAML; hand-edited YAML keeps degrading
+  honestly at read time. Under it, project.SetMailAccounts is the
+  surgical YAML write (modifyConfigYAML: sparse keys, wholesale sequence
+  replacement, empty saves prune the sequence and the personal block
+  only when it empties — enabled/calendar_dir/mail_dir survive
+  untouched), passwords land as plain scalars beside the model api_keys
+  (the config file is already the project's secret store), and
+  project.ExpandHome is exported so "~ means home" is one rule on both
+  sides of the wire. Pinned by the project trio (the write→parse
+  round-trip differential against loadConfig, wholesale replacement,
+  empty-save pruning with siblings kept), and the webserver trio: the
+  list/save/keep positive (with the live-reload proof read back through
+  the rail and the kept credential asserted on disk), the test-dial
+  positive whose fake IMAP listener records the LOGIN line — the keep
+  rule's server-side merge proven on the wire — the gate/guard/validation
+  negatives, and the endpoint-vs-file differential (the test's own YAML
+  parse of config.yaml compared entry-by-entry with the GET, plus the
+  resolved pills vs the rail's account list: two endpoints, one truth).
+  Full gates: build PASS, vet PASS, go test ./... all green (146 ok /
+  0 fail), -race all green (146 ok / 0 races), trio gate 147/147, dist
+  rebuilt and committed, browser-verified end to end (the add-account
+  form, a maildir save landing on disk with the card refetching to the
+  new account live, the dead-server test verdict inline, the
+  keep-password flow through a saved account, zero console errors).
+
+- **The webUI tightening pass — chunk 7, the user's own screenshots as
+  the spec.** The session drawer collapsed by default at every viewport
+  (it had floated at z-50 over the z-40 modals — open dialogs ran
+  underneath it; the z-ladder is now page < edge zone z-20 < drawer
+  z-30 < modals z-40 < toasts z-50) and opens from a left-edge hover
+  zone — a quiet pill brightens as the pointer lands, the close is
+  debounced 300ms so a pointer crossing the gap never flickers, and
+  the slide runs 260ms ease-out-quint. The file-browser toggle moved
+  into the composer, left of the send button; the second dodecahedron
+  beside the composer is gone (the hero is the one mark); the heatmap
+  autoselects today so the day-filter readout opens filled instead of
+  blank; and the calendar became the ask's month grid — every day a
+  button with event dots, the selected day's events listed beneath,
+  one `/api/personal/calendar/range` fetch per visible month, today
+  autoselected on the current month. The file editor now highlights
+  WHILE editing — the classic overlay (a live-highlighted pre under a
+  transparent-text textarea, identical font metrics, scroll-locked,
+  pointer-events-none), capped at 256 kB past which it says so
+  honestly and edits plain. And mail grew multi-account:
+  `personal.mail_accounts` mixes local Maildirs and remote IMAP
+  servers (the legacy `mail_dir` resolves as the "local" account, so
+  existing configs do not move). The new `internal/imapmail` (on
+  emersion/go-imap v2) is read-only to the bone — read-only SELECTs,
+  BODY.PEEK fetches, one stateless connection per call, 10s/30s
+  timeouts, UID as the message id — and both transports return the
+  maildir package's own types, so the web handlers and the widget
+  carry ONE wire shape and the semantics cannot drift. A dead account
+  renders its outage inline from the rail's per-account error while
+  the other accounts stay clickable; list/read answer 502 for a dead
+  or rejecting server, 404 for a missing box or message, 400 for
+  unknown accounts and malformed ids. The agent's personal_mail
+  facade is unchanged (envelopes only, the legacy root) — the docs
+  say so. Pinned by the imapmail trio (a real in-process emersion
+  imapserver fixture, hand-written golden letters, and the flagship
+  differential: the SAME letter set through both transports, disk vs
+  wire, entry-by-entry including bodies), the account-resolution trio
+  in project (defaults, de-duplication, legacy-vs-modern
+  differential), and the webserver multi-account suite (default rail,
+  per-account selection, the outage that renders instead of
+  blanking, unknown-account 400s, dead-server 502s). Full gates:
+  build PASS, vet PASS, go test ./... all green (146 ok / 0 fail),
+  -race all green, trio gate 147/147 (+imapmail), dist rebuilt and
+  committed, browser-verified end to end on the user's own list
+  (single dodec, today selected on the heatmap, month-grid day clicks
+  listing their events, three account pills with the dead-server
+  outage inline and per-account rails in the reader, the composer's
+  pane toggle, the highlighted editor screenshot-verified, drawer
+  open/close on edge hover under the modal layer, zero console
+  errors).
+
+- **RRULE expansion, the responsive sweep, and the epic's design note —
+  chunk 6 of the dashboard epic: the polish pass.** `internal/calendar/
+  recur.go` expands the recurrence subset a personal calendar actually
+  carries: FREQ=DAILY/WEEKLY/MONTHLY, INTERVAL, COUNT, UNTIL (both
+  spellings, both inclusive), and BYDAY — a day-of-week filter under
+  DAILY, the day set under WEEKLY, and the ordinal forms under MONTHLY
+  (2TU the second Tuesday, -1FR the last Friday, plain FR every Friday
+  of the month). Every occurrence surfaces as its own Event through
+  Agenda (same UID and fields, its own Start/End, the recurring marker
+  on each), and the walk generates from DTSTART so COUNT and UNTIL
+  bound the whole series — a window that opens mid-series consumes the
+  earlier occurrences against the budget. The semantics the RFC leaves
+  room for are chosen and pinned: a DTSTART that does not match its own
+  pattern is not force-included (the first occurrence is the first
+  generated match), a DATE-form UNTIL under a timed DTSTART bounds at
+  the whole last day, expansion runs in DTSTART's own zone (09:00
+  stays 09:00 wall clock across the DST fall-back), and WKST is fixed
+  at MO. Anything outside the subset — YEARLY, BYSETPOS, BYMONTH,
+  RDATE, RECURRENCE-ID, WKST≠MO, COUNT and UNTIL together — degrades
+  to the first occurrence with a Warnings entry saying why; full RFC
+  5545 compliance is not claimed, and recur.go's doc comment is the
+  scope statement. A step cap (200k candidates) keeps an
+  absurdly-anchored rule from spinning. The trio is the hand-computed
+  golden table: every expectation worked out from the 2026 calendar
+  itself (the second Tuesdays, the last Fridays, the Mondays, the 31st
+  skipping the short months), so the oracle cannot agree with a wrong
+  week arithmetic — plus ParseRule refusals for 21 hostile rules,
+  Agenda degradation negatives, and a memo-stability pin. Downstream
+  pins flipped with the behavior: the calendar trio's hand-enumerated
+  agenda membership (the weekly golden event now expands across its
+  windows) and the webserver fixture count (the 14-day window sees the
+  recur anchor plus its +7-day occurrence). The responsive sweep
+  kills the chunk-1 leftover: below lg the sidebar is now an off-canvas
+  drawer — hamburger bar, scrim, Escape, pick-to-close — instead of a
+  240px column pinching a 375px phone's conversation to 135px; the
+  widget grid drops to a single column, the split-screen file browser
+  covers the screen, and above lg everything is the static layout with
+  the drawer state inert. Browser-verified on every axis: personal off
+  renders three locked cards with exactly one /api/personal/* request
+  on the wire (the ungated status — zero gated fetches); dark and
+  light round-trip on the body palette and the hljs token colors; RRULE
+  counts through the real widget (weekly ×2, all-day weekly ×2,
+  DAILY;COUNT=4 ×4, the unsupported YEARLY degraded ×1). The docs
+  sweep: doc/dashboard.md is the epic's design note (the surface map,
+  the write-permission ladder, the honest states, the recurrence
+  claim, the chunk ledger); README's Web GUI paragraph (en + zh-CN)
+  carries the dashboard; CHANGELOG gained the chunk 3 and 4 entries
+  the sweep found missing; config-reference.md cross-checked
+  key-by-key against config.go — in sync, no edit needed.
+
+- **The split-screen file browser — chunk 5 of the dashboard epic: three
+  file endpoints, the FileBrowser pane, and vendored syntax
+  highlighting.** `GET /api/files/list?path=` serves one directory's
+  rows — name, dir, symlink target, size, mtime; an empty path means
+  the server's own working directory ("current directory" per the ask).
+  `GET /api/files/read?path=` serves a preview after a utf-8 sniff (a
+  NUL byte refuses the file as binary) under a 2 MiB cap that REFUSES
+  rather than truncates — exactly 2 MiB passes, one byte over is a 413,
+  because a half file presented as the file is the one lie a viewer
+  cannot tell — and names the language by extension so the client never
+  guesses twice. `PUT /api/files/write {path, content}` is the one
+  write: guard()ed like every mutating verb (a cross-origin page must
+  not be able to edit files), symlink-refusing, readonly-mode-refusing
+  at write time via /api/mode's mode source ('this session writes
+  nothing' includes the user's own files), with no implicit mkdir -p;
+  it preserves an existing file's permissions (editing a script never
+  strips its execute bit) via atomic temp+rename in the target
+  directory. The gate ruling separates this surface from both dashboard
+  siblings: files are workspace machinery, not personal data — no
+  personalGate — and deliberately NOT the /api/code viewer's project
+  confinement, because the ask was full-system navigation: reads go
+  anywhere the server's user may, and A1_FILES is the env kill-switch
+  (the A1_MCP precedent — trimmed, lowercased, "0/false/off/no", so
+  "OFF " and " No" disable) returning 503 on reads and writes alike.
+  Two listing rulings the trio pins: dir means NAVIGABILITY, not dirent
+  type — a symlink to a directory lists as a dir AND carries its target
+  (clicking it has to go somewhere), broken ones keep the target and
+  list as plain rows — and size/mtime are the entry's own lstat values
+  (ls -l semantics). The SPA grows its first split screen: FileBrowser
+  is a sibling of main, not an overlay (it stays up while the user
+  chats; below lg it covers the screen), opened from the sidebar
+  header, the dashboard's quick action, or the command palette; it
+  carries an absolute-path address bar, breadcrumbs, a dirs-first
+  listing, click-to-preview, and Edit → textarea + Save + dirty
+  indicator + error toasts. Leaving with unsaved edits is refused by
+  disabled buttons + a toast, not a modal. highlight.js is vendored the
+  sparse way — core plus exactly the languages the server's extension
+  map rules, one ruling on both sides of the wire (an unmapped
+  extension previews as plaintext server and client alike); tsx/jsx
+  and toml register as aliases of TypeScript/JavaScript/ini, the honest
+  best available since hljs 11 ships no standalone grammars for them,
+  and the token theme derives from the palette's own channel variables
+  so light and dark hold with one rule set. Trio: the write→read
+  byte-fidelity round-trip and the list-vs-os.ReadDir differential;
+  negatives cover binary and oversized previews, readonly-mode and
+  symlink writes, the unreadable directory, and every kill-switch
+  spelling. The differential earned its keep on landing day: it caught
+  the handler's sort comparator written backwards (files first, dirs
+  last) — the oracle expected dirs first and the diff flipped.
+
+- **The dashboard's mail — chunk 4 of the dashboard epic: the Maildir
+  reader, and the strictest privacy ruling of the personal trio.** The
+  personal section's last placeholder is a live Maildir client: the
+  mailbox rail (name, total, unread), one box's latest messages (flags,
+  senders, subjects, dates), and one message with its body — three GETs
+  behind the chunk-0 `personalGate` (`mailboxes`, `messages?box&limit`,
+  `message?box&id`), read-only by construction because this file would
+  not know how to write mail and no other verb exists. The ruling that
+  separates mail from both siblings: NOBODY writes here. Not the web
+  (the handlers are GETs; there is nothing to guard), and not the model
+  — `personal_mail`'s Deps struct has no write hook at all, so
+  `personal_write` grants nothing on this surface; the ruling is
+  structural, not advisory. One privacy line goes further than
+  read-only: the model reads the ENVELOPE, never the letter. The
+  facade's per-message surface is `maildir.Summary` (headers, flags,
+  sizes) while `Open` (bodies) stays a webui privilege — the model can
+  say "you have mail from X about Y" without ever seeing the text. The
+  widget renders the same honest states as its siblings — locked,
+  not-configured (`mail_dir` spelled out), empty, degraded with counted
+  skips — and a maximize overlay for reading long letters. Nothing can
+  send, move, or mark: flags come from filenames, never written back
+  (the anti-goals: no HTML mail with remote content, no sending in v1).
+  Behind it, `internal/maildir` parses the on-disk format honestly —
+  cur/new/tmp semantics, the `:2,` flag suffix, maildir-format
+  timestamps — with a trio that pins the facade-vs-library parity after
+  both read paths and the handler set (gate-off 403s, hostile box ids,
+  missing dir = empty not error, a dangling symlink degrades honestly).
+
+- **The dashboard's kanban — chunk 3 of the dashboard epic: the
+  vault-backed board, and the ruling that splits it from the
+  calendar.** The personal section's second placeholder is a live
+  three-column board (todo / doing / done) over `internal/kanban`, the
+  vault-stored list surface, with drag-and-drop moves, inline card
+  edits, adds per column, and delete-with-confirm. The ruling: the WEB
+  writes here. Calendar writes are commitments the model makes on the
+  user's behalf, so that write face lives in the agent tool behind
+  `personal_write` — but dragging a card IS the product; the human
+  clicking their own dashboard needs no per-model opt-in. The master
+  switch still gates every route server-side (`personalGate`, 403
+  before any handler runs — the personal block is one surface, on or
+  off, with no per-widget grants by the anti-goals), and every
+  mutating verb composes `guard()` like every other write in the
+  webserver: a cross-origin page must not be able to rearrange the
+  board. Four endpoints carry it — `GET /api/personal/kanban` for the
+  board, `POST` to add, `PUT /card` to move or edit, `DELETE /card` to
+  remove — plus the agent's `personal_kanban` facade and `kanbantool`
+  (the model's own writes DO require the `personal_write` opt-in: the
+  tool mounts only when the master switch is on AND the checkbox is
+  checked). Trios on both faces: the kanban package's
+  facade-vs-library differential over a golden vault (column and card
+  surgery, move semantics, malformed lines counted not fatal), the
+  kanbantool trio (flag-off refusals, bad inputs, both write paths
+  landing identical state), and the handler trio (gate-off 403s,
+  guard-CSRF on the mutating verbs, endpoint-vs-library parity).
+
+- **The dashboard's calendar — chunk 2 of the dashboard epic: the .ics
+  agenda widget, the gated endpoints, and the agent's `personal_calendar`
+  tool.** The personal section's calendar card (chunk 1's locked
+  placeholder) is now the live agenda: the next 14 days off `GET
+  /api/personal/calendar?days=N`, grouped by local day with today's
+  header in cinnabar, all-day badge and location subtitle per event, a
+  recurring marker (RRULE surfaces at its first occurrence — expansion is
+  chunk 6), and the scan's honest accounting when a directory is
+  degraded ("2 lines unparsable" instead of silently fewer events). A
+  companion `GET /api/personal/calendar/range?from&to=` serves explicit
+  windows for the month-grid stretch; both endpoints compose the chunk-0
+  `personalGate` (403 when the master switch is off — enforced
+  server-side, never just hidden in the UI), follow the usage endpoint's
+  hostile-input doctrine (unparsable or non-positive days fall back to
+  the default, oversize clamps; malformed range bounds fall back to
+  sane windows, inverted normalize, spans cap at 400 days), and are
+  READ-ONLY: the write face belongs to the agent tool, not the web UI.
+  The widget keeps the honest states — locked when personal data is off
+  (a 403 mid-flight folds back there too, because the switch can flip
+  while the dashboard is open), "no calendar directory" with the config
+  key spelled out when `calendar_dir` is unset, and zero gated fetches
+  from either. Behind it, `internal/calendar` is a deliberately SUBSET
+  RFC 5545 parser — line unfolding per §3.1 (the fold consumes one
+  leading space; a content space needs two, which the fixtures encode),
+  VEVENT identity + timing + the big three text fields, DATE vs
+  DATE-TIME, `Z` vs `TZID` (unknown zones degrade to UTC with a warning,
+  not an error) vs floating (server-local), DURATION (§3.3.6, months
+  refused — they are not a fixed duration), all-day boundaries, and
+  nested components (a VALARM's DESCRIPTION never lands on the event) —
+  with the everywhere-doctrine that malformed content is
+  skipped-with-count, never fatal: one bad .ics file must not take the
+  agenda down. Scans memoize per file on mtime+size; a missing directory
+  is an empty calendar, not an error. The write side is surgical:
+  `Create` writes one-event files (atomic temp+rename, never rewriting a
+  user's multi-event file to add to it), and `Update` patches the exact
+  property lines inside the matching VEVENT — everything else in the
+  file (RRULE, VALARM blocks, X- properties, other events) is re-emitted
+  byte-for-byte modulo re-folding, DTSTAMP is bumped per §3.8.7.2, and
+  the operation returns what the real parser reads back, verifying
+  itself. The agent-side `personal_calendar` facade (agenda / range /
+  create / update, the scheduletool shape) enforces chunk 0's ruling
+  TWICE: the engine mounts it only when the live master switch is on
+  AND the active model opted into `personal_read`, and every call
+  re-reads both — a mis-mounted tool (stale mount after a config flip,
+  hand-built engine, future wiring mistake) can neither read nor write.
+  Writes additionally clear a NEW permission class, `ActionPersonal`:
+  consented out of band by the config opt-ins rather than a per-call
+  prompt (interactive mode does not re-ask what config.yaml already
+  answered), but still folded by mode — readonly denies, because "this
+  session writes nothing" includes the user's calendar. A config save
+  now rebinds live web engines (`RefreshPersonalTools`), so flipping
+  the switch mounts or unmounts the tool on the next turn of an OPEN
+  chat, not only in new ones. Tests: the calendar package's trio (parser
+  differential over golden fixtures — DST crossings, folded lines,
+  all-day edges, the fold-space pin; write trio — escape/fold round-
+  trips, surgical-update byte-preservation, atomic create), the
+  calendartool trio (flag-off refusals leave the directory untouched;
+  facade-vs-library parity after both write paths), the handler trio
+  (gate-off 403s, hostile days/ranges fall back, missing dir = empty
+  not error, dir emptied at runtime serves empty not stale, a dangling
+  symlink degrades honestly; endpoint-vs-library differential over the
+  response's own window), permission tests for the new action class,
+  and engine tests pinning the mount table (both consents, either
+  missing, no provider) plus the live-state re-check. Full gates: build
+  PASS, vet PASS, `go test ./...` all green, trio gate 140/140, dist
+  rebuilt and committed, browser-verified end to end.
+
+- **The dashboard is the new landing page of a new chat — chunk 1 of the
+  dashboard epic: shell, usage heatmap, pinned sessions.** The SPA's
+  welcome branch is now a widget grid instead of a lone centered composer:
+  a bigger Dodec hero, a GitHub-commit-style usage tracker, pinned
+  sessions, honest locked/coming placeholders for the calendar / kanban /
+  mail trio (their widgets are chunks 2-4), a quick-actions row, and the
+  composer docked bottom-center with the bigger avatar. Submitting from
+  the dock is the old welcome flow verbatim — `selectSession('')` +
+  `sendPrompt`, then the chat view takes over — so nothing new was routed
+  (there is no router; the Overlay union remains the app's navigation).
+  The usage tracker is fed by `GET /api/usage/daily?days=N` (default
+  371 = 53 weeks × 7, clamped at 4000; unparsable or non-positive values
+  fall back to the default — a hostile value can only select a valid
+  window): sessions from `sessions.created_at`, tool calls from
+  `tool_runs.at`, and messages/tokens from `session_entries` payloads via
+  json_extract where kind='EntryMessage' — user+assistant rows only (tool
+  results are machinery, runtime riders are ambient context), with
+  usage.total_tokens summing onto the day the turn completed. Every
+  metric is bucketed on the UTC calendar day: SQLite's `date()` folds the
+  entry timestamps' local offsets (a naive `substr(ts,1,10)` day-key
+  would mis-bucket a +01:00 entry onto the wrong day), and every
+  json_extract sits behind a CASE WHEN json_valid guard — json_extract
+  RAISES on malformed JSON, so a corrupt payload row is skipped, never
+  fatal. The response is zero-filled (a missing day means zero, not
+  unknown) and TTL-cached 60 seconds, because the aggregate walks every
+  entry payload; a naive Go scan over the same rows ships beside the SQL
+  as both the differential test's oracle and the runtime fallback. In the
+  grid, clicking a day filters the view to sessions last active that day
+  — session rows now carry a machine-readable `data-mtime` (UTC
+  RFC3339Nano) beside the friendly "2h ago" label, which cannot express a
+  calendar day — and the heatmap scrolls to its newest weeks on mount so
+  today is visible without dragging. Pinned sessions are pure
+  composition over the pins/sessions surfaces that already ship: zero new
+  backend. Pinned by the webserver trio: the flagship differential runs
+  the SQL rollup against the naive Go scan over a fixture vault seeded
+  with the cases that make naive implementations lie — non-UTC entry
+  timestamps, tool-role rows, runtime riders, a corrupt payload,
+  out-of-window rows, a NULL tool timestamp — across seven window sizes;
+  negatives cover hostile days (0, -5, "abc", absent, 4001), corrupt rows
+  skipped not fatal, and empty + degraded (nil-vault) zero-fills.
 
 - **`judge` classifies files without loading them — `files` glob mode.**
   `code mode=judge` (and the `judge` tool) accepts a `files` glob plus the
@@ -239,6 +737,189 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
     contracts can declare them as done-criteria.
 
 ### Fixed
+
+- **The config screen's empty-stats state no longer renders
+  "[object HTMLDivElement]" as literal text.** `renderStats` built its
+  "No tool usage recorded yet" placeholder with `el()` — which returns a
+  DOM element — and then assigned it to `innerHTML`, which stringifies
+  it. The state every fresh setup lands on showed the stringified
+  element instead of the message (surfaced by the dark-theme browser
+  pass's vision check; the bug was theme-independent). `replaceChildren`
+  now takes the element the way the populated path already did.
+
+- **The light/dark choice persists to the config file — and the config
+  screen follows it.** The web GUI's theme used to live only in the
+  browser's localStorage, and the `/settings` config editor (a separate
+  document with its own hardcoded light palette) never followed it at
+  all: pick dark in the chat, open the config screen, get paper. The
+  choice now lives in `web.dark_mode` in config.yaml — exactly the key
+  the user asked for, "toggled on and off in the config file by pressing
+  the webui button": `PUT /api/theme` writes it from the sidebar's theme
+  button and the Settings picker (`true` dark, `false` light, absent =
+  follow the OS; "System" removes the key), guard()ed like every other
+  mutating verb but deliberately NOT personal-gated — a UI preference is
+  not personal data, and a locked dashboard must still honor a dark
+  choice. Both serving paths stamp the key onto their documents'
+  `<html>` tag server-side (the chat page via `themedPage`, the config
+  screen via its own `applyPageTheme`), so the first paint is right in
+  every browser — no flash, no round-trip — while localStorage stays as
+  the boot cache and dev-server fallback, synced whenever the server
+  stamps. The config screen also gained the chat UI's dark palette
+  token-for-token (warm charcoal; the handful of baked values — filled
+  button text, placeholders, the save bar's glass, the danger hover —
+  were promoted to tokens so the swap covers them), a boot script with
+  the same precedence chain (server stamp > stored choice > OS), and
+  attribute-selector re-tints for the inline dodecahedron's baked
+  strokes. The editor's full-document save cannot wipe the key: the
+  configserver carries `web.darkMode` the way it carries `tools` and
+  per-model `api_keys` (the editor has no theme form — the chat UI's
+  button owns the field), belt-and-braces with the editor JS
+  round-tripping it too. A failed persist surfaces as an error toast
+  ("Theme not saved to config.yaml — …") via a CustomEvent channel —
+  the local apply already happened, so honesty is the toast. Pinned by
+  the project trio (parse absent/true/false, surgical set/toggle/
+  remove, sibling-key and comment survival, empty-block pruning), the
+  configserver trio (dark/light stamps, unstamped-no-choice, malformed
+  config degrades, boot + palette markers, the editor-save carry), and
+  the webserver trio (persist-and-stamp arc through the real routes,
+  empty-means-system, unknown theme 400, cross-origin 403, projectless
+  500, unstamped-when-no-choice).
+
+- **A floating DATE-TIME UNTIL is UTC on every machine, not just UTC
+  ones.** `parseUntilDateTime` read the Z-less spelling in `time.Local`
+  while its own doc comment — and the pinned test — said lenient UTC. On
+  a UTC host the two coincide, so every gate passed and the bug shipped;
+  on any other zone the series bound slid by the zone offset and the
+  recurrence ended an hour early or late (caught by `make test` on a
+  machine outside UTC; reproduced under `TZ=Europe/Madrid`). Both
+  spellings now parse in `time.UTC` outright, and the test pins the
+  parsed bound's Location, not just its instant — a Local parse is
+  pointer-distinct from UTC even where the instants coincide, which is
+  exactly where this bug hid. The package's other `time.Local` uses are
+  deliberate and symmetric (floating DTSTART anchors in the server's
+  zone, expectations built in the same zone); this was the one true
+  asymmetry.
+
+- **The webserver's hostile-range test no longer anchors in the LMT
+  era.** `TestCalendarHostileInputsFallBack_Negative` pinned its
+  absurd-span case at `from=1900-01-01` and compared exact instants
+  round-tripped through the JSON response — but pre-1972 zone history
+  can carry sub-minute LMT offsets (Madrid's was −00:14:44), and
+  RFC3339 serializes offsets to minute precision, so the instant came
+  back 44 seconds short and the pin flaked on every machine whose zone
+  history reaches 1900 (found by the same timezone sweep, under
+  `TZ=Europe/Madrid`; the handler was never wrong — only the test's
+  anchor was). The case now anchors at 1980, past the last sub-minute
+  offset in tzdata (Liberia's, 1972), keeping the exact-instant
+  assertion and moving the 400-day-cap expectation to 1981-02-04.
+
+- **An all-day event on the agenda window's first day is in the
+  agenda.** The overlap filter compared `end.After(from)` with
+  `end == start == from` for a zero-End all-day event — midnight
+  against midnight, always false — so "today" windows dropped today's
+  all-day events entirely, the opposite of the doc comment's own
+  claim ([its day, next midnight)). The filter now spans an all-day
+  event to next midnight (calendar-day arithmetic, so DST cannot shave
+  it short), and the master filter and the RRULE occurrence filter
+  share the one helper — the semantics cannot drift apart again. Pinned
+  by the golden windows differential and a dedicated first-day case.
+
+- **Preset JSON goldens carry the personal read/write flags.** Chunk 0's
+  `PersonalRead`/`PersonalWrite` on `llm.ModelConfig` changed the struct's
+  JSON shape, which broke the byte-exact round-trip goldens in
+  `internal/project/model` (the literals pin field order as part of the
+  contract). The goldens now include both flags in struct position; the
+  round-trip itself was never wrong — only the pinned bytes were.
+
+- **The test-trio audit's found-along-the-way bugs are all fixed (17 finds
+  + 4 same-class siblings).** Every bug the W1–W4 trio waves pinned as
+  "actual behavior" now has the fix it was pinned for; the pins flipped to
+  assert the fixed behavior and the full gate re-ran green (139 ok / 0
+  fail, 0 races, trio-coverage gate exits 0).
+- **`engineaccess.SetActiveEngine(nil)` clears the registry instead of
+  panicking.** `atomic.Value` rejects a nil store, so the documented "pass
+  nil to clear" actually panicked — and the production clear path
+  (`agent.SetActiveEngine(nil)`, run after every TUI turn teardown)
+  forwarded a typed nil that stored a non-nil interface wrapping a nil
+  pointer, leaving a zombie registered. The registry stores through a box
+  so nil is representable, and the agent layer forwards a literal nil.
+- **`graph imported_by` answers file-path queries.** The reverse index is
+  keyed by raw import paths (Go module paths), so the tool's own
+  documented example (`path: internal/auth/auth.go`) returned nothing. A
+  target is now expanded into every key spelling (file path, package dir,
+  module-prefixed forms) and the reverse direction unions over all of
+  them; the forward direction retries module-path targets through the
+  resolver. The no-path overview had the same blindness — its "Top
+  imported files" counts were always zero on Go modules — and now counts
+  through the same expansion, deduped by importer.
+- **An unusable HOME errors the tools instead of crashing the process.**
+  `project.GetDefaultProject` panics on discovery failure, so the
+  "project config not loaded" guards in snapshot, graph, and batch were
+  unreachable — a bad HOME killed the harness. `project.TryDefaultProject`
+  returns the error; those three tools use it. `GetDefaultProject` keeps
+  its boot-surface fail-loud contract.
+- **The composer can no longer panic on hostile cursors.**
+  `chat.LineStart`/`LineEnd` clamped only the upper bound (`s[:-1]`
+  panics), and `ReplaceRange`'s swap could resurrect a negative bound
+  (`Value[:-7]` panics). All three clamp both ends; the composer-side
+  caveat that kept its tests on in-range carets is unpinned.
+- **`status.Spinner` no longer panics on a negative `Frame`.** Go's `%`
+  keeps the dividend's sign, so `Frame = -1` indexed `frames[-1]` in
+  `Draw`, `Glyph`, and `ForEachFlowCell`'s highlight head.
+- **A nil transcript entry no longer panics when it intersects the
+  viewport.** `measure` guarded nil but the Draw viewport loop and both
+  `Handle` loops dereferenced unconditionally; nil entries are skipped
+  everywhere now.
+- **The splash hint wraps at display columns, not UTF-8 bytes.** CJK text
+  wrapped at the wrong margin (3 bytes vs 2 columns per rune); widths now
+  come from `xui.StringWidth` with the `WidthUnicode` method.
+- **`deps` sees grouped `import (...)` blocks.** The line regex only
+  matched single-line imports; parsing goes through `go/parser` now (the
+  regex remains the fallback for unparseable files), which also sees
+  aliased, blank, and dot imports.
+- **`deadcode`, `doc`, and `api` stop hallucinating exports from raw
+  strings and start seeing grouped declarations.** All three
+  `parseExports` are AST-backed (top-level names, grouped var/const
+  members included, kind from the group keyword; regex fallback for
+  unparseable files). A `func Fake()` line inside a backtick string is
+  string content, not an export.
+- **`api` no longer counts comment mentions as references.** `// Foo does
+  things` read as usage, so commented-out APIs reported as live. Comments
+  are stripped via `go/scanner` before matching (a `//` inside a string
+  literal is not a comment); per-line counting semantics unchanged.
+- **`nplusone` catches idiomatic GORM loops.** Only receivers literally
+  named `gorm` matched; `db.Find(&x)` / `db.First` / `db.Where` & friends
+  inside loops are hits now.
+- **`rank`'s documented `**/*.go` glob actually matches.** Matching was
+  base-name only, and `filepath.Match` has no `**` semantics anyway.
+  Single-segment globs keep the exact old behavior; path-shaped globs
+  match the root-relative slash path with `**` crossing separators.
+- **`read` always makes progress past a >50 KiB line.** A first line over
+  the byte cap truncated with "Next offset: <the same line>" — a model
+  following the hint re-read identically forever. The first over-long line
+  is now hard-split with the next offset advancing past it; mid-stream
+  over-long lines keep the old notice (the re-read then hard-splits).
+- **OpenAI stream deaths are error-typed like every other provider.**
+  Mid-stream parse failures (and the Responses API's own `error` /
+  `response.failed` events) yielded a zero-value event plus an iter error;
+  consumers branching on `ev.Type` — the engine's stream-error switch —
+  never saw them. All mid-stream deaths on both OpenAI providers now yield
+  the typed Error event, matching Anthropic and Gemini; pre-stream
+  failures keep the zero-value shape all providers share.
+- **Anthropic no longer pins a cache breakpoint on a whitespace-only
+  system message.** A `" \n"` system message emitted a system block with
+  `cache_control` on empty content (OpenAI skips them). Whitespace-only
+  system messages are skipped and the block is gated on trimmed content;
+  requests carrying real system content serialize byte-identically.
+- **A sad session's memory bundle keeps its strongest trace.** The
+  mood-congruency override replaced the first non-positive slot
+  positionally — the raw top scorer was displaced and the injected trace
+  rendered at rank 0. The override now costs the weakest non-positive
+  slot; the bundle keeps descending-activation order.
+- **`token` allocations are deterministic under tied weights.** The weight
+  table was ranged as a map (random order) with an unstable, tie-blind
+  sort, so tied tools permuted across runs and the remainder attached to
+  whichever landed first. Base order is declared, ties break on tool name.
 
 - **`SetDefaultProject` installs the project it is given.** The test seam
   reset the init `Once` without guarding the discovery path, so the first

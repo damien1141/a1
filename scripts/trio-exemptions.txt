@@ -1,0 +1,4 @@
+# Test-trio exemptions (one per line: <repo-relative pkg> <rationale>).
+# See scripts/test-trio-coverage.sh and the "test trio" item in TODO.md.
+cmd/jev empty placeholder package (single `package jev` decl, no statements, referenced nowhere) — no testable surface
+internal/version negative only — data-only package (a single Version string, no executable failure path); its README-parity differential covers cross-file consistency

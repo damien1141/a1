@@ -80,6 +80,22 @@ func (v Verdict) Any() bool {
         return len(v.Regressed) > 0 || len(v.Improved) > 0 || v.Neutral > 0
 }
 
+// LastPassAt reports when the most recent passing check passed. The
+// verify-on-stop gate judges freshness against it: a check that passed
+// before the turn's last edit describes the code as it was, not as it
+// stands. Zero when nothing has ever passed.
+func (l *Ledger) LastPassAt() time.Time {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	var latest time.Time
+	for _, rec := range l.lastPass {
+		if rec.At.After(latest) {
+			latest = rec.At
+		}
+	}
+	return latest
+}
+
 // Ledger is the protected evidence state. Zero value is not usable; use
 // NewLedger. All methods are safe for concurrent use — the executor may
 // fold parallel tool results.

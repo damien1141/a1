@@ -12,12 +12,17 @@ type Engine interface {
 	Gate() permission.Gate
 }
 
-var activeEngine atomic.Value
+// engineBox wraps the stored engine so a nil Engine is representable:
+// atomic.Value.Store rejects a nil interface outright, which used to turn
+// the documented "Pass nil to clear" path into a panic.
+type engineBox struct{ engine Engine }
+
+var activeEngine atomic.Value // stores engineBox
 
 // SetActiveEngine registers the active engine for tool/harness access.
 // Pass nil to clear.
 func SetActiveEngine(e Engine) {
-	activeEngine.Store(e)
+	activeEngine.Store(engineBox{engine: e})
 }
 
 // ActiveEngine returns the currently registered engine, or nil.
@@ -26,5 +31,5 @@ func ActiveEngine() Engine {
 	if v == nil {
 		return nil
 	}
-	return v.(Engine)
+	return v.(engineBox).engine
 }

@@ -1,220 +1,302 @@
 package job
 
 import (
-        "context"
-        "database/sql"
-        "path/filepath"
-        "sync"
-        "testing"
-        "time"
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"strconv"
+	"sync"
+	"testing"
+	"time"
 
-        "github.com/stretchr/testify/assert"
-        "github.com/stretchr/testify/require"
-
-        _ "modernc.org/sqlite"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// blockingRunner hangs until released, so its jobs are always mid-flight
-// when the "process dies" (the manager is abandoned without Close).
-type blockingRunner struct {
-        mu      sync.Mutex
-        release map[string]chan struct{}
-        seen    []RunEnv
+// The requeue tests model real process death with a real dying process:
+// the test binary re-execs itself as a helper (TestMain below) that builds
+// a Manager, spawns jobs, waits for their RUNNING state to hit disk, and
+// then either exits hard (crash mode — no Close, no cleanup) or lingers
+// until killed (linger mode — a live owner for the liveness checks).
+//
+// An in-process "abandon the manager" fiction cannot model either: the
+// abandoned manager's goroutines keep running behind the test's back, and
+// its owner stamp (this process, alive) makes every liveness check lie.
+
+func TestMain(m *testing.M) {
+	if root := os.Getenv("A1_JOB_HELPER_ROOT"); root != "" {
+		helperMain(root)
+		os.Exit(9) // unreachable; helperMain exits itself
+	}
+	os.Exit(m.Run())
 }
 
-func newBlockingRunner() *blockingRunner {
-        return &blockingRunner{release: map[string]chan struct{}{}}
+// helperMain is the helper process body. Env:
+//
+//	A1_JOB_HELPER_ROOT  jobs root (required — its presence selects helper mode)
+//	A1_JOB_HELPER_N     job count        (default 1)
+//	A1_JOB_HELPER_MODE  "crash" (default) | "linger"
+//
+// The runner hangs forever on ctx — the helper's death is what ends it.
+func helperMain(root string) {
+	n := 1
+	if v := os.Getenv("A1_JOB_HELPER_N"); v != "" {
+		if p, err := strconv.Atoi(v); err == nil && p > 0 {
+			n = p
+		}
+	}
+	hang := RunnerFunc(func(ctx context.Context, env RunEnv) (string, error) {
+		<-ctx.Done() // the helper process dies first; this never fires in life
+		return "", ctx.Err()
+	})
+	m, err := New(Options{Root: root, Runner: hang, Recovery: RecoverRequeue})
+	if err != nil {
+		os.Exit(2)
+	}
+	for i := 0; i < n; i++ {
+		req := SpawnRequest{
+			Prompt:     "die mid-run",
+			Kind:       KindSchedule,
+			ScheduleID: fmt.Sprintf("sch_%d", i+1),
+			Contract:   []string{"go-build"},
+			Timeout:    5 * time.Minute,
+		}
+		if _, err := m.Spawn(context.Background(), req); err != nil {
+			os.Exit(3)
+		}
+	}
+	// Every job's RUNNING persist must land before the helper goes:
+	// the death (or the linger) is mid-run, not mid-create.
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		running := 0
+		if ids, err := m.store.listIDs(); err == nil {
+			for _, id := range ids {
+				if meta, err := m.store.readMeta(id); err == nil && meta.Status == StatusRunning {
+					running++
+				}
+			}
+		}
+		if running >= n {
+			break
+		}
+		if time.Now().After(deadline) {
+			os.Exit(4)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if os.Getenv("A1_JOB_HELPER_MODE") == "linger" {
+		for {
+			time.Sleep(time.Hour) // killed from the test
+		}
+	}
+	os.Exit(9) // the crash: hard exit, no Close, no cleanup
 }
 
-func (r *blockingRunner) Run(ctx context.Context, env RunEnv) (string, error) {
-        r.mu.Lock()
-        ch, ok := r.release[env.Job.ID]
-        if !ok {
-                ch = make(chan struct{})
-                r.release[env.Job.ID] = ch
-        }
-        r.seen = append(r.seen, env)
-        r.mu.Unlock()
-        select {
-        case <-ch:
-                return "done: " + env.Job.ID, nil
-        case <-ctx.Done():
-                return "", ctx.Err()
-        }
+// runHelper execs the test binary in helper mode and returns when the
+// helper has finished (crash mode) — or immediately with the running
+// command (linger mode; the test kills it later).
+func runHelper(t *testing.T, root string, n int, mode string) *exec.Cmd {
+	t.Helper()
+	exe, err := os.Executable()
+	require.NoError(t, err)
+	cmd := exec.Command(exe)
+	cmd.Env = append(os.Environ(),
+		"A1_JOB_HELPER_ROOT="+root,
+		fmt.Sprintf("A1_JOB_HELPER_N=%d", n),
+		"A1_JOB_HELPER_MODE="+mode,
+	)
+	if mode == "linger" {
+		require.NoError(t, cmd.Start())
+		t.Cleanup(func() {
+			if cmd.Process != nil {
+				_ = cmd.Process.Kill()
+				_ = cmd.Wait()
+			}
+		})
+		return cmd
+	}
+	out, err := cmd.CombinedOutput()
+	require.Error(t, err, "crash helper must die, output:\n%s", out)
+	var ee *exec.ExitError
+	require.ErrorAs(t, err, &ee)
+	assert.Equal(t, 9, ee.ExitCode(), "crash helper exit code, output:\n%s", out)
+	return cmd
 }
 
-func TestRecoverRequeueParksInsteadOfFailing(t *testing.T) {
-        root := t.TempDir()
-        r1 := newBlockingRunner()
-        m1, err := New(Options{Root: root, Runner: r1, Recovery: RecoverRequeue})
-        require.NoError(t, err)
+// waitStatusRunning blocks until the job's RUNNING state is persisted.
+func waitStatusRunning(t *testing.T, root, id string) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		meta, err := readMetaFrom(root, id)
+		return err == nil && meta.Status == StatusRunning
+	}, 10*time.Second, 10*time.Millisecond, "helper job %s should reach running", id)
+}
 
-        info, err := m1.Spawn(context.Background(), SpawnRequest{Prompt: "long work", Kind: KindSchedule, ScheduleID: "sch_1"})
-        require.NoError(t, err)
-        require.Eventually(t, func() bool {
-                got, err := m1.Get(context.Background(), info.ID)
-                return err == nil && got.Status == StatusRunning
-        }, 2*time.Second, 5*time.Millisecond, "job should reach running")
+// readMetaFrom reads a job's meta.json straight off disk (no manager).
+func readMetaFrom(root, id string) (Meta, error) {
+	st, err := newStore(root, nil)
+	if err != nil {
+		return Meta{}, err
+	}
+	return st.readMeta(id)
+}
 
-        // Abandon the manager without Close — the process "died" mid-run.
-        // A new manager over the same root requeues the leftover as pending.
-        m2, err := New(Options{Root: root, Runner: r1, Recovery: RecoverRequeue})
-        require.NoError(t, err)
-        got, err := m2.Get(context.Background(), info.ID)
-        require.NoError(t, err)
-        assert.Equal(t, StatusPending, got.Status)
-        assert.Equal(t, 1, got.Attempt, "requeue bumps the attempt counter")
-        assert.Equal(t, KindSchedule, got.Kind)
-        assert.Equal(t, "sch_1", got.ScheduleID)
+// listIDsFrom lists job ids straight off disk (no manager).
+func listIDsFrom(t *testing.T, root string) []string {
+	t.Helper()
+	st, err := newStore(root, nil)
+	require.NoError(t, err)
+	ids, err := st.listIDs()
+	require.NoError(t, err)
+	return ids
+}
 
-        // Wait reports the parked state instead of a zombie hang.
-        _, err = m2.Wait(context.Background(), info.ID)
-        assert.ErrorIs(t, err, ErrNotRunning)
+func TestRecoverRequeueParksDeadOwnerInsteadOfFailing(t *testing.T) {
+	root := t.TempDir()
+	runHelper(t, root, 1, "crash")
 
-        // Cancel finalizes a parked job in place.
-        require.NoError(t, m2.Cancel(context.Background(), info.ID))
-        got, err = m2.Get(context.Background(), info.ID)
-        require.NoError(t, err)
-        assert.Equal(t, StatusCancelled, got.Status)
+	// A real dead process owned that job: the new manager parks it as
+	// pending instead of failing it, with the attempt bumped and the
+	// spawn metadata intact.
+	m, err := New(Options{Root: root, Runner: newRecordingRunner(), Recovery: RecoverRequeue})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = m.Close(context.Background()) })
+
+	list, err := m.List(context.Background())
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, StatusPending, list[0].Status)
+	assert.Equal(t, 1, list[0].Attempt, "requeue bumps the attempt counter")
+	assert.Equal(t, KindSchedule, list[0].Kind)
+	assert.Equal(t, "sch_1", list[0].ScheduleID)
+
+	// Wait reports the parked state instead of a zombie hang.
+	_, err = m.Wait(context.Background(), list[0].ID)
+	assert.ErrorIs(t, err, ErrNotRunning)
+
+	// Cancel finalizes a parked job in place.
+	require.NoError(t, m.Cancel(context.Background(), list[0].ID))
+	got, err := m.Get(context.Background(), list[0].ID)
+	require.NoError(t, err)
+	assert.Equal(t, StatusCancelled, got.Status)
 }
 
 func TestResumeRunsAgainWithResumeFlag(t *testing.T) {
-        root := t.TempDir()
-        // Separate runners, unlike TestRecoverRequeueParksInsteadOfFailing:
-        // releasing a SHARED runner's channels would also wake the abandoned
-        // m1's goroutine, whose completion persist then races m2's on the same
-        // meta.json. A real process death leaves no goroutine behind (the
-        // requeue tests' own rule), so m1's runner is never released — its
-        // goroutine stays parked exactly like a dead process's would.
-        r1 := newBlockingRunner()
-        r2 := newBlockingRunner()
-        m1, err := New(Options{Root: root, Runner: r1, Recovery: RecoverRequeue})
-        require.NoError(t, err)
+	root := t.TempDir()
+	runHelper(t, root, 1, "crash")
+	ids := listIDsFrom(t, root)
+	require.Len(t, ids, 1)
 
-        info, err := m1.Spawn(context.Background(), SpawnRequest{
-                Prompt: "restart me", Contract: []string{"go-build"}, Timeout: 5 * time.Second,
-        })
-        require.NoError(t, err)
-        require.Eventually(t, func() bool {
-                got, _ := m1.Get(context.Background(), info.ID)
-                return got.Status == StatusRunning
-        }, 2*time.Second, 5*time.Millisecond)
+	r := newEnvRecorder()
+	m, err := New(Options{Root: root, Runner: r, Recovery: RecoverRequeue})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = m.Close(context.Background()) })
 
-        // Crash + requeue.
-        m2, err := New(Options{Root: root, Runner: r2, Recovery: RecoverRequeue})
-        require.NoError(t, err)
+	// Resume re-runs the SAME job id: the runner sees Resume=true, the
+	// persisted contract and timeout survived the crash.
+	resumed, err := m.Resume(context.Background(), ids[0])
+	require.NoError(t, err)
+	assert.Equal(t, ids[0], resumed.ID)
 
-        // Resume re-runs the SAME job id: the runner sees Resume=true, the
-        // persisted contract and timeout survived.
-        resumed, err := m2.Resume(context.Background(), info.ID)
-        require.NoError(t, err)
-        assert.Equal(t, info.ID, resumed.ID)
+	// The recording runner finishes instantly — "running" is not a
+	// stable state to observe. The env snapshot is the real signal:
+	// wait until the resumed run actually happened.
+	require.Eventually(t, func() bool {
+		return len(r.snapshot()) == 1
+	}, 5*time.Second, 5*time.Millisecond, "resumed job should run")
 
-        require.Eventually(t, func() bool {
-                got, _ := m2.Get(context.Background(), info.ID)
-                return got.Status == StatusRunning
-        }, 2*time.Second, 5*time.Millisecond)
+	seen := r.snapshot()
+	require.Len(t, seen, 1)
+	assert.True(t, seen[0].Job.Resume, "resumed run carries the resume flag")
+	assert.Equal(t, []string{"go-build"}, seen[0].Job.Contract)
+	assert.Equal(t, 5*time.Minute, time.Duration(seen[0].Job.TimeoutSec)*time.Second)
 
-        r1.mu.Lock()
-        require.Len(t, r1.seen, 1)
-        assert.False(t, r1.seen[0].Job.Resume, "first attempt is a fresh run")
-        r1.mu.Unlock()
-        r2.mu.Lock()
-        require.Len(t, r2.seen, 1)
-        assert.True(t, r2.seen[0].Job.Resume, "resumed run carries the resume flag")
-        assert.Equal(t, []string{"go-build"}, r2.seen[0].Job.Contract)
-        for _, ch := range r2.release {
-                close(ch)
-        }
-        r2.mu.Unlock()
+	// The resumer re-stamped the owner: this manager's own stamp
+	// (read back after the run settled on disk).
+	require.Eventually(t, func() bool {
+		got, err := m.Get(context.Background(), ids[0])
+		return err == nil && got.Status.Terminal()
+	}, 5*time.Second, 5*time.Millisecond, "resumed job should finish")
+	got, err := m.Get(context.Background(), ids[0])
+	require.NoError(t, err)
+	assert.Equal(t, StatusCompleted, got.Status)
+	assert.Equal(t, m.ownerStr, got.Owner)
 
-        closeCtx, closeCancel := context.WithTimeout(context.Background(), 2*time.Second)
-        defer closeCancel()
-        require.NoError(t, m2.Close(closeCtx))
-
-        // Resuming a terminal job errors.
-        _, err = m2.Resume(context.Background(), info.ID)
-        assert.ErrorIs(t, err, ErrInvalid)
+	// Resuming a terminal job errors.
+	_, err = m.Resume(context.Background(), ids[0])
+	assert.ErrorIs(t, err, ErrInvalid)
 }
 
 func TestResumePendingFiresAllParkedJobs(t *testing.T) {
-        root := t.TempDir()
-        r := newBlockingRunner()
-        m1, err := New(Options{Root: root, Runner: r, Recovery: RecoverRequeue})
-        require.NoError(t, err)
-        ids := make([]string, 3)
-        for i := range ids {
-                info, err := m1.Spawn(context.Background(), SpawnRequest{Prompt: "parked"})
-                require.NoError(t, err)
-                ids[i] = info.ID
-        }
-        // Wait for each job's RUNNING state to be PERSISTED before abandoning
-        // the manager: a real process death leaves no goroutine behind to race
-        // the requeue's meta write, and the test must model that — polling
-        // LiveCount alone can observe `starting` before run()'s first persist.
-        for _, id := range ids {
-                require.Eventually(t, func() bool {
-                        got, err := m1.Get(context.Background(), id)
-                        return err == nil && got.Status == StatusRunning
-                }, 2*time.Second, 5*time.Millisecond, "job %s should persist running", id)
-        }
+	root := t.TempDir()
+	runHelper(t, root, 3, "crash")
 
-        m2, err := New(Options{Root: root, Runner: r, Recovery: RecoverRequeue})
-        require.NoError(t, err)
-        list, err := m2.List(context.Background())
-        require.NoError(t, err)
-        parked := 0
-        for _, info := range list {
-                if info.Status == StatusPending {
-                        parked++
-                }
-        }
-        require.Equal(t, 3, parked)
+	// A gated runner holds every resumed job live until the test
+	// releases it — an instant runner completes before LiveCount can
+	// observe the fleet.
+	gate := make(chan struct{})
+	r := RunnerFunc(func(ctx context.Context, env RunEnv) (string, error) {
+		select {
+		case <-gate:
+			return "resumed: " + env.Job.ID, nil
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	})
+	m, err := New(Options{Root: root, Runner: r, Recovery: RecoverRequeue})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = m.Close(context.Background()) })
 
-        require.NoError(t, m2.ResumePending(context.Background()))
-        require.Eventually(t, func() bool { return m2.LiveCount() == 3 }, 2*time.Second, 5*time.Millisecond)
+	list, err := m.List(context.Background())
+	require.NoError(t, err)
+	parked := 0
+	for _, info := range list {
+		if info.Status == StatusPending {
+			parked++
+		}
+	}
+	require.Equal(t, 3, parked)
 
-        // Drain: release the runners and close the manager so t.TempDir's
-        // cleanup does not race live event writes.
-        r.mu.Lock()
-        for _, ch := range r.release {
-                close(ch)
-        }
-        r.mu.Unlock()
-        closeCtx, closeCancel := context.WithTimeout(context.Background(), 2*time.Second)
-        defer closeCancel()
-        require.NoError(t, m2.Close(closeCtx))
+	require.NoError(t, m.ResumePending(context.Background()))
+	require.Eventually(t, func() bool { return m.LiveCount() == 3 }, 5*time.Second, 5*time.Millisecond)
+
+	// Drain: release the gate so Close does not wait on live jobs.
+	close(gate)
+	for _, info := range list {
+		_, err := m.Wait(context.Background(), info.ID)
+		require.NoError(t, err)
+	}
 }
 
-func TestJobRowsMirrorPersist(t *testing.T) {
-        dir := t.TempDir()
-        db, err := sql.Open("sqlite", "file:"+filepath.Join(dir, "jobs.db"))
-        require.NoError(t, err)
-        t.Cleanup(func() { db.Close() })
+// recordingRunner finishes immediately with a canned summary.
+type recordingRunner struct{}
 
-        var ran []Meta
-        m, err := New(Options{
-                Root:     filepath.Join(dir, "jobs"),
-                Runner:   RunnerFunc(func(_ context.Context, env RunEnv) (string, error) { ran = append(ran, env.Job); return "ok", nil }),
-                DB:       db,
-                Recovery: RecoverRequeue,
-        })
-        require.NoError(t, err)
+func (recordingRunner) Run(_ context.Context, env RunEnv) (string, error) {
+	return "recorded: " + env.Job.ID, nil
+}
 
-        info, err := m.Spawn(context.Background(), SpawnRequest{
-                Prompt: "row mirror", Kind: KindSchedule, ScheduleID: "sch_x",
-        })
-        require.NoError(t, err)
-        _, err = m.Wait(context.Background(), info.ID)
-        require.NoError(t, err)
-        require.Equal(t, StatusRunning, ran[0].Status, "RunEnv snapshot is taken at run start")
+func newRecordingRunner() Runner { return recordingRunner{} }
 
-        rows, err := ListJobRows(db)
-        require.NoError(t, err)
-        require.Len(t, rows, 1)
-        assert.Equal(t, info.ID, rows[0].ID)
-        assert.Equal(t, KindSchedule, rows[0].Kind)
-        assert.Equal(t, "sch_x", rows[0].ScheduleID)
-        assert.Equal(t, string(StatusCompleted), rows[0].Status)
-        assert.False(t, rows[0].CreatedAt.IsZero())
+// envRecorder records every RunEnv it sees (mutex-guarded: concurrent
+// jobs run in parallel) and finishes immediately.
+type envRecorder struct {
+	mu   sync.Mutex
+	seen []RunEnv
+}
+
+func newEnvRecorder() *envRecorder { return &envRecorder{} }
+
+func (r *envRecorder) Run(_ context.Context, env RunEnv) (string, error) {
+	r.mu.Lock()
+	r.seen = append(r.seen, env)
+	r.mu.Unlock()
+	return "recorded: " + env.Job.ID, nil
+}
+
+func (r *envRecorder) snapshot() []RunEnv {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]RunEnv(nil), r.seen...)
 }

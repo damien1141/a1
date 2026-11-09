@@ -53,7 +53,10 @@ func pathUserEntries(le *liveEngine) []userEntry {
         var out []userEntry
         for _, e := range le.engine.Session().AllEntries() {
                 me, ok := e.(session.SessionMessageEntry)
-                if !ok || me.Message.Role != llm.RoleUser {
+                // Runtime riders are persisted context, not conversation rows: the
+                // browser never renders them, so they must not consume a userIndex
+                // slot either — the index maps 1:1 to rendered user rows.
+                if !ok || me.Message.Role != llm.RoleUser || me.Message.Runtime {
                         continue
                 }
                 parent := ""

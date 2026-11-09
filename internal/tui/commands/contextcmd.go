@@ -29,7 +29,7 @@ func (c *ContextCommands) Register(r *CommandRegistry) {
 	}
 	r.Register(Command{
 		Name:        "context",
-		Description: "Show where the context window is spent",
+		Description: "Show context-window use and the prompt-cache hit rate",
 		Slash:       true,
 		Insert:      "/context",
 		Run: func(_ Context, _ []string) error {

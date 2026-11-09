@@ -72,8 +72,10 @@ func runBatch(ctx context.Context, input json.RawMessage) (tooldef.Result, error
 		return tooldef.Result{}, fmt.Errorf("batch tool requires a non-empty files list")
 	}
 
-	proj := project.GetDefaultProject()
-	if proj == nil {
+	// TryDefaultProject surfaces discovery failure as this error instead of
+	// the process-wide panic GetDefaultProject would raise mid-request.
+	proj, err := project.TryDefaultProject()
+	if err != nil || proj == nil {
 		return tooldef.Result{}, fmt.Errorf("batch: project config not loaded")
 	}
 	root := proj.Root()

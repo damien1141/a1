@@ -49,6 +49,8 @@ func TestPageDesignLanguage(t *testing.T) {
         for _, marker := range []string{
                 "--accent: #537D96",  // seal token
                 "--red: #8B2C1F",     // cinnabar token
+                "color-scheme: light", // the :root declaration stays light-first
+                `[data-theme="dark"]`, // the dark palette rides its own scoped block
                 "EB Garamond",        // serif display type (chat hero voice)
                 `class="brand-mark"`, // inlined Dodec wireframe
                 "backdrop-filter",    // frosted save footer
@@ -60,6 +62,10 @@ func TestPageDesignLanguage(t *testing.T) {
                 assert.Contains(t, page, marker)
         }
 
+        // The old page hardcoded dark values at the TOP level — a broken
+        // half-dark design. The dark theme is now legitimate but strictly
+        // scoped to [data-theme="dark"]; the remnants below are the ones
+        // that must never come back at all.
         for _, remnant := range []string{
                 "#26262b",            // dark hover slab
                 "#1e1e28",            // dark toggle slab
@@ -67,7 +73,7 @@ func TestPageDesignLanguage(t *testing.T) {
                 "#3a5a4a",            // old dark-theme green border
                 "#1a1215",            // old dark danger hover
                 "#e6f2ea",            // light-on-dark save text
-                "color-scheme: dark",
+                "innerHTML = el(",    // el() returns an element; innerHTML stringifies it
         } {
                 assert.NotContains(t, page, remnant, "dark-theme remnant must be gone")
         }

@@ -47,6 +47,10 @@ type Request struct {
 	StreamOptions   *streamOptions `json:"stream_options,omitempty"`
 	ExtraBody       *ExtraBody     `json:"extra_body,omitempty"`
 	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
+	// PromptCacheKey routes the provider's prompt cache for this request
+	// (see llm.PromptCacheKey). Empty on every endpoint that is not
+	// api.openai.com — the wire stays byte-identical to the pre-scope body.
+	PromptCacheKey string `json:"prompt_cache_key,omitempty"`
 	// MaxTokens caps the completion length. Compaction sets it so a runaway
 	// summary cannot outgrow the context the summary is meant to free.
 	MaxTokens int `json:"max_tokens,omitempty"`
@@ -258,7 +262,7 @@ func CompactRequest(
 		return llm.CompactResult{}, err
 	}
 	if httpResp.StatusCode != http.StatusOK {
-		return llm.CompactResult{}, llm.FormatAPIError("LLM", httpResp.StatusCode, respBody)
+		return llm.CompactResult{}, llm.FormatAPIErrorHeaders("LLM", httpResp.StatusCode, respBody, httpResp.Header)
 	}
 
 	var resp struct {
@@ -309,7 +313,7 @@ func StreamChatCompletion(
 
 		if httpResp.StatusCode != http.StatusOK {
 			respBody, _ := io.ReadAll(httpResp.Body)
-			yield(llm.StreamEvent{}, llm.FormatAPIError("LLM", httpResp.StatusCode, respBody))
+			yield(llm.StreamEvent{}, llm.FormatAPIErrorHeaders("LLM", httpResp.StatusCode, respBody, httpResp.Header))
 			return
 		}
 
@@ -318,7 +322,11 @@ func StreamChatCompletion(
 
 		for data, parseErr := range util.ParseDataStream(httpResp.Body) {
 			if parseErr != nil {
-				yield(llm.StreamEvent{}, parseErr)
+				// Mid-stream deaths carry a typed Error event, the same shape
+				// anthropic and gemini emit, so consumers branching on ev.Type
+				// see them; the iter error rides along for range-over-func
+				// consumers. Pre-stream failures keep the zero-value shape.
+				yield(llm.StreamEvent{Type: llm.StreamEventTypeError, Err: parseErr.Error()}, parseErr)
 				return
 			}
 			payloadLine := bytes.TrimSpace(data)

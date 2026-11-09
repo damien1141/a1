@@ -69,11 +69,18 @@ func TestClassifyQuery(t *testing.T) {
 		{"reddit explicit", "reddit thread about arch vs ubuntu", "reddit"},
 		{"subreddit ref", "r/golang workflow tips", "reddit"},
 
+		// Time / weather — the clock + forecast subtools. They outrank
+		// everything: zero context cost until asked, direct answers.
+		{"weather query", "weather in san francisco", "weather"},
+		{"weather bare", "what's the weather", "weather"},
+		{"time now", "what time is it", "time"},
+		{"date today", "today's date", "time"},
+
 		// Merged web fallback — catch-all for general queries
 		// (DuckDuckGo Lite + Hacker News + Reddit interleaved).
 		{"general query", "best pizza in new york", "web"},
 		{"news query", "latest news about tesla", "web"},
-		{"weather query", "weather in san francisco", "web"},
+		{"weather dev query", "open-meteo api docs", "stackexchange"}, // dev-signal veto: not the forecast engine
 		{"random query", "how to tie a tie", "web"},
 	}
 	for _, tc := range cases {

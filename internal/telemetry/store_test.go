@@ -134,13 +134,19 @@ func TestStoreDropsWhenFull(t *testing.T) {
 	db := testDB(t)
 	st, err := NewStore(db)
 	require.NoError(t, err)
-	defer st.Close()
-	// Flood past the queue capacity without draining: Record must not
-	// block and must count the drops.
+	defer st.Close() // idempotent: the explicit Close below already ran
+	// Stop the writer before flooding: with nothing draining, the outcome
+	// is scheduling-independent — exactly queueCapacity events fit and
+	// every one past that must drop instead of blocking. Racing a live
+	// writer made this flake under suite load (the writer kept up, the
+	// queue never filled, nothing dropped). Record on a closed store
+	// staying safe and non-blocking is the same property shutdown leans
+	// on: telemetry is observation, never a critical path.
+	st.Close()
 	for i := 0; i < queueCapacity+100; i++ {
 		st.Record(Event{Kind: EventToolOK, Tool: "bash", When: time.Now()})
 	}
-	assert.Positive(t, st.DropCount(), "overflow drops instead of blocking")
+	assert.Equal(t, int64(100), st.DropCount(), "overflow drops instead of blocking")
 }
 
 func TestNilHandlesAreSafe(t *testing.T) {

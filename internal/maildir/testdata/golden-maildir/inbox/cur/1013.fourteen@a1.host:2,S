@@ -1,0 +1,10 @@
+From: Mia <mia@example.dev>
+To: user@example.org
+Subject: Base64 body
+Date: Sun, 1 Nov 2026 12:00:00 +0000
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: base64
+
+SGVsbG8gZnJvbSBhIGJhc2U2NCBib2R5LCB3cmFw
+cGVkIHRoZSB3YXkgcmVhbCBtYWlsZXJzIHdyYXAg
+aXQuIFJlZ2FyZHMsIE1pYS4=

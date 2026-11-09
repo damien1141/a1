@@ -7,11 +7,20 @@ import (
         "fmt"
         "os"
         "path/filepath"
+        "strings"
         "sync"
         "time"
 
         "github.com/damien1141/a1/internal/llm"
 )
+
+// ScheduleParentPrefix is the pseudo-parent id the scheduler stamps on the
+// sessions its fires run in: "schedule:<id>" names the schedule, not a real
+// session. CacheScope recognizes the marker so recurring fires of one
+// schedule share one prompt-cache scope instead of minting a cold bucket on
+// every fire. The TUI and web server spawn sites build their ParentID from
+// this constant, keeping the marker and its reader in one place.
+const ScheduleParentPrefix = "schedule:"
 
 // Manager is the single source of truth for session messages.
 // Entries form a tree linked by parent IDs; context is built by walking
@@ -277,6 +286,12 @@ func (sm *Manager) Fork() (*Manager, error) {
                 Timestamp:     time.Now().Format("2006-01-02T15-04-05"),
                 Cwd:           sm.cwd,
                 ParentSession: parentID,
+                // The branch replays the parent's entries, so its first request
+                // re-reads the parent's cached prefix: pin the parent's RESOLVED
+                // scope rather than letting the fresh session id mint a cold
+                // bucket. Resolution happens here, once, so the pin survives even
+                // if the parent's own header later changes.
+                CacheScope: sm.cacheScopeLocked(),
         }
         copied := make([]MessageEntry, 0, len(sm.entries))
         copied = append(copied, header)
@@ -327,6 +342,26 @@ func (sm *Manager) Fork() (*Manager, error) {
         }
         dst.flushed = true
         return dst, nil
+}
+
+// cacheScopeLocked is CacheScope with the lock already held. The pinned
+// header scope wins, then the schedule pseudo-parent, then the session id.
+// Real parent sessions are deliberately not walked: sibling sub-agents share
+// a parent id, and collapsing them onto one bucket would let divergent
+// request streams evict each other's cached prefixes — each session keeps
+// its own bucket unless something explicitly pinned otherwise.
+func (sm *Manager) cacheScopeLocked() string {
+        if len(sm.entries) > 0 {
+                if h, ok := sm.entries[0].(SessionHeader); ok {
+                        if h.CacheScope != "" {
+                                return h.CacheScope
+                        }
+                        if strings.HasPrefix(h.ParentSession, ScheduleParentPrefix) {
+                                return h.ParentSession
+                        }
+                }
+        }
+        return sm.sessionID
 }
 
 // AppendCompaction adds a compaction entry as a new leaf and returns its ID.

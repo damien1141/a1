@@ -1,0 +1,10 @@
+From: Kevin <kevin@example.dev>
+To: user@example.org
+Subject: Quoted printable
+Date: Sun, 1 Nov 2026 11:00:00 +0000
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+First line =
+continued.
+Caf=C3=A9 time.

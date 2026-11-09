@@ -220,10 +220,16 @@ func (s *Submitter) RunningBash() bool {
 	return s.bash.Running()
 }
 
-// IsBusy reports agent stream or local bash activity.
+// IsBusy reports agent stream, background compaction, or local bash activity.
+// The controller's compacting flag covers the same-frame window after
+// /compact fires, before the CompactionStarted event has landed in the
+// snapshot - without it, a fast Enter could append a turn mid-compaction.
 func (s *Submitter) IsBusy() bool {
 	if s == nil {
 		return false
+	}
+	if s.ctrl != nil && s.ctrl.Compacting() {
+		return true
 	}
 	if s.transcript != nil && s.transcript.IsStreaming() {
 		return true

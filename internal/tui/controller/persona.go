@@ -6,28 +6,7 @@ import (
 
         "github.com/damien1141/a1/internal/components/toast"
         "github.com/damien1141/a1/internal/persona"
-        "github.com/damien1141/a1/internal/project"
-        "github.com/damien1141/a1/internal/weather"
 )
-
-// weatherConfigFromProject reads the weather block from the project config
-// and translates it to a weather.Config. Returns the zero Config when the
-// project is unset or the weather block is absent (default-off).
-func weatherConfigFromProject(proj *project.Project) weather.Config {
-        if proj == nil || proj.Config() == nil {
-                return weather.Config{}
-        }
-        cfg := proj.Config()
-        if cfg.Weather == nil {
-                return weather.Config{}
-        }
-        return weather.Config{
-                Enabled:   cfg.Weather.Enabled,
-                Latitude:  cfg.Weather.Latitude,
-                Longitude: cfg.Weather.Longitude,
-                Name:      cfg.Weather.Name,
-        }
-}
 
 // PersonaStore returns the controller's persona store. Used by the TUI
 // command palette to enumerate personas + render avatars.
@@ -87,14 +66,4 @@ func (c *EngineController) ActivePersona() persona.Persona {
                 return persona.Persona{}
         }
         return p
-}
-
-// RefreshWeather re-reads the weather block from the project config and
-// updates the live weather service. Called after the config editor saves
-// so toggling weather.enabled in the UI takes effect without a restart.
-func (c *EngineController) RefreshWeather() {
-        if c == nil || c.weatherSvc == nil {
-                return
-        }
-        c.weatherSvc.UpdateConfig(weatherConfigFromProject(c.proj))
 }

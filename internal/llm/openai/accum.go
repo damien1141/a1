@@ -55,8 +55,39 @@ func (s *streamAccumulator) applyMessage(msg *llm.Message) {
 		s.reasoning.Reset()
 		s.reasoning.WriteString(msg.ReasoningContent)
 	}
-	for _, tc := range msg.ToolCalls {
-		s.applyToolCallDelta(tc)
+	for i, tc := range msg.ToolCalls {
+		s.applyToolCallMessage(tc, i)
+	}
+}
+
+// applyToolCallMessage merges a complete tool call from a non-delta message
+// echo. Unlike delta fragments, an echo carries the whole call, so its
+// arguments REPLACE whatever fragments already accumulated — appending would
+// concatenate the two copies into invalid JSON. Slots are assigned
+// positionally because message echoes carry no stream index; a full echo
+// lists every call in order, which is the only echo shape gateways actually
+// send.
+func (s *streamAccumulator) applyToolCallMessage(tc llm.ToolCall, slot int) {
+	if slot > s.maxIndex {
+		s.maxIndex = slot
+	}
+	acc := s.toolCalls[slot]
+	if acc == nil {
+		acc = &toolCallAcc{typ: "function"}
+		s.toolCalls[slot] = acc
+	}
+	if tc.ID != "" {
+		acc.id = tc.ID
+	}
+	if tc.Type != "" {
+		acc.typ = tc.Type
+	}
+	if tc.Function.Name != "" {
+		acc.name = tc.Function.Name
+	}
+	if args := tc.Function.Arguments; args != "" {
+		acc.args.Reset()
+		acc.args.WriteString(args)
 	}
 }
 

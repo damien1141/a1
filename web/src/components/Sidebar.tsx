@@ -18,15 +18,32 @@ interface Props {
   // persona is the active profile; onOpenPersonas opens the manager.
   persona?: api.Persona | null;
   onOpenPersonas: () => void;
+  // The session drawer (chunk 7): collapsed by default at EVERY viewport,
+  // opened by the left-edge hover zone (or the hamburger below lg) and
+  // closed by pick / X / Escape / pointer-leave. open drives the slide;
+  // onClose is every exit's one state. onMouseEnter/Leave feed the hover
+  // intent: entering the panel cancels a pending close, leaving it
+  // schedules one, so brushing across the gap never flickers.
+  open: boolean;
+  onClose: () => void;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
 }
 
-export function Sidebar({ sessions, currentSession, pins, onSelect, onRefresh, onTogglePin, onDelete, persona, onOpenPersonas }: Props) {
+export function Sidebar({ sessions, currentSession, pins, onSelect, onRefresh, onTogglePin, onDelete, persona, onOpenPersonas, open, onClose, onMouseEnter, onMouseLeave }: Props) {
   const [filter, setFilter] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   // confirmDelete holds the id of the row whose trash button was clicked;
   // a second click on that row's checkmark commits the delete.
   const [confirmDelete, setConfirmDelete] = useState('');
   const pinSet = new Set(pins);
+
+  // pick selects a session and folds the drawer: the point of picking is
+  // to see the conversation, not to keep the list open.
+  const pick = (id: string) => {
+    onSelect(id);
+    onClose();
+  };
 
   const doRefresh = () => {
     if (refreshing) return;
@@ -52,12 +69,31 @@ export function Sidebar({ sessions, currentSession, pins, onSelect, onRefresh, o
     : ordered;
 
   return (
-    <aside class="w-60 flex-shrink-0 flex flex-col bg-paper-sunk border-r border-hairline overflow-hidden">
+    <aside
+      class={`fixed inset-y-0 left-0 z-30 flex flex-col w-60 bg-paper-sunk border-r border-hairline overflow-hidden drawer-slide ${
+        open ? 'translate-x-0 shadow-xl' : '-translate-x-full'
+      }`}
+      aria-label="session list"
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
       {/* Header */}
       <div class="flex items-center justify-between px-4 py-2 flex-shrink-0">
-        <span class="text-xs font-semibold text-ink-muted tracking-wider uppercase">
-          Sessions
-        </span>
+        <div class="flex items-center gap-1">
+          {/* The drawer's close — one X at every viewport now, the
+              keyboard/mouse exit that pairs with the edge zone's open. */}
+          <button
+            type="button"
+            class="p-1 -ml-1 rounded-sm text-ink-muted hover:text-seal hover:bg-seal-light active:scale-90 transition-all duration-fast"
+            onClick={onClose}
+            aria-label="Close the session list"
+          >
+            <X size={14} />
+          </button>
+          <span class="text-xs font-semibold text-ink-muted tracking-wider uppercase">
+            Sessions
+          </span>
+        </div>
         <div class="flex items-center gap-0.5">
           <ThemeToggleButton />
           {/* Config editor: opens /settings — the same editor `a1 config`
@@ -84,7 +120,7 @@ export function Sidebar({ sessions, currentSession, pins, onSelect, onRefresh, o
       <div class="px-2 pb-2">
         <button
           class="w-full flex items-center gap-2 px-3 py-2 rounded-sm text-sm text-ink-light hover:text-seal hover:bg-seal-light transition-colors duration-fast border border-hairline"
-          onClick={() => onSelect('')}
+          onClick={() => pick('')}
         >
           <MessageSquarePlus size={15} />
           New chat
@@ -161,7 +197,7 @@ export function Sidebar({ sessions, currentSession, pins, onSelect, onRefresh, o
                     <button
                       type="button"
                       class="w-full text-left"
-                      onClick={() => onSelect(s.id)}
+                      onClick={() => pick(s.id)}
                     >
                       <div class="flex items-center gap-1.5 pr-10">
                         {isPinned && <Pin size={10} class="text-seal flex-shrink-0 fill-current" />}
