@@ -547,6 +547,40 @@
   .field-key { grid-column: 1 / -1; }
   .field-api, .field-think { grid-column: span 1; }
   .field-think-enabled, .field-context, .field-image { grid-column: span 1; }
+  .field-headers { grid-column: 1 / -1; }
+
+  .headers-control { min-width: 0; }
+
+  .header-rows {
+    display: grid;
+    gap: 8px;
+    margin-top: 7px;
+  }
+
+  .header-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .header-row input {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-top: 0;
+  }
+
+  .header-sep {
+    flex: 0 0 auto;
+    color: var(--text-muted);
+    font-weight: 650;
+  }
+
+  .header-remove {
+    flex: 0 0 auto;
+    min-width: 38px;
+    padding-inline: 10px;
+  }
 
   .field-label-row {
     display: flex;
@@ -1698,6 +1732,14 @@ const I18N = {
     contextWindowHelp: "Maximum context length in tokens. Leave empty to auto-detect local llama.cpp / ollama servers (unknown windows fall back to 32k); set it explicitly for remote models.",
     imageEnabled: "Image enabled",
     imageEnabledHelp: "Allow attaching images to messages for this model.",
+    modelHeaders: "Extra headers",
+    modelHeadersHelp: "Sent with every request to this endpoint — provider routing keys, tenant tags, beta flags. A configured header can also override the client default (Authorization, Anthropic-Version, …).",
+    addHeader: "Add header",
+    headerName: "Header name",
+    headerValue: "Header value",
+    headerNamePlaceholder: "e.g. X-Provider",
+    headerValuePlaceholder: "e.g. munito",
+    removeHeader: "Remove this header",
     contextPlaceholder: "e.g. 200000",
     fetchModels: "Fetch models",
     fetchModelsTitle: "Fetch model list from the current API base URL",
@@ -1896,6 +1938,14 @@ const I18N = {
     contextWindowHelp: "最大上下文长度（tokens）。留空时自动探测本地 llama.cpp / ollama 服务（探测不到按 32k 处理）；远程模型建议显式设置。",
     imageEnabled: "图片支持",
     imageEnabledHelp: "允许为该模型附加图片消息。",
+    modelHeaders: "自定义请求头",
+    modelHeadersHelp: "随该模型的每次请求一起发送——服务商路由键、租户标记等。也可覆盖客户端默认请求头（Authorization、Anthropic-Version 等）。",
+    addHeader: "添加请求头",
+    headerName: "请求头名称",
+    headerValue: "请求头值",
+    headerNamePlaceholder: "例如 X-Provider",
+    headerValuePlaceholder: "例如 munito",
+    removeHeader: "删除此请求头",
     contextPlaceholder: "例如 200000",
     fetchModels: "获取模型",
     fetchModelsTitle: "从当前 API 地址获取模型列表",
@@ -2248,6 +2298,16 @@ function refreshModelRow(row) {
   row.keyToggle.setAttribute("aria-label", t("toggleKeyTitle"));
   row.remove.textContent = t("remove");
   row.badge.textContent = t("startupModel");
+  row.headerRows.forEach(entry => {
+    entry.nameInput.placeholder = t("headerNamePlaceholder");
+    entry.nameInput.setAttribute("aria-label", t("headerName"));
+    entry.valueInput.placeholder = t("headerValuePlaceholder");
+    entry.valueInput.setAttribute("aria-label", t("headerValue"));
+  });
+  row.dom.querySelectorAll(".header-remove").forEach(btn => {
+    btn.title = t("removeHeader");
+    btn.setAttribute("aria-label", t("removeHeader"));
+  });
   if (!row.name.value.trim()) row.preview.textContent = t("unnamedModel");
   row.dom.querySelectorAll("[data-i18n]").forEach(node => {
     node.textContent = t(node.getAttribute("data-i18n"));
@@ -2488,6 +2548,59 @@ function addModelRow(model) {
     "aria-label": t("removeModel"),
   }, t("remove"));
 
+  // Extra per-model headers: rows of [name]:[value] plus an add button in
+  // the field label. One blank row is always on screen so the two-box
+  // affordance is visible without a click.
+  const headersList = el("div", { class: "header-rows" });
+  const headersControl = el("div", { class: "headers-control" }, headersList);
+  const addHeaderButton = el("button", {
+    type: "button",
+    class: "button tertiary small",
+    "data-i18n": "addHeader",
+  }, t("addHeader"));
+  function addHeaderRow(headerName, headerValue) {
+    const nameInput = el("input", {
+      type: "text",
+      placeholder: t("headerNamePlaceholder"),
+      "aria-label": t("headerName"),
+      autocomplete: "off",
+      spellcheck: "false",
+    });
+    const valueInput = el("input", {
+      type: "text",
+      placeholder: t("headerValuePlaceholder"),
+      "aria-label": t("headerValue"),
+      autocomplete: "off",
+      spellcheck: "false",
+    });
+    const removeBtn = el("button", {
+      type: "button",
+      class: "button tertiary small danger header-remove",
+      title: t("removeHeader"),
+      "aria-label": t("removeHeader"),
+    }, "\u00d7");
+    const entry = { nameInput, valueInput };
+    entry.dom = el("div", { class: "header-row" },
+      nameInput,
+      el("span", { class: "header-sep", "aria-hidden": "true" }, ":"),
+      valueInput,
+      removeBtn,
+    );
+    row.headerRows.push(entry);
+    nameInput.addEventListener("input", () => markDirty("models"));
+    valueInput.addEventListener("input", () => markDirty("models"));
+    removeBtn.addEventListener("click", () => {
+      const index = row.headerRows.indexOf(entry);
+      if (index >= 0) row.headerRows.splice(index, 1);
+      entry.dom.remove();
+      if (row.headerRows.length === 0) addHeaderRow("", "");
+      markDirty("models");
+    });
+    if (headerName) nameInput.value = headerName;
+    if (headerValue) valueInput.value = headerValue;
+    headersList.appendChild(entry.dom);
+  }
+
   if (value.name) name.value = value.name;
   if (value.apiKey) key.value = value.apiKey;
   if (value.baseUrl) base.value = value.baseUrl;
@@ -2520,6 +2633,7 @@ function addModelRow(model) {
     origPersonalRead: value.personalRead != null ? value.personalRead : null,
     personalWriteTouched: false,
     origPersonalWrite: value.personalWrite != null ? value.personalWrite : null,
+    headerRows: [],
     def,
     fetchButton,
     modelPicker,
@@ -2540,6 +2654,12 @@ function addModelRow(model) {
   refreshThinkOptions(row);
   if (value.api) api.value = value.api;
   if (value.thinkLevel) think.value = value.thinkLevel;
+  if (value.headers) {
+    for (const [headerName, headerValue] of Object.entries(value.headers)) {
+      addHeaderRow(headerName, headerValue);
+    }
+  }
+  if (row.headerRows.length === 0) addHeaderRow("", "");
 
   const keyShell = el("div", { class: "input-shell" }, key, keyToggle);
   const nameControl = el("div", { class: "model-name-control" },
@@ -2558,6 +2678,7 @@ function addModelRow(model) {
     field("imageEnabled", "imageEnabledHelp", image, "field-image", image.id),
     field("personalReadLabel", "personalReadHelp", personalRead, "field-personal-read", personalRead.id),
     field("personalWriteLabel", "personalWriteHelp", personalWrite, "field-personal-write", personalWrite.id),
+    field("modelHeaders", "modelHeadersHelp", headersControl, "field-headers", null, null, addHeaderButton),
   );
 
   const defaultLabel = el("label", { class: "default-control" }, def, el("span", { "data-i18n": "setStartupModel" }, t("setStartupModel")));
@@ -2676,6 +2797,20 @@ function validatePositiveInteger(input, label) {
 
 function readOptionalInteger(input) {
   return input.value.trim() ? Number(input.value) : null;
+}
+
+// readHeaders folds the model's [name]:[value] rows into the payload object.
+// Rows with a blank name are skipped (a header with no name cannot be sent);
+// an all-blank editor yields {} — an explicit clear the server honors over
+// its stale-page carry.
+function readHeaders(row) {
+  const headers = {};
+  for (const entry of row.headerRows) {
+    const name = entry.nameInput.value.trim();
+    if (!name) continue;
+    headers[name] = entry.valueInput.value.trim();
+  }
+  return headers;
 }
 
 function validateForm() {
@@ -2808,6 +2943,7 @@ function buildPayload() {
       imageEnabled: row.imageTouched ? row.image.checked : row.origImageEnabled,
       personalRead: row.personalReadTouched ? row.personalRead.checked : row.origPersonalRead,
       personalWrite: row.personalWriteTouched ? row.personalWrite.checked : row.origPersonalWrite,
+      headers: readHeaders(row),
       default: row.def.checked,
     })),
     skillPath: dirty.skillPath ? ($("skillPath").value.trim() || null) : (orig && orig.skillPath != null ? orig.skillPath : null),

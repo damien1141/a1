@@ -33,6 +33,9 @@ models:
     personal_write: true          # bool, optional, default false — opts the model into
                                   # personal-data writes (calendar events, kanban cards);
                                   # mail is read-only even with write
+    headers:                      # map, optional — extra HTTP headers sent with every
+      X-Provider: munito          # request to this endpoint (routing keys, tenant tags);
+                                  # a configured header can also override a client default
 
 # ── skill_path ─────────────────────────────────────────────────────
 # Where SKILL.md dirs are loaded from. Default: ~/.a1/skills.

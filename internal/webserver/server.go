@@ -102,12 +102,14 @@ type liveEngine struct {
 
 // Start launches the web server on 127.0.0.1:port and returns the page URL
 // plus a stop function. The caller owns the goroutine lifetime; stop is
-// idempotent and safe to call from a defer.
+// idempotent and safe to call from a defer. Port 0 asks the OS for an
+// ephemeral loopback port — `a1 matrix` embeds the server that way, so its
+// bridge client can never collide with a running `a1 web`.
 func Start(ctx context.Context, proj *project.Project, port int) (string, func(), error) {
         if ctx == nil {
                 ctx = context.Background()
         }
-        if port <= 0 || port > 65535 {
+        if port < 0 || port > 65535 {
                 return "", nil, fmt.Errorf("web: port %d out of range", port)
         }
         if proj == nil {

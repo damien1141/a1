@@ -8,7 +8,56 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- **`models[].headers`: per-model extra HTTP headers on every provider
+  request.** Gateways like nano-gpt route on headers, not keys — the
+  same `api_key` can fan out to different upstreams by
+  `X-Provider: munito`, and until now a1 had no way to say that. The
+  new `headers:` map on a model entry is stamped onto every request
+  that model makes (chat, compaction, all four routers: OpenAI,
+  OpenAI Responses, Anthropic, Gemini), applied after the client's own
+  defaults so a configured header can add — or, when a gateway demands
+  it, override a built-in like `Authorization` or `Anthropic-Version`.
+  The config editor grew the matching surface: an "Extra headers"
+  field on every model card with `[header] : [value]` rows, an
+  "Add header" button, and blank-name rows skipped on save. Header
+  names and values are trimmed at parse; the header-free wire stays
+  byte-identical to before. The editor save carries the file's
+  headers the way it carries api_keys, so a stale page cannot silently
+  strip them; an explicit empty map clears.
+
 ### Changed
+
+- **The system prompt got its overthink block — execution and iteration
+  framed as the default bias, aimed at the flash-sized models that
+  deliberate instead of acting.** Smaller models read the gate
+  apparatus and decide every task deserves it: planning rounds before a
+  three-line fix, ceremony after a typo. The intro now leads with the
+  aphorism — "Don't overthink it. Execution and iteration based on
+  reason always beat trying to get it perfect on the first try" — and
+  the operational form a literal model can follow: make the sound first
+  move, read the real result, adjust; a cheap action that settles a
+  doubt beats another round of thinking about it; correct is reached in
+  verified passes, never in a perfect plan (the block licenses speed,
+  not sloppiness — verification rides inside the passes). The
+  trivial/hard split grew concrete examples on the trivial side ("a
+  focused edit, a small fix, a one-file change") because a bare
+  "trivial" reads as "everything is hard" to a literal model, and the
+  tie now goes to trivial: unsure which it is, treat it as trivial and
+  let the first result re-scope you. Placement is the load-bearing
+  choice — every engine (parent, sub-agents, the learning fork) builds
+  its system prompt from the one template, so the intro is the single
+  place the bias reaches every surface, and top-of-prompt is where
+  attention sits highest. The other prompts were reviewed and left
+  alone on purpose: the learning review, memory consolidation, and
+  compaction templates each already carry their own anti-drift guards
+  (grounded-only saves, the right to refuse, "Nothing to save."), the
+  sub-agent hints are role-tight and inherit the block through the
+  shared template, and the verify/contract/evidence system notes are
+  mechanical nudges tuned in their own recent passes. A prompt_test
+  guard pins the block and both intro changes so the wording cannot
+  silently decay.
 
 - **The tool layer got its clarity-and-tokens pass: phantom tool names
   purged from the prompt, an uncomposable mode documented, schema
@@ -199,6 +248,158 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **The Discord bridge — `a1 discord`, the third chat surface.** One
+  Discord channel bridged onto one a1 session, on the rulings the
+  roadmap note locked before any code: bot tokens (not OAuth — a bridge
+  is a bot), the `!`-prefix command convention the Matrix bridge set
+  (over slash-commands' application registry), message chunking at the
+  platform cap, and a bucket-aware rate-limit pacer ("Discord's are
+  aggressive; the send path needs a bucket-aware pacer that Matrix
+  never needed"). The architecture is the same loopback-client ruling:
+  ephemeral in-process webserver, the bridge a client of the chat API +
+  SSE the GUI uses, agent posture untouched. The chunker counts UTF-16
+  CODE UNITS (2,000) — the unit every Discord client counts
+  (`content.length` in JavaScript: an astral emoji is two units, a CJK
+  character one; a rune counter would emit "2,000 characters" of emoji
+  and watch Discord reject it as 4,000), cut on line boundaries with
+  concatenation byte-exact and hard cuts never splitting a rune. The
+  pacer waits before requests from X-RateLimit-Remaining /
+  Reset-After (SECONDS, floating — the one unit difference from
+  stoat's milliseconds), sleeps out a 429's retry_after exactly once
+  with every 429 teaching the limiter even when it ends the call, and
+  takes a process-wide lockout on a global 429 that spans even the
+  typing route. The gateway speaks v10 over the stoat bridge's
+  hand-rolled `internal/ws` unchanged: HELLO opens the heartbeat
+  contract (first beat after a jittered fraction of the interval, the
+  spec's anti-thundering-herd guidance; beats carry the dispatch
+  sequence), IDENTIFY carries the token + guild-messages/DMs/privileged
+  message-content intents + honest connection properties, READY pins
+  the self user (absence is fatal), MESSAGE_CREATE is the only consumed
+  dispatch, op-1 requests get an immediate beat, and op-9/op-7 end the
+  connection for the reconnect loop — no RESUME in v1 (history is
+  context, not prompts, same as the other bridges; documented).
+  Typing rides `POST /channels/{id}/typing` on prompt and every 7s
+  (Discord's indicator lives ~10s with no end-typing route, so it dies
+  on its own when the beats stop). Other bots never get a turn
+  (author.bot is the skip); the channel is the trust boundary. The
+  prerequisite no code can supply is documented loudly: the MESSAGE
+  CONTENT intent must be enabled in the Developer Portal — without it
+  the gateway either refuses the connection (close 4014, surfaced with
+  its reason in the log) or delivers messages with empty content, which
+  is indistinguishable from a quiet channel. Config: discord: section
+  (token, channel, optional api/gateway overrides), Connect validates
+  with two REST calls (/users/@me for the token + self id, channel
+  fetch for visibility + bridgeable type — guild text, announcement, or
+  DM; voice/categories/forums/threads refused with the reason). Tests:
+  the client trio against a fake API with rate-limit knobs in
+  Discord's own units (pacing before, retry after, the bound, the
+  global lockout spanning routes, error messages surfaced); the bridge
+  trio against a fake loopback chat API + a fake gateway v10 speaking
+  real websocket frames (HELLO → IDENTIFY shape with token/intents/
+  properties pinned → READY → MESSAGE_CREATE, heartbeats on the HELLO
+  interval carrying the sequence, op-1 immediate beats, op-9/op-7
+  fatal, no-self READY fatal, pre-READY drops, the full bridge battery:
+  prompt→reply, chunking with the byte-exact concat property, approvals
+  y/n/expiry, `!stop`/`!new`, echo/other-channel/other-bot filtering,
+  stored-session resume with the diff anchor, unavailable sessions
+  starting fresh, the typing lifecycle, undriven sessions ignored,
+  Connect's validation ladder); the chunker's golden table with
+  hand-computed counts and the astral-emoji differential, the standard
+  library's own utf16.Encode as the independent counting oracle.
+  `doc/discord.md` carries the rulings. Zero new dependencies
+  (`internal/ws` was the stoat bridge's foundation; Discord reuses it
+  unchanged).
+- **The stoat bridge — `a1 stoat`, the second chat surface.** One
+  stoat.chat channel (the Revolt lineage: `X-Bot-Token` REST + a v1
+  JSON event websocket) bridged onto one a1 session, built on the
+  Matrix bridge's loopback-client ruling unchanged: the webserver boots
+  in-process on an ephemeral port and the bridge drives the same chat
+  API + SSE the GUI uses, so the agent's network posture is untouched.
+  Channel messages become prompts; replies return as chunked markdown
+  sized to stoat's wire limit — 2,000 units counted the way the backend
+  counts them (Unicode scalar values, so a full-CJK answer is one legal
+  message, cut on line boundaries with concatenation byte-exact);
+  approvals decide by y/n with deny-on-timeout (the bridge's window
+  sits 30s under the webserver's ask timeout); `!stop` cancels the
+  running turn, `!new` starts a fresh session, and restarts resume via
+  the session id in `~/.a1/stoat/state.json` (the bot token is config's
+  business and is cached nowhere). The typing indicator runs over the
+  event socket (stoat has no REST typing route), refreshed on a 3s
+  tick and ended the moment the last turn finishes. Sends are paced
+  against stoat's fixed-window limiter (10 per 10s per channel) from
+  the response's `X-RateLimit-*` headers before the request, and a 429
+  in spite of pacing is slept out per its `retry_after` body once.
+  Other bots never get a turn (their events carry embedded bot
+  information — the marker to skip on); the channel is the trust
+  boundary. The event protocol was scoped against the platform's
+  published protocol docs and OpenAPI: Authenticate as a message (not a
+  query parameter — tokens in URLs leak into logs), Ready's self user
+  found by `relationship == "User"` (fatal when absent — the echo
+  filter cannot be built), `Bulk` recursed, server `Ping` answered
+  with `Pong`, and a client `Ping` every 20s per the doc's 10–30s
+  window. New foundation under it: `internal/ws`, a hand-rolled RFC
+  6455 client — client role only (masked sends), text frames only,
+  fragmentation assembled, ping answered automatically, close surfaced
+  as a `CloseError`, RSV bits refused (no extension was negotiated),
+  and a hard 90s idle deadline, because a silently-dead TCP connection
+  is the one failure a write can never reveal. Zero new module
+  dependencies (gorilla/websocket is a fine library; the bridges need
+  one client role speaking text frames, not a framework). Tests: the
+  ws trio against a real server-side websocket (handshake negatives,
+  mask/length-band differentials against an independent unmask oracle,
+  fragmentation, ping-pong, close both ways, idle teardown, slow
+  consumer); the stoat trio against a fake REST API with rate-limit
+  header knobs and a fake event gateway speaking real websocket frames
+  (prompt→reply, chunking, approvals y/n/expiry, `!stop`/`!new`, echo
+  and other-bot and other-channel filtering, stored-session resume
+  with the diff anchor, typing lifecycle, the gateway's Ready/auth/Error
+  contract); the chunker's golden table with hand-computed counts and
+  the byte-exact round-trip property; the config section trio (parse,
+  overrides, absent, half-section negatives, pasted-newline trimming).
+  `doc/stoat.md` carries the rulings.
+- **The Matrix bridge — `a1 matrix`, the text-the-harness surface.** One
+  Matrix room bridged onto one a1 session: room messages become prompts,
+  each finished turn's reply lands back in the room as chunked markdown
+  (plain body + goldmark-rendered Matrix HTML, raw HTML dropped so model
+  output can never inject markup), and a typing indicator runs while the
+  agent works. The architecture is the locked loopback-client ruling from
+  the roadmap note: the command boots the webserver in-process on an
+  EPHEMERAL loopback port and drives it through the same chat API + SSE
+  stream the web GUI uses — `POST /api/prompt`, `GET /api/events`,
+  `POST /api/ask` — so the agent's network posture is unchanged and no
+  new exported surface exists for Matrix; the only new connection is the
+  bridge's outbound sync long-poll. The reply path reads the transcript
+  (authoritative record) on turn completion instead of accumulating SSE
+  deltas, so a dropped event stream mid-turn cannot eat an answer.
+  Permissions bridge into the room: an ask arrives as a notice, a plain
+  y/n inside the window decides, and an unanswered approval DENIES — the
+  bridge's window sits 30s under the webserver's 10-minute ask timeout
+  so the room hears "window closed" just before the denial lands.
+  `!stop` cancels the running turn (rendering the cancel as a clean
+  "stopped.", not the raw context error), `!new` detaches the room from
+  its session, and the session id persists in `~/.a1/matrix/state.json`
+  so restarts resume the conversation. Config is a `matrix:` section
+  (homeserver, user, access_token-or-password, room; the login flow
+  caches its granted token in the state file so reboots stop minting
+  device sessions). Stated limits: plaintext rooms only (an encrypted
+  room is refused loudly at startup — megolm is not v1), no history
+  replay (messages sent while the bridge was down stay unanswered), and
+  the room is the trust boundary — every member can prompt, keep it
+  invite-only. New package `internal/matrix` (dependency-free beyond
+  net/http + encoding/json + the tree's existing goldmark: six endpoints,
+  not a framework), config section in `internal/project`, `a1 matrix` in
+  `cmd`, `webserver.Start` relaxed to accept port 0 for the ephemeral
+  embed, and doc/matrix.md carries the rulings. Tests: the wire shapes
+  against a fake homeserver (login/whoami/sync/send/join/typing, txn
+  uniqueness, errcode surfacing), the bridge end-to-end against a fake
+  loopback chat API + fake homeserver (prompt→done→reply round trip,
+  multi-round join, chunk round trip, the y/n approvals both ways, the
+  expiry notice, !stop/!new, the ignored shapes — own sends, notices,
+  emotes, edits — the encrypted-room refusal, session resume with the
+  transcript-diff anchor, and Connect's auth ladder including stale-token
+  recovery), and the format trio (reply-fallback golden fixtures, the
+  chunker's byte-exact round-trip property, the HTML renderer's escape
+  behavior).
 - **The mail configurator — chunk 8: mail accounts editable in the app,
   the keyring never the letters.** The user's words: "still cant
   configure email servers/accounts and app passwords- but that should be

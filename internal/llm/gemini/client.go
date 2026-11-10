@@ -316,6 +316,9 @@ func Stream(
 			return
 		}
 		setGeminiAuth(httpReq, config.BaseURL, config.APIKey)
+		// Configured headers land last so they can override the
+		// defaults above when a gateway needs its own flavor.
+		llm.ApplyExtraHeaders(httpReq, config.Headers)
 
 		httpResp, err := util.DoWithRetry(client, httpReq)
 		if err != nil {
@@ -471,6 +474,9 @@ func CompactRequest(
 		return llm.CompactResult{}, err
 	}
 	setGeminiAuth(request, cfg.BaseURL, cfg.APIKey)
+	// Configured headers land last so they can override the defaults
+	// above when a gateway needs its own flavor.
+	llm.ApplyExtraHeaders(request, cfg.Headers)
 	httpResp, err := util.DoWithRetry(client, request)
 	if err != nil {
 		return llm.CompactResult{}, err

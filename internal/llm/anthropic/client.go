@@ -311,6 +311,10 @@ func newMessagesHTTPRequest(ctx context.Context, cfg llm.ModelConfig, body []byt
 	if cacheTTL != "" {
 		httpReq.Header.Set("anthropic-beta", "extended-cache-ttl-2025-04-11")
 	}
+	// Configured headers land last so they can override the defaults
+	// above (a gateway that routes on a custom header or its own
+	// Anthropic-Version) — the common case simply adds.
+	llm.ApplyExtraHeaders(httpReq, cfg.Headers)
 	return httpReq, nil
 }
 

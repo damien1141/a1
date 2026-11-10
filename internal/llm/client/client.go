@@ -242,7 +242,7 @@ func (c *Client) streamOnce(ctx context.Context, messages []llm.Message, key str
 		if err := applyHook(ctx, c.hooks.OpenAI, req, cfg); err != nil {
 			return errorSeq(err)
 		}
-		return openai.StreamChatCompletion(ctx, c.httpClient, cfg.BaseURL, key, req)
+		return openai.StreamChatCompletion(ctx, c.httpClient, cfg.BaseURL, key, req, cfg.Headers)
 	}
 }
 

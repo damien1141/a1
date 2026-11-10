@@ -56,18 +56,19 @@ type ConfigDoc struct {
 // same reason BrowserDoc.Proxy is — a field the editor form does not know
 // about must still survive a full-document save.
 type ModelDoc struct {
-        Name          string   `yaml:"name"                     json:"name"`
-        APIKey        string   `yaml:"api_key"                  json:"apiKey"`
-        APIKeys       []string `yaml:"api_keys,omitempty"       json:"apiKeys,omitempty"`
-        BaseURL       string   `yaml:"base_url"                 json:"baseUrl"`
-        ContextWindow *int   `yaml:"context_window,omitempty" json:"contextWindow,omitempty"`
-        ImageEnabled  *bool  `yaml:"image_enabled,omitempty"  json:"imageEnabled,omitempty"`
-        API           string `yaml:"api,omitempty"            json:"api,omitempty"`
-        ThinkEnabled  *bool  `yaml:"think_enabled,omitempty"  json:"thinkEnabled,omitempty"`
-        ThinkLevel    string `yaml:"think_level,omitempty"    json:"thinkLevel,omitempty"`
-        PersonalRead  *bool  `yaml:"personal_read,omitempty"  json:"personalRead,omitempty"`
-        PersonalWrite *bool  `yaml:"personal_write,omitempty" json:"personalWrite,omitempty"`
-        Default       bool   `yaml:"default,omitempty"        json:"default,omitempty"`
+        Name          string            `yaml:"name"                     json:"name"`
+        APIKey        string            `yaml:"api_key"                  json:"apiKey"`
+        APIKeys       []string          `yaml:"api_keys,omitempty"       json:"apiKeys,omitempty"`
+        BaseURL       string            `yaml:"base_url"                 json:"baseUrl"`
+        ContextWindow *int              `yaml:"context_window,omitempty" json:"contextWindow,omitempty"`
+        ImageEnabled  *bool             `yaml:"image_enabled,omitempty"  json:"imageEnabled,omitempty"`
+        API           string            `yaml:"api,omitempty"            json:"api,omitempty"`
+        ThinkEnabled  *bool             `yaml:"think_enabled,omitempty"  json:"thinkEnabled,omitempty"`
+        ThinkLevel    string            `yaml:"think_level,omitempty"    json:"thinkLevel,omitempty"`
+        PersonalRead  *bool             `yaml:"personal_read,omitempty"  json:"personalRead,omitempty"`
+        PersonalWrite *bool             `yaml:"personal_write,omitempty" json:"personalWrite,omitempty"`
+        Headers       map[string]string `yaml:"headers,omitempty"        json:"headers,omitempty"`
+        Default       bool              `yaml:"default,omitempty"        json:"default,omitempty"`
 }
 
 // PermDoc describes permissions settings.
@@ -365,7 +366,11 @@ func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
                                 // is editing connection settings, not
                                 // rotating credentials); an explicit value,
                                 // including an empty array ("clear them"),
-                                // wins.
+                                // wins. headers follows the same rule — the
+                                // editor posts an explicit object ({} clears,
+                                // the row map wins), so only a payload that
+                                // omits the key entirely (a stale page from
+                                // before the field existed) carries.
                                 for i := range doc.Models {
                                         if doc.Models[i].APIKeys != nil {
                                                 continue
@@ -373,6 +378,17 @@ func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
                                         for j := range cur.Models {
                                                 if cur.Models[j].Name == doc.Models[i].Name {
                                                         doc.Models[i].APIKeys = cur.Models[j].APIKeys
+                                                        break
+                                                }
+                                        }
+                                }
+                                for i := range doc.Models {
+                                        if doc.Models[i].Headers != nil {
+                                                continue
+                                        }
+                                        for j := range cur.Models {
+                                                if cur.Models[j].Name == doc.Models[i].Name {
+                                                        doc.Models[i].Headers = cur.Models[j].Headers
                                                         break
                                                 }
                                         }

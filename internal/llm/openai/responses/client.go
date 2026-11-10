@@ -28,7 +28,7 @@ func responsesURL(baseURL string) string {
 	return base + responsesPath
 }
 
-func newHTTPRequest(ctx context.Context, url, apiKey string, body []byte, stream bool) (*http.Request, error) {
+func newHTTPRequest(ctx context.Context, url, apiKey string, body []byte, stream bool, headers map[string]string) (*http.Request, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -38,6 +38,9 @@ func newHTTPRequest(ctx context.Context, url, apiKey string, body []byte, stream
 	if stream {
 		httpReq.Header.Set("Accept", util.ContentEventStream)
 	}
+	// Configured headers land last so they can override the defaults
+	// above when a gateway needs its own flavor of one of them.
+	llm.ApplyExtraHeaders(httpReq, headers)
 	return httpReq, nil
 }
 
@@ -53,7 +56,7 @@ func CompactRequest(
 		return llm.CompactResult{}, err
 	}
 
-	httpReq, err := newHTTPRequest(ctx, responsesURL(cfg.BaseURL), cfg.APIKey, body, false)
+	httpReq, err := newHTTPRequest(ctx, responsesURL(cfg.BaseURL), cfg.APIKey, body, false, cfg.Headers)
 	if err != nil {
 		return llm.CompactResult{}, err
 	}
@@ -134,7 +137,7 @@ func Stream(
 			return
 		}
 
-		httpReq, err := newHTTPRequest(ctx, responsesURL(cfg.BaseURL), cfg.APIKey, body, true)
+		httpReq, err := newHTTPRequest(ctx, responsesURL(cfg.BaseURL), cfg.APIKey, body, true, cfg.Headers)
 		if err != nil {
 			yield(llm.StreamEvent{}, err)
 			return

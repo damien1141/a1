@@ -4,7 +4,7 @@ A lean Go agent harness with two frontends: a bubbletea TUI and a web GUI (`a1 -
 
 ~91k lines of Go. Direct module deps are few on purpose. No runtime bloat.
 
-**Docs:** [doc/](doc/) — [models](doc/models.md) · [extensions](doc/extensions.md) · [MCP](doc/mcp.md) · [TUI](doc/tui.md) · [project layout](doc/project-layout.md) · [context folding math](doc/context-folding-math.md) · [session context](doc/session-context-building.md)
+**Docs:** [doc/](doc/) — [models](doc/models.md) · [extensions](doc/extensions.md) · [MCP](doc/mcp.md) · [Matrix bridge](doc/matrix.md) · [stoat bridge](doc/stoat.md) · [Discord bridge](doc/discord.md) · [TUI](doc/tui.md) · [project layout](doc/project-layout.md) · [context folding math](doc/context-folding-math.md) · [session context](doc/session-context-building.md)
 
 **中文文档：** [README.zh-CN.md](README.zh-CN.md)
 
@@ -21,6 +21,9 @@ a1 config           # pick a model (opens the config editor)
 a1 run -p "fix the failing test in internal/tools"
 a1                  # the TUI
 a1 web              # the web GUI on http://127.0.0.1:9001
+a1 matrix           # bridge a Matrix room to a chat session (see doc/matrix.md)
+a1 stoat            # bridge a stoat.chat channel to a chat session (see doc/stoat.md)
+a1 discord          # bridge a Discord channel to a chat session (see doc/discord.md)
 ```
 
 On first start, a1 creates `~/.a1/{bin,skills,extensions,session,personas,jobs}`. Search binaries (`fd`, `rg`) download into `~/.a1/bin` when missing.
@@ -53,6 +56,12 @@ models:
 **TUI** (`internal/tui`) — bubbletea frontend with the same engine: command palette (Ctrl+K), slash commands, APPA mode cycling (shift-tab), checklist rendering for TODO.md, session resume.
 
 **Skills** — 42 pre-built skills (language pros, framework pros, domain playbooks like rigorous-coding, agent-orchestration, spec-driven-development, harness-config for self-configuring the harness) that load into the system prompt and route by keyword trigger. `list_skills` exposes them to the model.
+
+**Matrix bridge** (`internal/matrix` + `a1 matrix`) — text the harness: one Matrix room bridged onto one a1 session through the same loopback chat API + SSE the GUI uses (no new agent-side surface). Room messages become prompts, replies return as chunked markdown with a typing indicator, permission approvals decide by y/n (unanswered denies), `!stop`/`!new` steer the session, and restarts resume the conversation. Plaintext rooms; the room is the trust boundary. See [doc/matrix.md](doc/matrix.md).
+
+**stoat bridge** (`internal/stoat` + `a1 stoat`) — the same bridge, second protocol: one stoat.chat channel onto one a1 session, through the same loopback chat API + SSE (still no new agent-side surface). Replies chunk at the platform's 2,000-character cap, a typing indicator runs while turns fly, approvals decide by y/n (unanswered denies), `!stop`/`!new` steer the session, and restarts resume. Other bots never get a turn; the channel is the trust boundary. The websocket half is a hand-rolled RFC 6455 client (`internal/ws`) — zero new dependencies. See [doc/stoat.md](doc/stoat.md).
+
+**Discord bridge** (`internal/discord` + `a1 discord`) — the third surface, on the rulings the roadmap locked: bot token, gateway v10 over the same hand-rolled websocket, `!`-prefix commands, replies chunked at 2,000 UTF-16 units, and a bucket-aware rate-limit pacer on the send path (pace before, sleep-retry after, global lockout). Enable the MESSAGE CONTENT intent in the Developer Portal. See [doc/discord.md](doc/discord.md).
 
 **Extensions & MCP** — PXB subprocess extensions (`a1.yaml` under `~/.a1/extensions`), MCP meta-tools (`mcp_list` / `mcp_inspect` / `mcp_call` — never raw schemas on the model).
 

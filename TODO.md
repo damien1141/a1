@@ -1178,15 +1178,76 @@ User brainstorm after declaring the tooling pass done ("eventually I
 want to add…"). Recorded so the ideas survive context resets; nothing
 below is built. Pick these up only on an explicit go.
 
-- **Matrix integration — text the harness.** An `a1 matrix` subcommand
-  running the webserver in-process and bridging one Matrix room to one
-  a1 session through the same loopback chat API + SSE event stream the
-  GUI uses — the chat surface stays loopback-only; the bridge is a
-  loopback client, not a new network surface. Permission approvals
-  over chat: the bridge posts the request and a plain "y"/"n" reply
-  inside a timeout window decides; otherwise Matrix sessions run a
-  restrictive permission mode. Matrix's own SMS/Signal bridges mean
-  "text it" works without the user running a Matrix client daily.
+- **Matrix integration — text the harness.** (DONE 2026-11-09) Built as
+  `a1 matrix` + `internal/matrix`, exactly per this note's locked design:
+  the webserver runs in-process on an EPHEMERAL loopback port and the
+  bridge is a loopback client of the same chat API + SSE the GUI uses
+  (POST /api/prompt, GET /api/events, POST /api/ask), so the chat surface
+  stays loopback-only. Permission approvals post into the room and a
+  plain y/n inside the window decides; an unanswered approval DENIES (the
+  bridge's window sits 30s under the webserver's 10-minute ask timeout).
+  Room-side commands: `!stop` cancels the running turn, `!new` starts a
+  fresh session; the bridged session id + login token persist in
+  `~/.a1/matrix/state.json` so restarts resume. Replies arrive as chunked
+  markdown (plain body + goldmark HTML, raw HTML dropped) with a typing
+  indicator while turns run. Stated v1 limits (see doc/matrix.md):
+  plaintext rooms only (megolm out of scope), no history replay, no
+  sender allowlist (the room is the trust boundary), no streaming
+  replies. What is deliberately LEFT OPEN for later chunks: encrypted
+  rooms, `allowed_senders`, message-edit streaming, and cross-process
+  session locking (driving the same session from the GUI and the bridge
+  at once can interleave turns — documented as a sharp edge).
+- **stoat.chat bridge — same loopback-client shape, second protocol.**
+  (DONE 2026-11-09) Built as `a1 stoat` + `internal/stoat`, per this
+  note's locked shape: the Matrix architecture carried over ruling for
+  ruling (ephemeral in-process webserver, the bridge a loopback client
+  of the same chat API + SSE, approvals over chat with deny-on-timeout,
+  session persistence in a state file, chunked markdown replies, the
+  channel as trust boundary). The wire was scoped against the
+  platform's own protocol docs + OpenAPI before a line was written:
+  stoat is the Revolt lineage — `X-Bot-Token` REST at api.stoat.chat,
+  event websocket v1 JSON at wss://stoat.chat/events. The dependency
+  budget held at zero: the websocket half forced one new foundation,
+  `internal/ws` (hand-rolled RFC 6455 client: masked sends, text
+  frames only, fragmentation assembled, auto-pong, CloseError, RSV
+  refused, 90s idle deadline), which the Discord bridge shares.
+  Stoat-specific rulings: message chunking counts RUNES (the backend
+  counts Unicode scalar values — 2,000 CJK chars is one legal
+  message), typing rides the event socket (no REST route exists),
+  refresh 3s with an immediate end when the last turn finishes, sends
+  are paced before the request from X-RateLimit headers (fixed window,
+  10/10s per channel) with one retry_after sleep on a 429, other bots
+  never get a turn (embedded bot information is the skip marker), and
+  the bot token is never cached to disk (a stable pasted credential is
+  config's business, unlike Matrix's minted login tokens). LEFT OPEN:
+  attachments/embeds, masquerade for bridge lines, sender
+  allowlisting, streaming replies.
+- **Discord bridge — the third surface, gated on gateway v10 shape.**
+  (DONE 2026-11-09) Built as `a1 discord` + `internal/discord`, with the
+  four rulings this note demanded settled before chunk 1: BOT TOKENS,
+  not OAuth (a bridge is a bot); the `!`-prefix convention the Matrix
+  bridge set, over slash-commands' application registry; chunking at
+  2,000 — counted in UTF-16 CODE UNITS, the unit every Discord client
+  counts (an astral emoji is two units; a rune counter would emit
+  "2,000 characters" of emoji and watch Discord reject it as 4,000);
+  and the bucket-aware pacer: waits before requests from
+  X-RateLimit-Remaining / Reset-After (SECONDS, floating — the unit
+  trap stoat's milliseconds do not have), sleeps out a 429's
+  retry_after exactly once with every 429 teaching the limiter even
+  when it ends the call, and a global 429 takes a process-wide lockout
+  that spans even the typing route. The gateway speaks v10 over the
+  stoat bridge's hand-rolled `internal/ws` unchanged (HELLO's
+  heartbeat interval with a jittered first beat carrying the dispatch
+  sequence, IDENTIFY with guild-messages/DMs/message-content intents,
+  READY pins the self user, MESSAGE_CREATE the only consumed dispatch).
+  No RESUME in v1 — a reconnected bridge identifies fresh and drops the
+  gap, the same "history is context" ruling as its siblings; the
+  sessions the roadmap left open. LEFT OPEN: RESUME/seq replay,
+  slash-commands, embeds/attachments, threads, sender allowlisting,
+  streaming replies. The MESSAGE CONTENT intent prerequisite (Developer
+  Portal, privileged) is documented loudly in doc/discord.md — the
+  missing intent is the silent failure a doc paragraph is the only
+  defense against.
 - **Web dashboard — mailboxes, recent documents, pinned sessions,
   usage heatmap.** Much of the foundation already exists: `/stats`
   (server-rendered) and `/api/telemetry` (JSON) are live, pins.json

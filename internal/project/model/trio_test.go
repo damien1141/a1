@@ -194,10 +194,10 @@ func TestResolutionAgainstReferenceCatalog_Differential(t *testing.T) {
 // path the package itself never uses.
 func TestPresetConfigJSONRoundTrip_Differential(t *testing.T) {
 	golden := map[string]string{
-		"gpt-6-astra":       `{"Name":"gpt-6-astra","APIKey":"","BaseURL":"https://api.openai.com/v1","APIKeys":null,"SkillPath":"","ContextWindow":272000,"ImageEnabled":true,"PersonalRead":false,"PersonalWrite":false,"API":"OpenAIResponses","Think":{"Mode":"max","Enabled":true}}`,
-		"gpt-5-chat-latest": `{"Name":"gpt-5-chat-latest","APIKey":"","BaseURL":"https://api.openai.com/v1","APIKeys":null,"SkillPath":"","ContextWindow":128000,"ImageEnabled":true,"PersonalRead":false,"PersonalWrite":false,"API":"OpenAIResponses","Think":{"Mode":"","Enabled":false}}`,
-		"kimi-k2.7-code":    `{"Name":"kimi-k2.7-code","APIKey":"","BaseURL":"https://api.moonshot.cn/v1","APIKeys":null,"SkillPath":"","ContextWindow":10000000,"ImageEnabled":true,"PersonalRead":false,"PersonalWrite":false,"API":"OpenAI","Think":{"Mode":"","Enabled":false}}`,
-		"kilo":              `{"Name":"kilo","APIKey":"","BaseURL":"https://api.kilo.ai/api/gateway","APIKeys":null,"SkillPath":"","ContextWindow":1000000,"ImageEnabled":true,"PersonalRead":false,"PersonalWrite":false,"API":"OpenAI","Think":{"Mode":"","Enabled":false}}`,
+		"gpt-6-astra":       `{"Name":"gpt-6-astra","APIKey":"","BaseURL":"https://api.openai.com/v1","APIKeys":null,"SkillPath":"","ContextWindow":272000,"ImageEnabled":true,"PersonalRead":false,"PersonalWrite":false,"Headers":null,"API":"OpenAIResponses","Think":{"Mode":"max","Enabled":true}}`,
+		"gpt-5-chat-latest": `{"Name":"gpt-5-chat-latest","APIKey":"","BaseURL":"https://api.openai.com/v1","APIKeys":null,"SkillPath":"","ContextWindow":128000,"ImageEnabled":true,"PersonalRead":false,"PersonalWrite":false,"Headers":null,"API":"OpenAIResponses","Think":{"Mode":"","Enabled":false}}`,
+		"kimi-k2.7-code":    `{"Name":"kimi-k2.7-code","APIKey":"","BaseURL":"https://api.moonshot.cn/v1","APIKeys":null,"SkillPath":"","ContextWindow":10000000,"ImageEnabled":true,"PersonalRead":false,"PersonalWrite":false,"Headers":null,"API":"OpenAI","Think":{"Mode":"","Enabled":false}}`,
+		"kilo":              `{"Name":"kilo","APIKey":"","BaseURL":"https://api.kilo.ai/api/gateway","APIKeys":null,"SkillPath":"","ContextWindow":1000000,"ImageEnabled":true,"PersonalRead":false,"PersonalWrite":false,"Headers":null,"API":"OpenAI","Think":{"Mode":"","Enabled":false}}`,
 	}
 	for name, want := range golden {
 		t.Run(name, func(t *testing.T) {

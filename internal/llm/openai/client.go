@@ -212,7 +212,7 @@ func chatCompletionsURL(baseURL string) string {
 	return baseURL + chatCompletionsPath
 }
 
-func newChatRequest(ctx context.Context, url, apiKey string, body []byte, stream bool) (*http.Request, error) {
+func newChatRequest(ctx context.Context, url, apiKey string, body []byte, stream bool, headers map[string]string) (*http.Request, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -222,6 +222,9 @@ func newChatRequest(ctx context.Context, url, apiKey string, body []byte, stream
 	if stream {
 		httpReq.Header.Set("Accept", util.ContentEventStream)
 	}
+	// Configured headers land last so they can override the defaults
+	// above when a gateway needs its own flavor of one of them.
+	llm.ApplyExtraHeaders(httpReq, headers)
 	return httpReq, nil
 }
 
@@ -246,7 +249,7 @@ func CompactRequest(
 		return llm.CompactResult{}, err
 	}
 
-	httpReq, err := newChatRequest(ctx, chatCompletionsURL(cfg.BaseURL), cfg.APIKey, body, false)
+	httpReq, err := newChatRequest(ctx, chatCompletionsURL(cfg.BaseURL), cfg.APIKey, body, false, cfg.Headers)
 	if err != nil {
 		return llm.CompactResult{}, err
 	}
@@ -284,12 +287,15 @@ func CompactRequest(
 }
 
 // StreamChatCompletion POSTs a streaming chat completion and yields normalized events.
+// headers are the model's configured extra headers (llm.ModelConfig.Headers);
+// nil keeps the default wire.
 func StreamChatCompletion(
 	ctx context.Context,
 	httpClient *http.Client,
 	baseURL string,
 	apiKey string,
 	payload any,
+	headers map[string]string,
 ) iter.Seq2[llm.StreamEvent, error] {
 	return func(yield func(llm.StreamEvent, error) bool) {
 		body, err := json.Marshal(payload)
@@ -298,7 +304,7 @@ func StreamChatCompletion(
 			return
 		}
 
-		httpReq, err := newChatRequest(ctx, chatCompletionsURL(baseURL), apiKey, body, true)
+		httpReq, err := newChatRequest(ctx, chatCompletionsURL(baseURL), apiKey, body, true, headers)
 		if err != nil {
 			yield(llm.StreamEvent{}, err)
 			return

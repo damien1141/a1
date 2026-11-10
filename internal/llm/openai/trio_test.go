@@ -37,7 +37,7 @@ type captured struct {
 func collectStream(t *testing.T, srv *httptest.Server) []captured {
 	t.Helper()
 	var events []captured
-	for ev, err := range StreamChatCompletion(t.Context(), srv.Client(), srv.URL, "k", struct{}{}) {
+	for ev, err := range StreamChatCompletion(t.Context(), srv.Client(), srv.URL, "k", struct{}{}, nil) {
 		c := captured{ev: ev}
 		if err != nil {
 			c.errText = err.Error()

@@ -99,7 +99,14 @@ type ModelConfig struct {
 	// events, kanban cards — never the Maildir, which is read-only by
 	// ruling). Absent or false keeps every personal tool read-only.
 	PersonalWrite bool
-	API          RouterType
+	// Headers are EXTRA HTTP headers stamped onto every request to this
+	// endpoint — provider routing keys (X-Provider), tenant tags, beta
+	// flags. Applied after each client sets its own defaults, so a
+	// configured header can also override a built-in when a gateway
+	// demands it (mirrors the OpenAI SDK's extra_headers). Nil or empty
+	// keeps the wire byte-identical to the header-free era.
+	Headers map[string]string
+	API     RouterType
 	// Think controls reasoning effort sent as reasoning_effort.
 	Think ThinkConfig
 }

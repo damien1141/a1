@@ -4,7 +4,7 @@
 
 约 91k 行 Go 代码。刻意保持极少的直接依赖，没有运行时膨胀。
 
-**文档：** [doc/](doc/) — [模型配置](doc/models.md) · [扩展](doc/extensions.md) · [MCP](doc/mcp.md) · [TUI](doc/tui.md) · [项目结构](doc/project-layout.md) · [上下文折叠数学](doc/context-folding-math.md) · [会话上下文构建](doc/session-context-building.md)
+**文档：** [doc/](doc/) — [模型配置](doc/models.md) · [扩展](doc/extensions.md) · [MCP](doc/mcp.md) · [Matrix 桥接](doc/matrix.md) · [stoat 桥接](doc/stoat.md) · [Discord 桥接](doc/discord.md) · [TUI](doc/tui.md) · [项目结构](doc/project-layout.md) · [上下文折叠数学](doc/context-folding-math.md) · [会话上下文构建](doc/session-context-building.md)
 
 **English docs:** [README.md](README.md)
 
@@ -21,6 +21,9 @@ a1 config           # 选择模型（打开配置编辑器）
 a1 run -p "fix the failing test in internal/tools"
 a1                  # TUI
 a1 web              # Web GUI，监听 http://127.0.0.1:9001
+a1 matrix           # 把一个 Matrix 房间桥接到聊天会话（见 doc/matrix.md）
+a1 stoat            # 把一个 stoat.chat 频道桥接到聊天会话（见 doc/stoat.md）
+a1 discord          # 把一个 Discord 频道桥接到聊天会话（见 doc/discord.md）
 ```
 
 首次启动时，a1 会创建 `~/.a1/{bin,skills,extensions,session,personas,jobs}`。搜索二进制（`fd`、`rg`）缺失时会自动下载到 `~/.a1/bin`。
@@ -53,6 +56,12 @@ models:
 **TUI**（`internal/tui`）—— bubbletea 前端，同一引擎：命令面板（Ctrl+K）、斜杠命令、APPA 模式循环（shift-tab）、TODO.md 清单渲染、会话恢复。
 
 **技能** —— 41 个预置技能（语言专家、框架专家、以及 rigorous-coding、agent-orchestration、spec-driven-development 等领域剧本），加载进系统提示并按关键词触发路由。`list_skills` 向模型暴露它们。
+
+**Matrix 桥接**（`internal/matrix` + `a1 matrix`）—— 用聊天软件驱动 harness：一个 Matrix 房间桥接到一个 a1 会话，走 GUI 同款的回环聊天 API + SSE（代理侧无新增网络面）。房间消息即提示，回复以分块 markdown 返回并带输入中指示；权限审批用 y/n 决定（超时未答即拒绝）；`!stop`/`!new` 控制会话；重启后延续对话。仅支持明文房间；房间即信任边界。详见 [doc/matrix.md](doc/matrix.md)。
+
+**stoat 桥接**（`internal/stoat` + `a1 stoat`）—— 同一座桥，第二种协议：一个 stoat.chat 频道桥接到一个 a1 会话，仍走 GUI 同款的回环聊天 API + SSE（代理侧依旧无新增网络面）。回复按平台 2,000 字符上限分块，回合运行期间显示输入中指示，审批用 y/n 决定（超时未答即拒绝），`!stop`/`!new` 控制会话，重启后延续。其他机器人不参与对话；频道即信任边界。WebSocket 部分为手写的 RFC 6455 客户端（`internal/ws`）——零新增依赖。详见 [doc/stoat.md](doc/stoat.md)。
+
+**Discord 桥接**（`internal/discord` + `a1 discord`）—— 第三种界面，按路线图锁定的裁决实现：机器人令牌、网关 v10 跑在同一套手写 WebSocket 上、`!` 前缀命令、回复按 2,000 个 UTF-16 单元分块、发送路径带桶感知限速 pacing（发前等待、429 后睡眠重试、全局锁定）。需在开发者门户开启 MESSAGE CONTENT 意图。详见 [doc/discord.md](doc/discord.md)。
 
 **扩展与 MCP** —— PXB 子进程扩展（`~/.a1/extensions` 下的 `a1.yaml`）、MCP 元工具（`mcp_list` / `mcp_inspect` / `mcp_call` —— 永不把原始 schema 压给模型）。
 

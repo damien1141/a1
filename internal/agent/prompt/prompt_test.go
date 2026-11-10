@@ -19,6 +19,26 @@ func TestBuildAgentsEnabledToggle(t *testing.T) {
 	require.Contains(t, without, "`search` / `read` yourself")
 }
 
+// The overthink block is flash-model steering, and it is load-bearing on
+// every surface at once: parent, sub-agents, and the learning fork all run
+// engines built from this same template, so the intro is the one place the
+// bias reaches all of them. The aphorism licenses speed, not sloppiness —
+// iteration must carry verification — and the trivial-work escape hatch
+// must stay concrete, because a literal model reads a bare "trivial" and
+// escalates everything to hard.
+func TestBuildIncludesOverthinkBlock(t *testing.T) {
+	got := Build("", false, 0, nil)
+	assert.Contains(t, got, "Don't overthink it")
+	assert.Contains(t, got,
+		"Execution and iteration based on reason always beat trying to get it perfect on the first try")
+	assert.Contains(t, got, "verified passes",
+		"the block must tie iteration to verification, not just action")
+	assert.Contains(t, got, "a focused edit, a small fix, a one-file change",
+		"the trivial/hard split needs concrete examples on the trivial side")
+	assert.Contains(t, got, "Treat it as trivial and let the first result re-scope you",
+		"the tie goes to trivial — the failure mode is escalation, not underthinking")
+}
+
 // The Tools section must name only tools that exist: the old wording sent
 // the model to `grep`/`ls`/`find`/`judge` as if they were registered tool
 // names, and a literal model burned a round on "tool 'grep' not found".

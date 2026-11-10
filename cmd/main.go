@@ -39,6 +39,9 @@ func buildRoot() *cli.Command {
 a1 --web         start the web chat GUI on http://127.0.0.1:9001
 a1 web           same as a1 --web
 a1 serve         headless daemon: HTTP API + scheduler (token auth)
+a1 matrix         bridge a Matrix room to a chat session (see 'a1 matrix --help')
+a1 stoat          bridge a stoat.chat channel to a chat session (see 'a1 stoat --help')
+a1 discord        bridge a Discord channel to a chat session (see 'a1 discord --help')
 a1 tui            start the interactive TUI
 a1 config         open the HTML config editor (local web server)
 a1 update         install the latest release (see 'a1 update --help')
@@ -70,6 +73,9 @@ a1 plugin …          install/list/update/remove extensions (see 'a1 plugin --h
                 &updateCommand,
                 &webCommand,
                 &serveCommand,
+                &matrixCommand,
+                &stoatCommand,
+                &discordCommand,
                 &evalCommand,
         )
         return r
