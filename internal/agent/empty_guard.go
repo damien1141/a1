@@ -1,11 +1,11 @@
 package agent
 
 import (
-        "math/rand/v2"
-        "strings"
-        "time"
+	"math/rand/v2"
+	"strings"
+	"time"
 
-        "github.com/damien1141/a1/internal/llm"
+	"github.com/damien1141/a1/internal/llm"
 )
 
 // Empty-response guard, ported from hermes-agent's
@@ -34,47 +34,47 @@ const maxEmptyResponseRetries = 2
 
 // emptyAttempt is one observed empty completion within the current turn.
 type emptyAttempt struct {
-        model string
-        // usagePresent: the provider reported believable usage (input tokens
-        // above zero — a present-but-empty usage object is no evidence).
-        usagePresent bool
-        // zeroOutput: usage proves nothing was generated. Reasoning tokens
-        // count as generation, so a thinking-only response is never a
-        // deterministic empty.
-        zeroOutput bool
-        // observedGeneration: non-reasoning evidence that the model produced
-        // something this attempt (reasoning text seen by the engine).
-        observedGeneration bool
+	model string
+	// usagePresent: the provider reported believable usage (input tokens
+	// above zero — a present-but-empty usage object is no evidence).
+	usagePresent bool
+	// zeroOutput: usage proves nothing was generated. Reasoning tokens
+	// count as generation, so a thinking-only response is never a
+	// deterministic empty.
+	zeroOutput bool
+	// observedGeneration: non-reasoning evidence that the model produced
+	// something this attempt (reasoning text seen by the engine).
+	observedGeneration bool
 }
 
 // emptyResponseGuard tracks the empty streak for one user turn.
 type emptyResponseGuard struct {
-        attempts []emptyAttempt
-        retries  int
+	attempts []emptyAttempt
+	retries  int
 }
 
 // observe records one empty completion and reports whether the round
 // should be retried (true) or the ladder is done (false: deterministic
 // emptiness proven, or the budget spent).
 func (g *emptyResponseGuard) observe(model string, usage llm.Usage, observedGeneration bool) bool {
-        // Usage proof, failing open: no input tokens means the provider (or
-        // proxy) reported nothing believable.
-        usagePresent := usage.PromptTokens > 0
-        zeroOutput := usagePresent && usage.CompletionTokens == 0
-        g.attempts = append(g.attempts, emptyAttempt{
-                model:              model,
-                usagePresent:       usagePresent,
-                zeroOutput:         zeroOutput,
-                observedGeneration: observedGeneration,
-        })
-        if g.deterministic() {
-                return false
-        }
-        if g.retries >= maxEmptyResponseRetries {
-                return false
-        }
-        g.retries++
-        return true
+	// Usage proof, failing open: no input tokens means the provider (or
+	// proxy) reported nothing believable.
+	usagePresent := usage.PromptTokens > 0
+	zeroOutput := usagePresent && usage.CompletionTokens == 0
+	g.attempts = append(g.attempts, emptyAttempt{
+		model:              model,
+		usagePresent:       usagePresent,
+		zeroOutput:         zeroOutput,
+		observedGeneration: observedGeneration,
+	})
+	if g.deterministic() {
+		return false
+	}
+	if g.retries >= maxEmptyResponseRetries {
+		return false
+	}
+	g.retries++
+	return true
 }
 
 // deterministic reports whether the streak proves the emptiness is the
@@ -85,24 +85,24 @@ func (g *emptyResponseGuard) observe(model string, usage llm.Usage, observedGene
 // a deterministic empty. Mixed evidence fails open so ambiguous
 // transients keep their retries.
 func (g *emptyResponseGuard) deterministic() bool {
-        if len(g.attempts) < 2 {
-                return false
-        }
-        first := g.attempts[0].model
-        usageProves := true
-        responseProves := true
-        for _, a := range g.attempts {
-                if a.model != first {
-                        return false
-                }
-                if !a.usagePresent || !a.zeroOutput || a.observedGeneration {
-                        usageProves = false
-                }
-                if a.usagePresent || a.observedGeneration {
-                        responseProves = false
-                }
-        }
-        return usageProves || responseProves
+	if len(g.attempts) < 2 {
+		return false
+	}
+	first := g.attempts[0].model
+	usageProves := true
+	responseProves := true
+	for _, a := range g.attempts {
+		if a.model != first {
+			return false
+		}
+		if !a.usagePresent || !a.zeroOutput || a.observedGeneration {
+			usageProves = false
+		}
+		if a.usagePresent || a.observedGeneration {
+			responseProves = false
+		}
+	}
+	return usageProves || responseProves
 }
 
 // emptyBackoffDelay is the engine's sleep for empty retries; a var so
@@ -112,9 +112,9 @@ var emptyBackoffDelay = emptyBackoff
 // emptyBackoff is the wait before the n-th empty retry (1-based), with
 // jitter so concurrent sessions don't synchronize their retries.
 func emptyBackoff(n int) time.Duration {
-        base := time.Duration(1<<uint(min(n, 3))) * 2 * time.Second // 4s, 8s, 16s
-        wait := base + time.Duration(rand.Int64N(int64(base)/2))
-        return min(wait, 30*time.Second)
+	base := time.Duration(1<<uint(min(n, 3))) * 2 * time.Second // 4s, 8s, 16s
+	wait := base + time.Duration(rand.Int64N(int64(base)/2))
+	return min(wait, 30*time.Second)
 }
 
 // emptyCompletion reports whether a completed assistant message is an
@@ -122,7 +122,7 @@ func emptyBackoff(n int) time.Duration {
 // the ladder's entry condition — a thinking-only response is generation
 // (and a different recovery's problem), and a tool-call round is work.
 func emptyCompletion(msg llm.Message) bool {
-        return len(msg.ToolCalls) == 0 &&
-                strings.TrimSpace(msg.Content) == "" &&
-                strings.TrimSpace(msg.ReasoningContent) == ""
+	return len(msg.ToolCalls) == 0 &&
+		strings.TrimSpace(msg.Content) == "" &&
+		strings.TrimSpace(msg.ReasoningContent) == ""
 }

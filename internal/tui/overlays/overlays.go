@@ -316,6 +316,19 @@ func (o *Overlays) handlePermissionKey(ctx *components.EventContext, e xui.KeyEv
 		return true
 	case xui.KeyRune:
 		if e.Mods.Has(xui.ModCtrl) || e.Mods.Has(xui.ModAlt) {
+			// Ctrl+E: reject WITH EXPLANATION.
+			//
+			// The feedback composer was fully built and dispatched, but nothing
+			// ever set feedbackMode, so the whole path was dead UI. Denying with
+			// a sentence ("no, use bun not npm") reaches the model as the tool
+			// result instead of a bare rejection it will simply retry. Offered
+			// only on the Reject row, where it means something.
+			if e.Mods.Has(xui.ModCtrl) && (e.Rune == 'e' || e.Rune == 'E') &&
+				askOption(st.selected) == askOptDeny {
+				st.feedbackMode = true
+				ctx.ConsumeAndRedraw()
+				return true
+			}
 			ctx.ConsumeAndRedraw()
 			return true
 		}
@@ -553,7 +566,7 @@ func (o *Overlays) drawContinueAsk(ctx components.DrawContext, width, height int
 		body = append(body, chrome.OptionLine(th, primary, label, i == st.selected, innerW, ctx.Method)...)
 	}
 	body = append(body, components.WrapSpans([]components.Span{
-		{Text: chrome.AskHint("↑↓ move", "select", "stop"), Style: th.Muted},
+		{Text: chrome.AskHint(chrome.NavHint, "select", "stop"), Style: th.Muted},
 	}, innerW, ctx.Method)...)
 
 	return paintAskPanel(body, width, height, chrome.ModalBorder(th), ctx.Method)
@@ -822,8 +835,14 @@ func (st *permAskState) optionLines(
 	for i, label := range askOptionLabels {
 		out = append(out, chrome.OptionLine(th, primary, label, i == st.selected, innerW, method)...)
 	}
+	hint := chrome.AskHint(chrome.NavHint, "select", "cancel")
+	if askOption(st.selected) == askOptDeny {
+		// Advertise the explain path on the only row where it applies. Without
+		// this the feature is dead UI again: it works, and nobody knows.
+		hint += chrome.Sep + "ctrl+e explain"
+	}
 	out = append(out, components.WrapSpans([]components.Span{
-		{Text: chrome.AskHint("↑↓ move", "select", "cancel"), Style: th.Muted},
+		{Text: hint, Style: th.Muted},
 	}, innerW, method)...)
 	return out
 }
@@ -1099,21 +1118,20 @@ func (s *questionAskState) optionRowMulti(
 	innerW int,
 	method xui.WidthMethod,
 ) []components.RichLine {
-	const (
-		selectArrow, selectDot = "▸", "●"
-		idleArrow, idleDot     = " ", "○"
-	)
-	arrow, dot := idleArrow, idleDot
-	labelSt, dotSt := th.Foreground, th.Muted
+	// No dot on multi-select rows. Single-select uses chrome.OptionLine's "▸●"
+	// where ● means "the cursor is here"; repeating it beside a checkbox made one
+	// glyph carry two meanings in adjacent modes. Here ▸ is the cursor and [x]
+	// is the state, which is the pair that actually distinguishes the two.
+	const selectArrow, idleArrow = "▸", " "
+	arrow := idleArrow
+	labelSt := th.Foreground
 	if selected {
-		arrow, dot = selectArrow, selectDot
+		arrow = selectArrow
 		labelSt = xui.Style{Bold: true, Fg: primary.Fg}
-		dotSt = primary
 	}
 	return components.WrapSpans([]components.Span{
 		{Text: arrow, Style: primary},
-		{Text: dot, Style: dotSt},
-		{Text: " " + mark, Style: markSt},
+		{Text: mark, Style: markSt},
 		{Text: label, Style: labelSt},
 	}, innerW, method)
 }
@@ -1124,7 +1142,7 @@ func (s *questionAskState) hint() string {
 	if s.question != nil && s.question.MultiSelect {
 		return "↑↓ move" + chrome.Sep + "space check" + chrome.Sep + "Enter submit" + chrome.Sep + "Esc skip"
 	}
-	return chrome.AskHint("↑↓ move", "select", "skip")
+	return chrome.AskHint(chrome.NavHint, "select", "skip")
 }
 
 // customLines renders the "Other" text field.

@@ -68,6 +68,12 @@ type ComposerPane struct {
 	cyclePermissionMode   func()
 	cycleThinkLevel       func()
 	imageEnabled          func() bool
+	// readClipboardImage is the clipboard read, injectable so the attach path
+	// is testable on any machine. The real reader shells out to wl-paste /
+	// xclip / pbpaste and succeeds on any developer desktop, which made the
+	// "no clipboard tooling" tests pass only on a bare CI runner and fail for
+	// every actual user of the TUI.
+	readClipboardImage func() (imgutil.Result, error)
 
 	history        []string
 	historyIdx     int    // -1 when not browsing
@@ -175,6 +181,10 @@ func (c *ComposerPane) Wire(
 	// contract), so by the time historyNav runs the caret is on the first row
 	// (Up) or the last row (Down) of whatever is on screen.
 	c.Chat.OnHistoryNav = c.historyNav
+	// While browsing, the arrows step entries one press at a time. Without
+	// this the caret walked each recalled entry's wrapped rows first, so a
+	// three-line command took three Downs to escape and the draft looked gone.
+	c.Chat.HistoryBrowsing = func() bool { return c.historyIdx != -1 }
 	c.mention.OnAccept = c.acceptMention
 	c.slash.OnAccept = c.acceptSlash
 	c.question.OnAccept = c.acceptQuestion
@@ -667,6 +677,18 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 			c.FocusChat()
 		}
 	case xui.KeyEvent:
+		// Ctrl+SHIFT+C is the copy chord, and it must be offered BEFORE the
+		// Ctrl+C stop/quit handler: xui's CtrlC() returns true for any ModCtrl+c,
+		// shift included. On terminals without the kitty keyboard protocol the
+		// two are indistinguishable on the wire anyway (both arrive as 0x03), so
+		// without this ordering the copy chord was simply unreachable — Ctrl+Shift+C
+		// ran the stop/quit path and a block was never copied.
+		if ev.Press && ev.Code == xui.KeyRune && (ev.Rune == 'c' || ev.Rune == 'C') &&
+			ev.Mods.Has(xui.ModCtrl) && ev.Mods.Has(xui.ModShift) {
+			if c.handleCopyKey != nil && c.handleCopyKey(ctx, ev) {
+				return
+			}
+		}
 		if ev.CtrlC() {
 			// Press once to stop the current generation, twice within the
 			// double-tap window to quit the TUI. When nothing is running
@@ -676,6 +698,17 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 				// Stop the current generation (stream / local bash / overlay).
 				c.bus.Publish(controller.CancelStreamMsg{})
 				c.lastCtrlC = now
+				return
+			}
+			// Idle with a block selected: copy it.
+			//
+			// This is the escape hatch for terminals without the kitty keyboard
+			// protocol, where Ctrl+Shift+C and Ctrl+C are the same byte (0x03)
+			// and the modifier never reaches us. Nothing is running, so Ctrl+C
+			// has no stop to perform, and copying what the user selected is both
+			// the safest interpretation and the one they asked for.
+			if c.handleCopyKey != nil && c.handleCopyKey(ctx, ev) {
+				c.lastCtrlC = time.Time{}
 				return
 			}
 			if c.lastCtrlC.IsZero() || now.Sub(c.lastCtrlC) > 700*time.Millisecond {
@@ -1093,7 +1126,11 @@ func (c *ComposerPane) tryAttachClipboardImage(ctx *components.EventContext) boo
 		ctx.ConsumeAndRedraw()
 		return true
 	}
-	res, err := clipboard.ReadImageResult()
+	read := c.readClipboardImage
+	if read == nil {
+		read = clipboard.ReadImageResult
+	}
+	res, err := read()
 	if errors.Is(err, clipboard.ErrUnavailable) {
 		return false
 	}

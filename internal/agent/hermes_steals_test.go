@@ -454,9 +454,9 @@ func TestExecutorLoopGuardRefusalFeedsStreak(t *testing.T) {
 	reg := tools.Registry{
 		"flaky": {
 			Definition: llm.ToolDefinition{
-				Name:    "flaky",
+				Name:     "flaky",
 				Readable: true,
-				Params:  &llm.FunctionParameters{Type: "object", Properties: llm.Object{}, Required: []string{"path"}},
+				Params:   &llm.FunctionParameters{Type: "object", Properties: llm.Object{}, Required: []string{"path"}},
 			},
 			Run: func(context.Context, json.RawMessage) (tools.Result, error) {
 				return tools.Result{Content: "never reached"}, nil

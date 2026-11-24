@@ -42,6 +42,20 @@ type BorderLabel struct {
 	Spans []BorderSpan
 }
 
+// PlainText returns the label's text, flattening styled spans. Tests and any
+// caller that needs the string rather than the styling read this, so a label
+// built from spans is not invisible to them.
+func (l BorderLabel) PlainText() string {
+	if len(l.Spans) == 0 {
+		return l.Text
+	}
+	var b strings.Builder
+	for _, sp := range l.Spans {
+		b.WriteString(sp.Text)
+	}
+	return b.String()
+}
+
 // Visible reports whether the label has anything to paint.
 func (l BorderLabel) Visible() bool {
 	if len(l.Spans) > 0 {

@@ -91,6 +91,12 @@ type ChatInput struct {
 	// OnHistoryNav is called for Up/Down keys when no picker is open.
 	// If set and returning true, the key is consumed for history navigation.
 	OnHistoryNav func(delta int) bool
+	// HistoryBrowsing reports whether the user is currently stepping through
+	// recalled history. While true the arrows step ENTRY BY ENTRY in one press
+	// each, instead of walking the recalled entry's wrapped rows — a three-line
+	// command otherwise cost three presses to leave and three to return, which
+	// reads as the arrows simply not working.
+	HistoryBrowsing func() bool
 
 	// MentionOpen is set by the editor while the @-file picker is visible.
 	// When true, Up/Down/Tab/Enter are left unconsumed so the picker can
@@ -109,6 +115,13 @@ type ChatInput struct {
 	// used, or Up/Down would disagree with the rows on screen.
 	drawWidth  int
 	drawMethod xui.WidthMethod
+}
+
+// historyBrowsing reports whether the arrows should step history entries
+// rather than move the caret. False when no reporter is wired, so the
+// component stays usable on its own (tests, embeds) with plain caret motion.
+func (c *ChatInput) historyBrowsing() bool {
+	return c != nil && c.HistoryBrowsing != nil && c.HistoryBrowsing()
 }
 
 func (c *ChatInput) completerOpen() bool {
@@ -377,10 +390,25 @@ func (c *ChatInput) Handle(ctx *components.EventContext, ev xui.Event) {
 			if c.completerOpen() {
 				return
 			}
-			// Vertical movement is display-row aware: the editor soft-wraps
-			// long lines, so Up/Down walk the wrapped rows the user actually
-			// sees before history navigation gets a say. Only at the first
-			// visual row does Up recall history (the readline contract).
+			// Two cases, and the distinction is who owns the arrows:
+			//
+			//   - NOT browsing: Up moves the caret, and only at the first
+			//     visual row does it recall history. That is the readline
+			//     contract, and it keeps a multi-line draft navigable.
+			//   - BROWSING: Up steps to the PREVIOUS ENTRY in one press,
+			//     whatever shape the recalled entry has.
+			//
+			// The bug was that browsing still walked the recalled entry's
+			// wrapped rows first. A three-line command in history cost four
+			// Ups to leave and four Downs to get the draft back, which nobody
+			// reads as "the caret is traversing the recalled entry" — they
+			// read it as "Down is broken and my text is gone".
+			if c.historyBrowsing() {
+				if c.OnHistoryNav != nil && c.OnHistoryNav(-1) {
+					ctx.ConsumeAndRedraw()
+					return
+				}
+			}
 			if c.moveVisualRow(-1) {
 				c.notifyCompleters()
 				ctx.ConsumeAndRedraw()
@@ -398,12 +426,16 @@ func (c *ChatInput) Handle(ctx *components.EventContext, ev xui.Event) {
 			if c.completerOpen() {
 				return
 			}
+			// Symmetric: while browsing, Down steps to the next entry (or back
+			// to the draft) in ONE press, however many lines the entry has.
+			if c.historyBrowsing() {
+				if c.OnHistoryNav != nil && c.OnHistoryNav(1) {
+					ctx.ConsumeAndRedraw()
+					return
+				}
+			}
 			if c.moveVisualRow(1) {
 				c.notifyCompleters()
-				ctx.ConsumeAndRedraw()
-				return
-			}
-			if c.OnHistoryNav != nil && c.OnHistoryNav(1) {
 				ctx.ConsumeAndRedraw()
 				return
 			}

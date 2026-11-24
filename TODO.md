@@ -19,6 +19,14 @@ preview/edit. Personal data is gated by one new checkbox on the config webpage
 beside the thinking/image toggles. Supersedes the "Web dashboard" bullet in the
 roadmap horizons below (mailboxes now defined: local Maildir, read-only).
 
+new issues surfaced:
+- Yolo doesnt disable sandbox or set unlimited toolcalls by default
+- Memories dont show in the webUI persona editor- should have teh ability to delete and edit memories
+- Fetch does not work reliably- need searxng/webcrawler integration
+- Auto memory harvesting needs to be more robust
+- web ui needs an option to reset the profile image in the persona editor
+
+
 ### Decisions locked (so a context reset doesn't relitigate them)
 
 - **The dashboard is the SPA welcome state, not a new route.** The app has no

@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/damien1141/a1/internal/llm"
-	"github.com/damien1141/a1/internal/persona"
 	"github.com/damien1141/a1/internal/permission"
+	"github.com/damien1141/a1/internal/persona"
 )
 
 // setupWindowTestEngine builds an engine whose base model has an explicit

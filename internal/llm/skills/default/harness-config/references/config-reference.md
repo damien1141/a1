@@ -81,6 +81,30 @@ semantic_search:
   ollama_base_url: http://127.0.0.1:11434
   embedding_model: nomic-embed-text
 
+# ── memory (how memories are written) ───────────────────────────────
+memory:
+  # Which write path stores memories from a completed turn:
+  #   extractor      (default) split the turn into statements and ask the
+  #                  decision model (jev) per statement — no text generation,
+  #                  so it is far cheaper than a completion; runs every turn
+  #   consolidation  the previous behavior: one LLM completion per N turns
+  #                  emits CREATE/UPDATE/DELETE ops
+  # Either way, a periodic consolidation pass still runs (every 10th turn) to
+  # UPDATE superseded memories and DELETE revoked ones — the extractor is
+  # additive and cannot do that itself.
+  extractor: extractor
+
+# ── search (the fetch tool's web-search backends) ───────────────────
+search:
+  # A self-hosted SearXNG instance. When set, the fetch tool queries it
+  # FIRST among its general-web fallbacks: SearXNG aggregates the upstream
+  # engines server-side and its JSON API is not subject to the captcha
+  # walls that kill the DuckDuckGo Lite scraper on datacenter IPs. Leave it
+  # unset to keep the scrape-based fallbacks exactly as they were.
+  # Requires `json` in the instance's search.formats (settings.yml).
+  # A1_SEARXNG_URL overrides this without a file edit.
+  searxng_url: http://127.0.0.1:8888
+
 # ── jev (the decision/judgment model — one config, no legacy judge:) ─
 jev:
   provider: openai          # provider family

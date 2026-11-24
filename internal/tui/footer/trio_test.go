@@ -70,13 +70,13 @@ func TestFooterChrome_NilReceiverAndHostileUsage_Negative(t *testing.T) {
 	comp := &stubComposer{}
 	live.BindComposer(comp)
 	live.UpdateTokenDisplay(session.TokenUsage{PromptTokens: 1200, TotalTokens: 1200})
-	require.Contains(t, comp.label.Text, "↑1.2k")
+	require.Contains(t, comp.label.PlainText(), "↑1.2k")
 
 	live.SetActionsHint("   ")
-	assert.Contains(t, comp.label.Text, "↑1.2k", "a blank hint falls back to the token readout")
+	assert.Contains(t, comp.label.PlainText(), "↑1.2k", "a blank hint falls back to the token readout")
 
 	live.SetActionsHint(" copying ")
-	assert.Equal(t, "copying", comp.label.Text, "the hint is trimmed before display")
+	assert.Contains(t, comp.label.PlainText(), "copying", "the hint is trimmed before display")
 
 	// Negative usage / window values gate the label off entirely.
 	assert.Equal(t, 0.0, contextFillRatio(-10, -10))

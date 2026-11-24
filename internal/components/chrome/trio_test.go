@@ -45,6 +45,12 @@ func TestOptionLineDegenerateWidth_Negative(t *testing.T) {
 	primary := chrome.DecisionPrimary(th)
 
 	// innerW 0 clamps to one column: one grapheme per row, nothing lost.
+	//
+	// The separating space does NOT get a row of its own. It is what caused the
+	// wrap, and a blank row is invisible height — dropping it keeps "▸●" and
+	// "Approve" as readable neighbours instead of inserting a silent gap between
+	// them. Spaces that begin a REAL line (after a newline, or at input start)
+	// are still preserved as indentation; see WrapSpans.
 	lines := chrome.OptionLine(th, primary, "Approve", true, 0, xui.WidthUnicode)
 	require.NotEmpty(t, lines)
 	var joined strings.Builder
@@ -53,8 +59,9 @@ func TestOptionLineDegenerateWidth_Negative(t *testing.T) {
 			joined.WriteString(sp.Text)
 		}
 	}
-	assert.Equal(t, "▸● Approve", joined.String(), "zero width must not drop or duplicate text")
-	require.Len(t, lines, 10, "arrow + dot + 8 label graphemes, one per row")
+	assert.Equal(t, "▸●Approve", joined.String(),
+		"zero width drops only the break space, never a glyph")
+	require.Len(t, lines, 9, "arrow + dot + 7 label graphemes; the wrap space is consumed")
 
 	unselected := chrome.OptionLine(th, primary, "note", false, -5, xui.WidthUnicode)
 	var joined2 strings.Builder
@@ -63,7 +70,7 @@ func TestOptionLineDegenerateWidth_Negative(t *testing.T) {
 			joined2.WriteString(sp.Text)
 		}
 	}
-	assert.Equal(t, " ○ note", joined2.String(), "negative width clamps like zero")
+	assert.Equal(t, " ○note", joined2.String(), "negative width clamps like zero")
 }
 
 // oracle: strings.Join over the non-empty fragments — the byline contract
@@ -182,10 +189,24 @@ func TestOptionLineGoldenRender_Differential(t *testing.T) {
 	assert.Equal(t, " ○ Approve"+strings.Repeat(" ", 30)+"\n", components.SurfaceText(idleSurf))
 
 	// Selected rows carry the product's arrow/dot glyphs on the same columns.
+	//
+	// Asserted as the row's TEXT, not as span indices: WrapSpans merges adjacent
+	// runs sharing a style, so "▸" and "●" (both DecisionPrimary when selected)
+	// legitimately arrive as one span. Span slicing was never the contract; what
+	// the row prints is — and the painted-text assertions above already pin it.
 	require.Len(t, selected, 1)
-	assert.Equal(t, chrome.SelectArrow, selected[0][0].Text)
-	assert.Equal(t, chrome.DotOn, selected[0][1].Text)
+	var selText strings.Builder
+	for _, sp := range selected[0] {
+		selText.WriteString(sp.Text)
+	}
+	assert.True(t, strings.HasPrefix(selText.String(), chrome.SelectArrow+chrome.DotOn+" "),
+		"the row opens with arrow, dot, space: %q", selText.String())
+
 	require.Len(t, idle, 1)
-	assert.Equal(t, " ", idle[0][0].Text)
-	assert.Equal(t, chrome.DotOff, idle[0][1].Text)
+	var idleText strings.Builder
+	for _, sp := range idle[0] {
+		idleText.WriteString(sp.Text)
+	}
+	assert.True(t, strings.HasPrefix(idleText.String(), " "+chrome.DotOff+" "),
+		"an unselected row opens with a blank arrow column: %q", idleText.String())
 }

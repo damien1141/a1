@@ -27,12 +27,12 @@ SCOPE values (use exactly one):
 - project: specific to the current git repository (paths, library versions, project-specific decisions)
 - user: cross-project personal fact about the user (identity, preferences, life context)
 
-OUTPUT: Return strictly valid JSON matching: {{"ops":[{"operation":"CREATE|UPDATE|DELETE","id":"","content":"","kind":"","scope":""}]}}
+OUTPUT: Return strictly valid JSON matching: {"ops":[{"operation":"CREATE|UPDATE|DELETE","id":"","content":"","kind":"","scope":""}]}
 - For CREATE: id="" (empty), provide content/kind/scope.
 - For UPDATE: id=<existing memory id from the candidates list>, provide new content/kind/scope.
 - For DELETE: id=<existing memory id>, content="" (empty).
 
-CRITICAL: If you cannot produce valid JSON, return {{"ops":[]}}. Never output explanations, markdown, or extra text.
+CRITICAL: If you cannot produce valid JSON, return {"ops":[]}. Never output explanations, markdown, or extra text.
 
 EXAMPLE:
 Conversation:
@@ -42,9 +42,9 @@ Existing memories:
   [mem-01] User prefers terse responses (preference, user)
   [mem-02] Project uses Go 1.21 (fact, project)
 
-Output: {{"ops":[{{"operation":"UPDATE","id":"mem-02","content":"Project uses Go 1.22 (upgraded for the loop variable change in Oct 2024)","kind":"fact","scope":"project"}}]}}
+Output: {"ops":[{"operation":"UPDATE","id":"mem-02","content":"Project uses Go 1.22 (upgraded for the loop variable change in Oct 2024)","kind":"fact","scope":"project"}]}
 
 Conversation:
   User: "Fix this Python function for me."
   Assistant: "Fixed."
-Output: {{"ops":[]}}
+Output: {"ops":[]}

@@ -240,6 +240,18 @@ export async function forgetPersonaMemory(id: string, mid: number): Promise<void
   if (!res.ok) throw new Error(`forget memory: ${res.status}`);
 }
 
+// revisePersonaMemory rewrites one memory's text. The backend re-embeds the
+// new content, so the correction reaches recall instead of leaving a stale
+// vector behind.
+export async function revisePersonaMemory(id: string, mid: number, content: string): Promise<void> {
+  const res = await fetch('/api/personas/memories', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, mid, content }),
+  });
+  if (!res.ok) throw new Error(`edit memory: ${res.status}`);
+}
+
 // uploadPersonaAvatar attaches a profile picture to a persona. The image
 // overrides the emoji-on-gradient avatar everywhere it is rendered.
 export async function uploadPersonaAvatar(id: string, file: File): Promise<{ persona: Persona }> {
@@ -247,6 +259,14 @@ export async function uploadPersonaAvatar(id: string, file: File): Promise<{ per
   form.append('id', id);
   form.append('avatar', file);
   const res = await fetch('/api/personas/avatar', { method: 'POST', body: form });
+  return parseJSONorThrow(res);
+}
+
+// clearPersonaAvatar removes a persona's uploaded picture, restoring the
+// emoji-on-gradient avatar. The counterpart to uploadPersonaAvatar: without
+// it an upload could not be undone from the UI.
+export async function clearPersonaAvatar(id: string): Promise<{ persona: Persona }> {
+  const res = await fetch(`/api/personas/avatar?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
   return parseJSONorThrow(res);
 }
 

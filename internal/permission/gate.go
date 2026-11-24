@@ -745,14 +745,21 @@ func PinSandboxSupportedForTest(supported bool) (restore func()) {
 }
 
 // sandboxEnforcing decides whether the policy's sandbox setting yields
-// enforcement on this host. Yolo suppresses it regardless of setting or
-// host: containment substitutes for the approval yolo withdrew, so on a
-// yolo host the walls are scaffolding around an open door — and the bash
-// tool's profile compiler (bashtool.bashSandboxProfile) makes the same
-// call on the execution side, so the gate's view and the exec's view
-// cannot drift apart. Every other mode defers to the setting and host.
+// enforcement on this host. An UNRESTRICTED policy suppresses it regardless of
+// setting or host: containment substitutes for the approval such a policy
+// withdrew wholesale, so the walls are scaffolding around an open door — and
+// bashtool.bashSandboxProfile makes the same call through the same predicate
+// (Policy.Unrestricted), so the gate's view and the exec's view cannot drift
+// apart. Every other policy defers to the setting and host.
+//
+// The predicate is deliberately broader than "Mode == yolo". Yolo is only one
+// spelling of "never ask": `a1 run --yolo` sets DangerouslyAllowAll on an
+// otherwise interactive policy, allow_all_session lifts a single session, and
+// both short-circuit the gate before any rule runs. Keying containment on the
+// mode string alone left those runs walled in while the gate answered Allow to
+// everything.
 func sandboxEnforcing(p Policy) bool {
-        if p.Mode == ModeYolo {
+        if p.Unrestricted() {
                 return false
         }
         switch strings.ToLower(strings.TrimSpace(p.Sandbox)) {

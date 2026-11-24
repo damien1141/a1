@@ -212,7 +212,7 @@ func TestDrawExtConfirm_GoldenPanel_Differential(t *testing.T) {
 		blank,
 		pad("▸● Ship it", inner),
 		pad(" ○ Hold", inner),
-		pad("←→ move · Enter confirm · Y yes · N/Esc cancel", inner),
+		pad("↑↓ move · Enter confirm · Y yes · N/Esc cancel", inner),
 		blank, blank, blank, blank,
 		"╰" + strings.Repeat("─", inner) + "╯",
 	}

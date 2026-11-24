@@ -21,6 +21,15 @@ type MessageList struct {
 	Theme            components.Theme
 	// Selected is the highlighted entry index for block copy; -1 = none.
 	Selected int
+	// TurnStart marks entries that BEGIN a new conversational turn. Those rows
+	// get double spacing above them, so a turn and the tool calls that serve it
+	// group together instead of every entry sitting on the same flat rhythm —
+	// which is what made a long transcript read as one undifferentiated wall.
+	// nil means "unknown": every entry keeps the uniform gap.
+	TurnStart []bool
+	// TurnSpacing is the gap used ABOVE a TurnStart entry; ItemSpacing is used
+	// everywhere else. Zero falls back to ItemSpacing+1.
+	TurnSpacing int
 
 	// totalH is last measured content height (for scroll clamping).
 	totalH int
@@ -141,7 +150,7 @@ func (m *MessageList) contentOffsets(n, gap int) (tops []int, total int) {
 	y := 0
 	for i := range n {
 		if i > 0 {
-			y += gap
+			y += m.gapBefore(i, gap)
 		}
 		tops[i] = y
 		h := 1
@@ -151,6 +160,19 @@ func (m *MessageList) contentOffsets(n, gap int) (tops []int, total int) {
 		y += h
 	}
 	return tops, y
+}
+
+// gapBefore is the blank rows above entry i: the turn spacing when i begins a
+// turn, the ordinary item spacing otherwise.
+func (m *MessageList) gapBefore(i, gap int) int {
+	if i <= 0 || m == nil || i >= len(m.TurnStart) || !m.TurnStart[i] {
+		return gap
+	}
+	want := m.TurnSpacing
+	if want <= 0 {
+		want = gap + 1
+	}
+	return max(want, gap)
 }
 
 // Handle scrolls on PageUp/PageDown and mouse wheel, and forwards events
@@ -227,6 +249,14 @@ func (m *MessageList) Draw(ctx components.DrawContext) components.Surface {
 		h = 10
 	}
 	m.viewH = h
+	// Derive turn boundaries from the widgets themselves when the owner has not
+	// supplied them. Sync() used to be the only writer, which meant any caller
+	// that set Entries directly (tests, embeds, a replayed transcript) silently
+	// got uniform spacing — the feature was inert for them and the layout it
+	// claimed to produce never existed.
+	if len(m.TurnStart) != len(m.Entries) {
+		m.TurnStart = deriveTurnStarts(m.Entries)
+	}
 	pad := m.padX()
 	innerW := w - pad*2
 	innerW = max(innerW, 1)
@@ -285,7 +315,15 @@ func (m *MessageList) Draw(ctx components.DrawContext) components.Surface {
 				heightChanged = true
 			}
 			if i == m.Selected && m.Selected >= 0 {
-				hl := xui.Style{Bg: xui.RGBColor(0x2a, 0x2e, 0x24)}
+				// Use the theme's selection token, not a hardcoded color. The
+				// literal that used to live here (0x2a2e24, a dark green) was
+				// tuned for one palette and became an invisible tint on every
+				// other — the selection existed, the user just could not see it,
+				// which reads as "clicking a block does nothing".
+				hl := m.Theme.SelectionBg
+				if hl.Bg.Kind == 0 {
+					hl = components.DefaultTheme().SelectionBg
+				}
 				components.ApplyBlockHighlight(&surf, hl)
 			}
 			root.Children = append(root.Children, components.SubSurface{
@@ -374,4 +412,46 @@ func (m *MessageList) VisibleRange() (first, last int) {
 		return -1, -1
 	}
 	return m.lastItems[0].index, m.lastItems[len(m.lastItems)-1].index
+}
+
+// EntryOrigin returns the painted top-left of entry i in list coordinates, and
+// false when the entry has no geometry yet (never drawn, or scrolled out and
+// dropped).
+func (m *MessageList) EntryOrigin(i int) (components.Point, bool) {
+	for _, it := range m.lastItems {
+		if it.index == i {
+			return components.Point{X: m.padX(), Y: it.y}, true
+		}
+	}
+	return components.Point{}, false
+}
+
+// EntryHeight returns the painted height of entry i, or 0 when it has no
+// geometry.
+func (m *MessageList) EntryHeight(i int) int {
+	for _, it := range m.lastItems {
+		if it.index == i {
+			return it.h
+		}
+	}
+	return 0
+}
+
+// TurnStarter is implemented by blocks that open a conversational turn. The
+// list double-spaces above those rows so a turn and the tool calls serving it
+// group together, instead of every entry sitting on one flat rhythm.
+type TurnStarter interface {
+	StartsTurn() bool
+}
+
+// deriveTurnStarts marks entries that begin a turn. Anything that does not
+// declare itself a boundary belongs to the turn above it.
+func deriveTurnStarts(entries []components.Widget) []bool {
+	out := make([]bool, len(entries))
+	for i, w := range entries {
+		if ts, ok := w.(TurnStarter); ok {
+			out[i] = ts.StartsTurn()
+		}
+	}
+	return out
 }

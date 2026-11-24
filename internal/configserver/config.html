@@ -1336,6 +1336,22 @@
       <section class="panel">
         <div class="panel-head">
           <div>
+            <div class="panel-title" data-i18n="searchHeading">Web search</div>
+            <p class="panel-help" data-i18n="searchHelp">The fetch tool's search backends. SearXNG is a self-hosted metasearch engine; pointing at one avoids scraping search result pages.</p>
+          </div>
+        </div>
+        <div class="panel-body settings-fields">
+          <div class="field field-full">
+            <label class="field-label" for="searchSearxngUrl" data-i18n="searchSearxngLabel">SearXNG base URL</label>
+            <div class="field-help" data-i18n="searchSearxngHelp">Self-hosted SearXNG endpoint, e.g. http://127.0.0.1:8888. Leave empty to fall back to the built-in engines. The A1_SEARXNG_URL environment variable overrides this.</div>
+            <input id="searchSearxngUrl" type="text" data-i18n-placeholder="searchSearxngPlaceholder" placeholder="http://127.0.0.1:8888" autocomplete="off">
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
             <div class="panel-title" data-i18n="jevHeading">JEV decision model</div>
             <p class="panel-help" data-i18n="jevHelp">The decision backend behind the judge tool, fetch engine routing, the evidence verdict gate, compaction boundaries, and the bash risk guard — one question, one fast structured answer, never prose. Off by default; every miss falls back to the built-in heuristics.</p>
           </div>
@@ -1771,6 +1787,11 @@ const I18N = {
     validatePositiveInt: "{label} must be an integer greater than 0.",
     validateContextLabel: "Model {n} context window",
     validateAskTimeoutLabel: "Approval timeout",
+    searchHeading: "Web search",
+    searchHelp: "The fetch tool's search backends. SearXNG is a self-hosted metasearch engine; pointing at one avoids scraping search result pages.",
+    searchSearxngLabel: "SearXNG base URL",
+    searchSearxngHelp: "Self-hosted SearXNG endpoint, e.g. http://127.0.0.1:8888. Leave empty to fall back to the built-in engines. The A1_SEARXNG_URL environment variable overrides this.",
+    searchSearxngPlaceholder: "http://127.0.0.1:8888",
     semanticHeading: "Semantic search",
     semanticHelp: "Local code search via Ollama embeddings and a sqlite-vec index.",
     semanticEnabledTitle: "Enable semantic search",
@@ -2067,6 +2088,7 @@ const dirty = {
   skillPath: false,
   bash: false,
   semantic: false,
+  search: false,
   jev: false,
   browser: false,
   personal: false,
@@ -2883,6 +2905,9 @@ async function load(messageKey, expectedVersion) {
     $("semanticEmbeddingModel").value = semantic.embeddingModel || "";
     $("semanticFields").hidden = !$("semanticEnabled").checked;
 
+    const search = doc.search || {};
+    $("searchSearxngUrl").value = search.searxngUrl || "";
+
     // JEV decision model (jev: section). Both model inputs paint the same
     // jev.model key — the provider selects whose meaning applies.
     const jev = doc.jev || {};
@@ -2959,6 +2984,9 @@ function buildPayload() {
       ollamaBaseUrl: $("semanticOllamaBaseUrl").value.trim() || null,
       embeddingModel: $("semanticEmbeddingModel").value.trim() || null,
     } : (orig && orig.semanticSearch != null ? orig.semanticSearch : null),
+    search: dirty.search ? {
+      searxngUrl: $("searchSearxngUrl").value.trim() || null,
+    } : (orig && orig.search != null ? orig.search : null),
     jev: dirty.jev ? {
       provider: $("jevProvider").value || null,
       apiKey: $("jevApiKey").value.trim() || null,
@@ -3056,6 +3084,8 @@ $("semanticEnabled").addEventListener("change", () => {
 });
 $("semanticOllamaBaseUrl").addEventListener("input", () => markDirty("semantic"));
 $("semanticEmbeddingModel").addEventListener("input", () => markDirty("semantic"));
+// Web search (search: section). SearXNG is the fetch tool's primary engine.
+$("searchSearxngUrl").addEventListener("input", () => markDirty("search"));
 
 // JEV decision model — provider select drives the conditional fields; the
 // two model inputs both write the shared jev.model key on save (whichever

@@ -15,9 +15,9 @@ import (
 	"github.com/damien1141/a1/internal/llm"
 	"github.com/damien1141/a1/internal/llm/client"
 	"github.com/damien1141/a1/internal/session"
+	"github.com/damien1141/a1/internal/toolguard"
 	"github.com/damien1141/a1/internal/tools"
 	"github.com/damien1141/a1/internal/tools/tooldef"
-	"github.com/damien1141/a1/internal/toolguard"
 )
 
 // The review fork (hermes' build_cache_parity_fork): a detached conversation

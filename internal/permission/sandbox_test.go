@@ -1,106 +1,106 @@
 package permission
 
 import (
-        "context"
-        "os"
-        "testing"
+	"context"
+	"os"
+	"testing"
 
-        "github.com/stretchr/testify/assert"
-        "github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // withSandboxSupport overrides the host probe so containment logic is
 // testable everywhere, including containers without Landlock.
 func withSandboxSupport(t *testing.T, enabled bool) {
-        t.Helper()
-        orig := sandboxSupported
-        sandboxSupported = func() bool { return enabled }
-        t.Cleanup(func() { sandboxSupported = orig })
+	t.Helper()
+	orig := sandboxSupported
+	sandboxSupported = func() bool { return enabled }
+	t.Cleanup(func() { sandboxSupported = orig })
 }
 
 func TestSandboxedBashAutoAllowed(t *testing.T) {
-        withSandboxSupport(t, true)
-        g, err := NewGate(DefaultPolicy(), t.TempDir())
-        require.NoError(t, err)
-        require.True(t, g.Sandboxed())
+	withSandboxSupport(t, true)
+	g, err := NewGate(DefaultPolicy(), t.TempDir())
+	require.NoError(t, err)
+	require.True(t, g.Sandboxed())
 
-        dec, reason := g.Check(context.Background(), Request{
-                Action:  ActionBash,
-                Command: "make all && mkdir -p out",
-        })
-        assert.Equal(t, Allow, dec, "containment substitutes for approval")
-        assert.Contains(t, reason, "sandboxed")
+	dec, reason := g.Check(context.Background(), Request{
+		Action:  ActionBash,
+		Command: "make all && mkdir -p out",
+	})
+	assert.Equal(t, Allow, dec, "containment substitutes for approval")
+	assert.Contains(t, reason, "sandboxed")
 }
 
 func TestSandboxedBashDenyListStillFires(t *testing.T) {
-        withSandboxSupport(t, true)
-        g, err := NewGate(DefaultPolicy(), t.TempDir())
-        require.NoError(t, err)
+	withSandboxSupport(t, true)
+	g, err := NewGate(DefaultPolicy(), t.TempDir())
+	require.NoError(t, err)
 
-        dec, _ := g.Check(context.Background(), Request{
-                Action:  ActionBash,
-                Command: "sudo rm -rf /",
-        })
-        assert.Equal(t, Deny, dec, "the deny list fires before containment")
+	dec, _ := g.Check(context.Background(), Request{
+		Action:  ActionBash,
+		Command: "sudo rm -rf /",
+	})
+	assert.Equal(t, Deny, dec, "the deny list fires before containment")
 }
 
 func TestSandboxOffKeepsAsking(t *testing.T) {
-        withSandboxSupport(t, true)
-        policy := DefaultPolicy()
-        policy.Sandbox = "off"
-        g, err := NewGate(policy, t.TempDir())
-        require.NoError(t, err)
-        assert.False(t, g.Sandboxed())
+	withSandboxSupport(t, true)
+	policy := DefaultPolicy()
+	policy.Sandbox = "off"
+	g, err := NewGate(policy, t.TempDir())
+	require.NoError(t, err)
+	assert.False(t, g.Sandboxed())
 
-        dec, _ := g.Check(context.Background(), Request{
-                Action:  ActionBash,
-                Command: "make all",
-        })
-        assert.Equal(t, Ask, dec, "without containment the gate keeps asking")
+	dec, _ := g.Check(context.Background(), Request{
+		Action:  ActionBash,
+		Command: "make all",
+	})
+	assert.Equal(t, Ask, dec, "without containment the gate keeps asking")
 }
 
 func TestSandboxUnsupportedDegradesToAsking(t *testing.T) {
-        withSandboxSupport(t, false)
-        g, err := NewGate(DefaultPolicy(), t.TempDir())
-        require.NoError(t, err)
-        assert.False(t, g.Sandboxed(), "no backend, no containment")
+	withSandboxSupport(t, false)
+	g, err := NewGate(DefaultPolicy(), t.TempDir())
+	require.NoError(t, err)
+	assert.False(t, g.Sandboxed(), "no backend, no containment")
 
-        dec, _ := g.Check(context.Background(), Request{
-                Action:  ActionBash,
-                Command: "make all",
-        })
-        assert.Equal(t, Ask, dec)
+	dec, _ := g.Check(context.Background(), Request{
+		Action:  ActionBash,
+		Command: "make all",
+	})
+	assert.Equal(t, Ask, dec)
 }
 
 func TestSandboxReadonlyStillAsks(t *testing.T) {
-        withSandboxSupport(t, true)
-        policy := DefaultPolicy()
-        policy.Mode = ModeReadonly
-        g, err := NewGate(policy, t.TempDir())
-        require.NoError(t, err)
-        require.True(t, g.Sandboxed())
+	withSandboxSupport(t, true)
+	policy := DefaultPolicy()
+	policy.Mode = ModeReadonly
+	g, err := NewGate(policy, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, g.Sandboxed())
 
-        dec, _ := g.Check(context.Background(), Request{
-                Action:  ActionBash,
-                Command: "make all",
-        })
-        assert.Equal(t, Deny, dec, "readonly denies bash (writes-nothing contract); the sandbox must not loosen it")
+	dec, _ := g.Check(context.Background(), Request{
+		Action:  ActionBash,
+		Command: "make all",
+	})
+	assert.Equal(t, Deny, dec, "readonly denies bash (writes-nothing contract); the sandbox must not loosen it")
 }
 
 func TestSandboxAutopilotBashRuns(t *testing.T) {
-        withSandboxSupport(t, true)
-        policy := DefaultPolicy()
-        policy.Mode = ModeAutopilot
-        g, err := NewGate(policy, t.TempDir())
-        require.NoError(t, err)
+	withSandboxSupport(t, true)
+	policy := DefaultPolicy()
+	policy.Mode = ModeAutopilot
+	g, err := NewGate(policy, t.TempDir())
+	require.NoError(t, err)
 
-        // Autopilot folds Ask to Deny; the sandboxed branch returns Allow
-        // before the fold, so contained bash runs instead of dying.
-        dec, _ := g.Check(context.Background(), Request{
-                Action:  ActionBash,
-                Command: "go build ./...",
-        })
-        assert.Equal(t, Allow, dec)
+	// Autopilot folds Ask to Deny; the sandboxed branch returns Allow
+	// before the fold, so contained bash runs instead of dying.
+	dec, _ := g.Check(context.Background(), Request{
+		Action:  ActionBash,
+		Command: "go build ./...",
+	})
+	assert.Equal(t, Allow, dec)
 }
 
 // Yolo suppresses containment at the source: the mode withdrew approval,
@@ -109,66 +109,66 @@ func TestSandboxAutopilotBashRuns(t *testing.T) {
 // exec side either — pinned in its own package), and the deny list still
 // fires, because yolo is deliberately a mode rather than an allow-all flag.
 func TestSandboxYoloDisablesContainment(t *testing.T) {
-        withSandboxSupport(t, true)
-        policy := DefaultPolicy()
-        policy.Mode = ModeYolo
-        g, err := NewGate(policy, t.TempDir())
-        require.NoError(t, err)
-        assert.False(t, g.Sandboxed(), "yolo suppresses containment even on a host that supports it")
+	withSandboxSupport(t, true)
+	policy := DefaultPolicy()
+	policy.Mode = ModeYolo
+	g, err := NewGate(policy, t.TempDir())
+	require.NoError(t, err)
+	assert.False(t, g.Sandboxed(), "yolo suppresses containment even on a host that supports it")
 
-        // The binary-inspection case that motivated the change: an unlisted,
-        // un-denied command that the containment branch would have auto-allowed
-        // with a "sandboxed" note now flows to the mode fold and allows bare.
-        dec, reason := g.Check(context.Background(), Request{
-                Action:  ActionBash,
-                Command: "strings /usr/bin/ls | grep gcc",
-        })
-        assert.Equal(t, Allow, dec, "yolo still folds the would-be Ask to Allow")
-        assert.NotContains(t, reason, "sandboxed", "the gate must not claim walls that are not there")
+	// The binary-inspection case that motivated the change: an unlisted,
+	// un-denied command that the containment branch would have auto-allowed
+	// with a "sandboxed" note now flows to the mode fold and allows bare.
+	dec, reason := g.Check(context.Background(), Request{
+		Action:  ActionBash,
+		Command: "strings /usr/bin/ls | grep gcc",
+	})
+	assert.Equal(t, Allow, dec, "yolo still folds the would-be Ask to Allow")
+	assert.NotContains(t, reason, "sandboxed", "the gate must not claim walls that are not there")
 
-        dec, _ = g.Check(context.Background(), Request{
-                Action:  ActionBash,
-                Command: "sudo rm -rf /",
-        })
-        assert.Equal(t, Deny, dec, "the deny list still fires in yolo")
+	dec, _ = g.Check(context.Background(), Request{
+		Action:  ActionBash,
+		Command: "sudo rm -rf /",
+	})
+	assert.Equal(t, Deny, dec, "the deny list still fires in yolo")
 }
 
 // Switching out of yolo re-arms containment: the mode cycle must work in
 // both directions, because the gate is rebuilt on every mode switch.
 func TestSandboxYoloToAutopilotReArmsContainment(t *testing.T) {
-        withSandboxSupport(t, true)
-        policy := DefaultPolicy()
-        policy.Mode = ModeYolo
-        g, err := NewGate(policy, t.TempDir())
-        require.NoError(t, err)
-        require.False(t, g.Sandboxed())
+	withSandboxSupport(t, true)
+	policy := DefaultPolicy()
+	policy.Mode = ModeYolo
+	g, err := NewGate(policy, t.TempDir())
+	require.NoError(t, err)
+	require.False(t, g.Sandboxed())
 
-        policy.Mode = ModeAutopilot
-        g, err = NewGate(policy, t.TempDir())
-        require.NoError(t, err)
-        require.True(t, g.Sandboxed(), "a non-yolo mode enforces again once the gate is rebuilt")
+	policy.Mode = ModeAutopilot
+	g, err = NewGate(policy, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, g.Sandboxed(), "a non-yolo mode enforces again once the gate is rebuilt")
 
-        dec, reason := g.Check(context.Background(), Request{
-                Action:  ActionBash,
-                Command: "strings /usr/bin/ls | grep gcc",
-        })
-        assert.Equal(t, Allow, dec)
-        assert.Contains(t, reason, "sandboxed", "back in a contained mode the note returns")
+	dec, reason := g.Check(context.Background(), Request{
+		Action:  ActionBash,
+		Command: "strings /usr/bin/ls | grep gcc",
+	})
+	assert.Equal(t, Allow, dec)
+	assert.Contains(t, reason, "sandboxed", "back in a contained mode the note returns")
 }
 
 func TestSandboxNetworkNote(t *testing.T) {
-        withSandboxSupport(t, true)
-        policy := DefaultPolicy()
-        policy.SandboxNetwork = "allow"
-        g, err := NewGate(policy, t.TempDir())
-        require.NoError(t, err)
+	withSandboxSupport(t, true)
+	policy := DefaultPolicy()
+	policy.SandboxNetwork = "allow"
+	g, err := NewGate(policy, t.TempDir())
+	require.NoError(t, err)
 
-        _, reason := g.Check(context.Background(), Request{
-                Action:  ActionBash,
-                Command: "make all",
-        })
-        assert.Contains(t, reason, "writes confined")
-        assert.NotContains(t, reason, "network denied")
+	_, reason := g.Check(context.Background(), Request{
+		Action:  ActionBash,
+		Command: "make all",
+	})
+	assert.Contains(t, reason, "writes confined")
+	assert.NotContains(t, reason, "network denied")
 }
 
 // TestMain pins the host-probe seam to "unsupported" for the whole package
@@ -178,6 +178,53 @@ func TestSandboxNetworkNote(t *testing.T) {
 // explicitly via withSandboxSupport, which restores this default on
 // cleanup.
 func TestMain(m *testing.M) {
-        sandboxSupported = func() bool { return false }
-        os.Exit(m.Run())
+	sandboxSupported = func() bool { return false }
+	os.Exit(m.Run())
+}
+
+// The allow-all flags suppress containment for the same reason yolo does:
+// approval is gone, so walls that exist to substitute for it are decoration.
+// Yolo is only ONE spelling of "never ask" — `a1 run --yolo` sets
+// DangerouslyAllowAll on an otherwise interactive policy, and allow_all_session
+// lifts a single session — so keying the suppression on the mode string alone
+// left those runs reporting "sandboxed" while the gate allowed everything.
+// The exec side reads the same predicate (Policy.Unrestricted), which is what
+// keeps gate and exec from disagreeing.
+func TestSandboxAllowAllFlagsDisableContainment(t *testing.T) {
+	withSandboxSupport(t, true)
+	cases := map[string]Policy{
+		"dangerously_allow_all": func() Policy {
+			p := DefaultPolicy()
+			p.Sandbox = "on"
+			p.DangerouslyAllowAll = true
+			return p
+		}(),
+		"allow_all_session": func() Policy {
+			p := DefaultPolicy()
+			p.Sandbox = "on"
+			p.AllowAllSession = true
+			return p
+		}(),
+	}
+	for name, policy := range cases {
+		t.Run(name, func(t *testing.T) {
+			g, err := NewGate(policy, t.TempDir())
+			require.NoError(t, err)
+			assert.False(t, g.Sandboxed(), "an allow-all policy must not claim walls")
+
+			// And the policy-level predicate agrees with the gate.
+			assert.True(t, g.Policy.Unrestricted())
+		})
+	}
+
+	// The control: an ordinary policy on the same host keeps its walls, so the
+	// suppression above cannot be a blanket "never sandbox".
+	t.Run("plain policy stays contained", func(t *testing.T) {
+		p := DefaultPolicy()
+		p.Sandbox = "on"
+		g, err := NewGate(p, t.TempDir())
+		require.NoError(t, err)
+		assert.True(t, g.Sandboxed())
+		assert.False(t, g.Policy.Unrestricted())
+	})
 }

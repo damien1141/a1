@@ -1,15 +1,15 @@
 package agent
 
 import (
-        "context"
-        "encoding/json"
-        "regexp"
-        "strconv"
-        "strings"
-        "time"
+	"context"
+	"encoding/json"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
 
-        "github.com/damien1141/a1/internal/evidence"
-        "github.com/damien1141/a1/internal/tools/tooldef"
+	"github.com/damien1141/a1/internal/evidence"
+	"github.com/damien1141/a1/internal/tools/tooldef"
 )
 
 // Markers mirroring bashtool's result formatting. The bash tool embeds the
@@ -17,8 +17,8 @@ import (
 // evidence hook reads the same signals the model sees — the ledger and the
 // model can never disagree about whether a command failed.
 const (
-        bashFailureMarker = "\n(exit error: "
-        bashCancelMarker  = "(command canceled or timed out)"
+	bashFailureMarker = "\n(exit error: "
+	bashCancelMarker  = "(command canceled or timed out)"
 )
 
 // exitStatusRe extracts the process exit code bashtool embeds on failure:
@@ -46,64 +46,64 @@ var exitStatusRe = regexp.MustCompile(`\(exit error: exit status (\d+)\)`)
 //     deterministic verdict, and never record on error, timeout, or low
 //     confidence.
 func (e *Executor) recordEvidence(ctx context.Context, args json.RawMessage, output string) string {
-        if e == nil || e.evidence == nil {
-                return ""
-        }
-        if e.governed != nil && !e.governed() {
-                return ""
-        }
-        var in struct {
-                Command string `json:"command"`
-                Mode    string `json:"mode"`
-        }
-        if err := json.Unmarshal(args, &in); err != nil {
-                return ""
-        }
-        // Background bash modes never reach the ledger: a start returns before
-        // the command completes (no exit code exists yet) and attaches return a
-        // partial tail. Recording either would fabricate evidence — a suite that
-        // is still running must never read as passing.
-        if in.Mode != "" && in.Mode != "run" {
-                return ""
-        }
-        command := strings.TrimSpace(in.Command)
-        if command == "" {
-                return ""
-        }
-        if strings.Contains(output, bashCancelMarker) {
-                return ""
-        }
-        failed := strings.Contains(output, bashFailureMarker)
-        exitCode := -1
-        if m := exitStatusRe.FindStringSubmatch(output); m != nil {
-                if n, err := strconv.Atoi(m[1]); err == nil {
-                        exitCode = n
-                }
-        }
-        verdict := e.evidence.ObserveExit(command, output, exitCode, failed, time.Now())
-        // JEV fallback (decision-model evidence admission): only when the
-        // deterministic path recorded nothing, only when configured. An
-        // admitted verdict replaces the empty one wholesale, so the
-        // candidate marking and regression-note logic below treat it
-        // exactly like a deterministic record.
-        if !verdict.Any() && e.jevAdv != nil {
-                if status, detail, ok := e.jevAdv.judge(ctx, command, output, exitCode, failed); ok {
-                        verdict = e.evidence.ObserveJev(command, status, detail, time.Now())
-                }
-        }
-        // Every non-empty verdict is collected for the engine's verdict gate
-        // (Phase 2): its presence marks the batch as a candidate, and the gate
-        // drains the slice after Run. Neutral verdicts matter too — re-running
-        // green checks is a verification round, not "nothing happened".
-        if verdict.Any() {
-                e.evidenceMu.Lock()
-                e.evidenceVerdicts = append(e.evidenceVerdicts, verdict)
-                e.evidenceMu.Unlock()
-        }
-        if !verdict.Regression() {
-                return ""
-        }
-        return evidence.RegressionNote(verdict.Regressed)
+	if e == nil || e.evidence == nil {
+		return ""
+	}
+	if e.governed != nil && !e.governed() {
+		return ""
+	}
+	var in struct {
+		Command string `json:"command"`
+		Mode    string `json:"mode"`
+	}
+	if err := json.Unmarshal(args, &in); err != nil {
+		return ""
+	}
+	// Background bash modes never reach the ledger: a start returns before
+	// the command completes (no exit code exists yet) and attaches return a
+	// partial tail. Recording either would fabricate evidence — a suite that
+	// is still running must never read as passing.
+	if in.Mode != "" && in.Mode != "run" {
+		return ""
+	}
+	command := strings.TrimSpace(in.Command)
+	if command == "" {
+		return ""
+	}
+	if strings.Contains(output, bashCancelMarker) {
+		return ""
+	}
+	failed := strings.Contains(output, bashFailureMarker)
+	exitCode := -1
+	if m := exitStatusRe.FindStringSubmatch(output); m != nil {
+		if n, err := strconv.Atoi(m[1]); err == nil {
+			exitCode = n
+		}
+	}
+	verdict := e.evidence.ObserveExit(command, output, exitCode, failed, time.Now())
+	// JEV fallback (decision-model evidence admission): only when the
+	// deterministic path recorded nothing, only when configured. An
+	// admitted verdict replaces the empty one wholesale, so the
+	// candidate marking and regression-note logic below treat it
+	// exactly like a deterministic record.
+	if !verdict.Any() && e.jevAdv != nil {
+		if status, detail, ok := e.jevAdv.judge(ctx, command, output, exitCode, failed); ok {
+			verdict = e.evidence.ObserveJev(command, status, detail, time.Now())
+		}
+	}
+	// Every non-empty verdict is collected for the engine's verdict gate
+	// (Phase 2): its presence marks the batch as a candidate, and the gate
+	// drains the slice after Run. Neutral verdicts matter too — re-running
+	// green checks is a verification round, not "nothing happened".
+	if verdict.Any() {
+		e.evidenceMu.Lock()
+		e.evidenceVerdicts = append(e.evidenceVerdicts, verdict)
+		e.evidenceMu.Unlock()
+	}
+	if !verdict.Regression() {
+		return ""
+	}
+	return evidence.RegressionNote(verdict.Regressed)
 }
 
 // recordScreenshotEvidence grades a named browser capture against its
@@ -111,23 +111,23 @@ func (e *Executor) recordEvidence(ctx context.Context, args json.RawMessage, out
 // ungoverned session records nothing, and only a protected regression
 // produces an advisory note for the model.
 func (e *Executor) recordScreenshotEvidence(fact *tooldef.ScreenshotFact) string {
-        if e == nil || e.evidence == nil {
-                return ""
-        }
-        if e.governed != nil && !e.governed() {
-                return ""
-        }
-        if fact == nil || fact.Name == "" || fact.Path == "" {
-                return ""
-        }
-        verdict := e.evidence.ObserveScreenshot(fact.Name, fact.Path, time.Now())
-        if verdict.Any() {
-                e.evidenceMu.Lock()
-                e.evidenceVerdicts = append(e.evidenceVerdicts, verdict)
-                e.evidenceMu.Unlock()
-        }
-        if !verdict.Regression() {
-                return ""
-        }
-        return evidence.RegressionNote(verdict.Regressed)
+	if e == nil || e.evidence == nil {
+		return ""
+	}
+	if e.governed != nil && !e.governed() {
+		return ""
+	}
+	if fact == nil || fact.Name == "" || fact.Path == "" {
+		return ""
+	}
+	verdict := e.evidence.ObserveScreenshot(fact.Name, fact.Path, time.Now())
+	if verdict.Any() {
+		e.evidenceMu.Lock()
+		e.evidenceVerdicts = append(e.evidenceVerdicts, verdict)
+		e.evidenceMu.Unlock()
+	}
+	if !verdict.Regression() {
+		return ""
+	}
+	return evidence.RegressionNote(verdict.Regressed)
 }

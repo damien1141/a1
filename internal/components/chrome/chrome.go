@@ -74,9 +74,14 @@ func AskHint(nav, action, dismiss string) string {
 	return strings.Join(parts, Sep)
 }
 
+// NavHint is THE navigation string for every decision panel. Every one of them
+// accepts Up/Left and Down/Right (see overlays.go's key switches), so naming a
+// single axis — as ConfirmHint used to — taught a key that was not the only one.
+const NavHint = "↑↓ move"
+
 // ConfirmHint is the confirm-panel footer (includes Y/N chords).
 func ConfirmHint() string {
-	return "←→ move" + Sep + "Enter confirm" + Sep + "Y yes" + Sep + "N/Esc cancel"
+	return NavHint + Sep + "Enter confirm" + Sep + "Y yes" + Sep + "N/Esc cancel"
 }
 
 // FeedbackHint is the deny-with-feedback footer.
@@ -183,5 +188,38 @@ func StatusSuffix(st status.ToolStatus) string {
 		return " (rejected)"
 	default:
 		return ""
+	}
+}
+
+// TurnEndLabel renders the turn-end state for the composer's status slot: a
+// glyph, the state word, and a style that actually distinguishes outcomes.
+//
+// It lives here because the footer used to render the bare word
+// state.String() in the SUCCESS colour unconditionally — a failed turn and a
+// clean one looked identical, at the one place a user's eye is trained to
+// check. The glyph/colour mapping is the same vocabulary ToolIcon already uses,
+// so a failed turn reads like a failed tool row rather than like prose.
+//
+// state is the session.State's string form; keeping it a string is deliberate.
+// chrome must not import session (the dependency runs components → chrome), and
+// the four words are a stable contract.
+func TurnEndLabel(state string, th components.Theme) (glyph string, st xui.Style, word string) {
+	switch state {
+	case "error":
+		return Err, th.Destructive, "error"
+	case "cancelled":
+		return Stop, th.Muted, "cancelled"
+	case "streaming":
+		return Busy, th.ToolName, "streaming"
+	case "complete":
+		return Ok, th.Success, "complete"
+	default:
+		// An unexpected state word is still shown — hiding it would be worse
+		// than showing an unadorned one — but without a glyph that would imply
+		// an outcome we do not know.
+		if state == "" {
+			return "", th.Muted, ""
+		}
+		return "", th.Muted, state
 	}
 }

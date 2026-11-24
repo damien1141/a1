@@ -90,7 +90,7 @@ func TestUpdateTokenDisplayZeroClearsLabel(t *testing.T) {
 	// A session switch to one without usage must drop the stale counts.
 	f.UpdateTokenDisplay(session.TokenUsage{})
 	assert.False(t, comp.set)
-	assert.Empty(t, comp.label.Text)
+	assert.Empty(t, comp.label.PlainText())
 }
 
 func TestUpdateTokenDisplayTPS(t *testing.T) {
@@ -130,18 +130,20 @@ func TestStatusSlotSwapsActivityAndTokens(t *testing.T) {
 		TotalTokens:      2000,
 	})
 	require.True(t, comp.set)
-	assert.Contains(t, comp.label.Text, "↑1.2k")
-	assert.Contains(t, comp.label.Text, "↓800")
+	assert.Contains(t, comp.label.PlainText(), "↑1.2k")
+	assert.Contains(t, comp.label.PlainText(), "↓800")
 
 	f.Activity().Apply(controller.ActivityStreaming)
 	require.True(t, comp.set)
-	assert.Empty(t, comp.label.Text)
+	// The ctx readout is PERSISTENT: it stays visible while activity streams.
+	// It used to be evicted by every transient message, which hid the one number
+	// that says whether the turn will survive.
+	assert.Contains(t, comp.label.PlainText(), "1%/128k",
+		"ctx occupancy must not be evicted by activity")
+	assert.Contains(t, comp.label.PlainText(), "Generating…")
+	assert.Contains(t, comp.label.PlainText(), "esc interrupt",
+		"the busy state must teach the stop key")
 	require.NotEmpty(t, comp.label.Spans)
-	var joined strings.Builder
-	for _, sp := range comp.label.Spans {
-		joined.WriteString(sp.Text)
-	}
-	assert.Equal(t, "Generating…", joined.String())
 	lit := 0
 	fg := components.DefaultTheme().Foreground
 	for _, sp := range comp.label.Spans {
@@ -152,8 +154,9 @@ func TestStatusSlotSwapsActivityAndTokens(t *testing.T) {
 	assert.Positive(t, lit)
 
 	f.Activity().Apply(controller.ActivityIdle)
-	assert.Contains(t, comp.label.Text, "↑1.2k")
-	assert.Empty(t, comp.label.Spans)
+	assert.Contains(t, comp.label.PlainText(), "↑1.2k")
+	assert.Contains(t, comp.label.PlainText(), "1%/128k",
+		"idle shows both ctx and the fuller token stats")
 }
 
 // TestWindowSourceRescalesContextLabel pins the model-switch bug fix: the
@@ -167,16 +170,16 @@ func TestWindowSourceRescalesContextLabel(t *testing.T) {
 	// 12k of a 1M window reads as 1%.
 	f.UpdateTokenDisplay(session.TokenUsage{PromptTokens: 12000, TotalTokens: 12000})
 	require.True(t, comp.set)
-	assert.Contains(t, comp.label.Text, "1%/1.0M")
+	assert.Contains(t, comp.label.PlainText(), "1%/1.0M")
 
 	// Model switch to a 65k local model: the live source takes precedence,
 	// and the same 12k tokens now read against the new denominator.
 	f.SetWindowSource(func() int { return 65536 })
-	assert.Contains(t, comp.label.Text, "18%/65k")
-	assert.NotContains(t, comp.label.Text, "1.0M")
+	assert.Contains(t, comp.label.PlainText(), "18%/65k")
+	assert.NotContains(t, comp.label.PlainText(), "1.0M")
 
 	// A source that yields 0 (engine not resolved yet) falls back to the
 	// constructor value rather than blanking the label.
 	f.SetWindowSource(func() int { return 0 })
-	assert.Contains(t, comp.label.Text, "1.0M")
+	assert.Contains(t, comp.label.PlainText(), "1.0M")
 }

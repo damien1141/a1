@@ -2,6 +2,7 @@ package submit
 
 import (
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/damien1141/a1/internal/components/chat"
@@ -25,6 +26,16 @@ type Submitter struct {
 
 	commandContext func() commands.Context
 	bus            *controller.Bus
+
+	// turnInFlight marks the window between Submit and the first agent event.
+	//
+	// Without it the first Ctrl-C quit the TUI instead of stopping the turn:
+	// IsBusy() derives everything from the transcript, and between "user pressed
+	// enter" and "first assistant token or tool row" the transcript is idle —
+	// the model is still thinking, nothing is streaming, no tool is running. A
+	// user reaching for Ctrl-C during a slow first token got kicked out of the
+	// app instead of cancelling.
+	turnInFlight atomic.Bool
 
 	permissionActive  func() bool
 	continueActive    func() bool
@@ -167,6 +178,10 @@ func (s *Submitter) handleUserInput(text string) {
 	}
 
 	s.activity.Apply(controller.ActivitySubmitting)
+	// Mark the turn in flight BEFORE anything is handed to the engine, so the
+	// window between submit and the first streamed token is covered.
+	s.turnInFlight.Store(true)
+
 	display := buildUserDisplay(text, pendingRefs, pendingSkills, pendingImages)
 	s.transcript.ApplySession(session.UserAppend{Text: display, Images: llmImages})
 	s.transcript.Sync()
@@ -186,6 +201,11 @@ func (s *Submitter) handleUserInput(text string) {
 
 // Cancel aborts overlays, bash, or the in-flight agent stream.
 func (s *Submitter) Cancel() {
+	// A cancelled turn is no longer in flight; the next Ctrl-C must be able to
+	// reach the quit path again.
+	if s != nil {
+		s.turnInFlight.Store(false)
+	}
 	if s == nil {
 		return
 	}
@@ -228,6 +248,12 @@ func (s *Submitter) IsBusy() bool {
 	if s == nil {
 		return false
 	}
+	// The submit-to-first-token gap: nothing is streaming yet, so every other
+	// signal below reads idle. Ctrl-C during a slow first token must stop the
+	// turn, not the app.
+	if s.turnInFlight.Load() {
+		return true
+	}
 	if s.ctrl != nil && s.ctrl.Compacting() {
 		return true
 	}
@@ -235,6 +261,31 @@ func (s *Submitter) IsBusy() bool {
 		return true
 	}
 	return s.bash != nil && s.bash.Running()
+}
+
+// NoteAgentEvent is called for every agent session event. It retires the
+// in-flight bridge as soon as the transcript has something to report.
+//
+// The flag exists only to cover the submit-to-first-token gap. Once the stream
+// is visible (a streaming assistant message or a running tool), IsBusy derives
+// the answer from the transcript again — leaving the flag set would pin every
+// later turn to "busy" and make the second Ctrl-C unable to quit.
+func (s *Submitter) NoteAgentEvent() {
+	if s == nil || !s.turnInFlight.Load() {
+		return
+	}
+	if s.transcript != nil && s.transcript.IsStreaming() {
+		s.turnInFlight.Store(false)
+	}
+}
+
+// AbandonTurn clears the in-flight bridge without cancelling. Used when a turn
+// ends before it ever streamed (an immediate error, or a refused submit) so the
+// flag cannot leak into the next turn.
+func (s *Submitter) AbandonTurn() {
+	if s != nil {
+		s.turnInFlight.Store(false)
+	}
 }
 
 // StreamActive reports whether user input should be blocked for stream/overlays.

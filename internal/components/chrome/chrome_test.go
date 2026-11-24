@@ -17,7 +17,10 @@ func TestHintDialect(t *testing.T) {
 	assert.Equal(t, " ⏎ select · esc close ", chrome.ListHintShort("select"))
 	assert.Equal(t, "↑↓ move · Enter select · Esc cancel", chrome.AskHint("↑↓ move", "select", "cancel"))
 	assert.Equal(t, "↑↓ move · Enter select · Esc stop", chrome.AskHint("↑↓ move", "select", "stop"))
-	assert.Equal(t, "←→ move · Enter confirm · Y yes · N/Esc cancel", chrome.ConfirmHint())
+	// One nav string across every decision panel: they ALL accept Up/Left and
+	// Down/Right, so naming a single axis taught a key that was not the only one.
+	assert.Equal(t, "↑↓ move · Enter confirm · Y yes · N/Esc cancel", chrome.ConfirmHint())
+	assert.Equal(t, chrome.NavHint, "↑↓ move")
 	assert.Equal(t, "Enter send · Esc cancel", chrome.FeedbackHint())
 }
 

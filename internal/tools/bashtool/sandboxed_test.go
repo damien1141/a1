@@ -42,25 +42,32 @@ func useProjectWithPermissions(t *testing.T, permissionsYAML string) {
 	t.Cleanup(func() { project.SetDefaultProject(nil) })
 }
 
-// The mode resolution is a pure function of the live context mode and the
-// config fallback: the executor-attached mode wins when present, the config
-// file's mode answers otherwise, and only yolo suppresses.
-func TestSandboxSuppressedByMode(t *testing.T) {
+// The suppression resolution folds two inputs: the policy's own promises (its
+// mode and its allow-all flags, through Policy.Unrestricted) and the live mode
+// the executor attached from the gate it consulted. Either can say "no walls",
+// and the flags are why this is not a mode check: `dangerously_allow_all`
+// leaves Mode at interactive while the gate short-circuits every rule, so a
+// mode-only predicate walled in the exact runs that never ask.
+func TestSandboxSuppressed(t *testing.T) {
 	cases := []struct {
 		name       string
 		ctxMode    string
-		configMode permission.Mode
+		policy     permission.Policy
 		suppressed bool
 	}{
-		{"live yolo wins over config interactive", "yolo", permission.ModeInteractive, true},
-		{"live yolo wins over config autopilot", "yolo", permission.ModeAutopilot, true},
-		{"config yolo when no live mode", "", permission.ModeYolo, true},
-		{"live interactive overrides config yolo", "interactive", permission.ModeYolo, false},
-		{"interactive stays contained", "", permission.ModeInteractive, false},
-		{"autopilot stays contained", "", permission.ModeAutopilot, false},
-		{"readonly stays contained (gate excludes it anyway)", "", permission.ModeReadonly, false},
-		{"empty everything is contained", "", "", false},
-		{"unknown live mode is not yolo", "yolo-mode", permission.ModeInteractive, false},
+		{"live yolo wins over interactive policy", "yolo", permission.Policy{Mode: permission.ModeInteractive}, true},
+		{"live yolo wins over autopilot policy", "yolo", permission.Policy{Mode: permission.ModeAutopilot}, true},
+		{"policy yolo when no live mode", "", permission.Policy{Mode: permission.ModeYolo}, true},
+		{"live interactive overrides policy yolo", "interactive", permission.Policy{Mode: permission.ModeYolo}, true},
+		{"interactive stays contained", "", permission.Policy{Mode: permission.ModeInteractive}, false},
+		{"autopilot stays contained", "", permission.Policy{Mode: permission.ModeAutopilot}, false},
+		{"readonly stays contained (gate excludes it anyway)", "", permission.Policy{Mode: permission.ModeReadonly}, false},
+		{"empty everything is contained", "", permission.Policy{}, false},
+		{"unknown live mode is not yolo", "yolo-mode", permission.Policy{Mode: permission.ModeInteractive}, false},
+		// The allow-all flags: no mode says yolo, yet approval is gone.
+		{"dangerously_allow_all suppresses", "", permission.Policy{Mode: permission.ModeInteractive, DangerouslyAllowAll: true}, true},
+		{"allow_all_session suppresses", "", permission.Policy{Mode: permission.ModeInteractive, AllowAllSession: true}, true},
+		{"flags suppress even with a live contained mode", "interactive", permission.Policy{Mode: permission.ModeInteractive, DangerouslyAllowAll: true}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -68,7 +75,7 @@ func TestSandboxSuppressedByMode(t *testing.T) {
 			if tc.ctxMode != "" {
 				ctx = tooldef.WithPermissionMode(ctx, tc.ctxMode)
 			}
-			assert.Equal(t, tc.suppressed, sandboxSuppressedByMode(ctx, tc.configMode))
+			assert.Equal(t, tc.suppressed, sandboxSuppressed(ctx, tc.policy))
 		})
 	}
 }
@@ -111,4 +118,26 @@ func TestBashSandboxProfile_InteractiveStillCompiles(t *testing.T) {
 func TestBashSandboxProfile_OffStaysOff(t *testing.T) {
 	useProjectWithPermissions(t, "  mode: interactive\n  sandbox: off\n")
 	assert.Nil(t, bashSandboxProfile(t.Context()))
+}
+
+// The flags end-to-end: `dangerously_allow_all: true` in config.yaml must
+// compile no bash profile. Before this, the gate short-circuited every rule
+// (Allow to everything, no prompt) while the exec side still walled the
+// command in — the user's "yolo doesn't disable the sandbox" report.
+func TestBashSandboxProfile_AllowAllFlagsSuppress(t *testing.T) {
+	// dangerously_allow_all is the flag config.yaml can actually carry;
+	// allow_all_session is runtime-only (set programmatically for a single
+	// session), so it is covered by TestSandboxSuppressed's policy cases
+	// rather than through a YAML key that does not exist.
+	useProjectWithPermissions(t, "  mode: interactive\n  sandbox: on\n  dangerously_allow_all: true\n")
+	assert.Nil(t, bashSandboxProfile(t.Context()),
+		"dangerously_allow_all compiles no containment profile")
+}
+
+// The same guarantee through a live context mode, which is how a session
+// switch made in any UI reaches the exec side.
+func TestBashSandboxProfile_LiveYoloSuppresses(t *testing.T) {
+	useProjectWithPermissions(t, "  mode: interactive\n  sandbox: on\n")
+	ctx := tooldef.WithPermissionMode(t.Context(), string(permission.ModeYolo))
+	assert.Nil(t, bashSandboxProfile(ctx))
 }

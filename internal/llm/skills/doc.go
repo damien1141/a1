@@ -6,9 +6,9 @@
 //
 // A skill file looks like:
 //
-//      ---
-//      name: My Skill
-//      description: What this skill does
-//      ---
-//      Instructions for the agent to follow when this skill is relevant.
+//	---
+//	name: My Skill
+//	description: What this skill does
+//	---
+//	Instructions for the agent to follow when this skill is relevant.
 package skills

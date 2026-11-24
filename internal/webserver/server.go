@@ -347,9 +347,14 @@ func (s *Server) routes() http.Handler {
         // Memory bank inspection + forget, scoped per persona.
         mux.HandleFunc("GET /api/personas/memories", s.handlePersonaMemories)
         mux.HandleFunc("DELETE /api/personas/memories", s.guard(s.handlePersonaMemories))
+        // Editing a memory in place — the panel's third verb after list and
+        // forget. Revise re-embeds, so the correction reaches recall.
+        mux.HandleFunc("PUT /api/personas/memories", s.guard(s.handlePersonaMemories))
         // Uploaded profile pictures (this backend's extension over the old
         // emoji-only avatars — the Avatar component prefers the image when set).
         mux.HandleFunc("POST /api/personas/avatar", s.guard(s.handlePersonaAvatar))
+        // Clearing an uploaded picture — the way back from a wrong one.
+        mux.HandleFunc("DELETE /api/personas/avatar", s.guard(s.handleClearPersonaAvatar))
         mux.HandleFunc("GET /api/personas/{id}/avatar", s.handleServePersonaAvatar)
         // Model catalog for the persona editor's model dropdown (and the
         // footer's context-window scaling). Read-only sibling of the config

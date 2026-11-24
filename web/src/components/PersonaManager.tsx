@@ -54,6 +54,10 @@ export function PersonaManager({ onClose, onSwitched }: Props) {
   const [memoryEnabled, setMemoryEnabled] = useState(false);
   const [selected, setSelected] = useState('default');
   const [memories, setMemories] = useState<api.MemorySummary[] | null>(null);
+  // editingMemory holds the id of the memory being edited inline (null = none);
+  // memoryDraft is its in-progress text.
+  const [editingMemory, setEditingMemory] = useState<number | null>(null);
+  const [memoryDraft, setMemoryDraft] = useState('');
   const [editing, setEditing] = useState(false);
   const [isNew, setIsNew] = useState(false);
   const [form, setForm] = useState<FormState>(blankForm);
@@ -198,6 +202,28 @@ export function PersonaManager({ onClose, onSwitched }: Props) {
     }
   };
 
+  // Inline memory editing. The panel writes through to the semantic store the
+  // agent actually recalls from, so a correction here changes what the persona
+  // remembers — not just what this list renders.
+  const beginEditMemory = (m: api.MemorySummary) => {
+    setEditingMemory(m.id);
+    setMemoryDraft(m.content);
+  };
+
+  const saveMemory = async (mid: number) => {
+    const text = memoryDraft.trim();
+    if (!text) return;
+    setError('');
+    try {
+      await api.revisePersonaMemory(selected, mid, text);
+      setMemories(m => (m ?? []).map(x => (x.id === mid ? { ...x, content: text } : x)));
+      setEditingMemory(null);
+      setMemoryDraft('');
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
   // uploadPicture attaches an image to the selected persona. The image
   // overrides the emoji-on-gradient avatar everywhere; the emoji + hue
   // pickers remain as the fallback when no picture is set.
@@ -221,6 +247,19 @@ export function PersonaManager({ onClose, onSwitched }: Props) {
       setError(String(e));
     } finally {
       input.value = '';
+    }
+  };
+
+  // clearPicture resets the selected persona's avatar back to the emoji
+  // rendering. Uploads used to be a one-way door — this is the way back.
+  const clearPicture = async () => {
+    setError('');
+    try {
+      await api.clearPersonaAvatar(selected);
+      setAvatarVersion(v => v + 1);
+      await load(selected);
+    } catch (e) {
+      setError(String(e));
     }
   };
 
@@ -281,6 +320,16 @@ export function PersonaManager({ onClose, onSwitched }: Props) {
           >
             <ImagePlus size={14} />
           </button>
+          {sel?.hasAvatar && (
+            <button
+              type="button"
+              onClick={clearPicture}
+              class="w-8 h-8 rounded-lg flex items-center justify-center bg-paper-sunk hover:bg-cinnabar/10 text-ink-muted hover:text-cinnabar transition-all duration-fast"
+              title="Reset to the emoji avatar"
+            >
+              <Trash2 size={14} />
+            </button>
+          )}
         </div>
       </div>
       <div>
@@ -508,7 +557,44 @@ export function PersonaManager({ onClose, onSwitched }: Props) {
             {memories.map(m => (
               <li key={m.id} class="group flex items-start gap-2 bg-paper border border-hairline rounded-sm px-2.5 py-2">
                 <span class="text-[10px] px-1 py-0.5 rounded-sm bg-seal-light text-seal flex-shrink-0 mt-0.5">{m.kind}</span>
-                <span class="text-xs text-ink-light leading-relaxed min-w-0 flex-1 break-words">{m.content}</span>
+                {editingMemory === m.id ? (
+                  <div class="min-w-0 flex-1">
+                    <textarea
+                      value={memoryDraft}
+                      onInput={e => setMemoryDraft((e.target as HTMLTextAreaElement).value)}
+                      rows={3}
+                      class="w-full px-1.5 py-1 text-xs bg-paper-sunk border border-seal/40 rounded-sm outline-none focus:border-seal resize-y"
+                    />
+                    <div class="mt-1 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => saveMemory(m.id)}
+                        class="text-[10px] px-2 py-0.5 rounded-sm bg-seal text-paper hover:opacity-90 transition-opacity duration-fast"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setEditingMemory(null); setMemoryDraft(''); }}
+                        class="text-[10px] px-2 py-0.5 rounded-sm bg-paper-sunk text-ink-muted hover:text-ink transition-colors duration-fast"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <span class="text-xs text-ink-light leading-relaxed min-w-0 flex-1 break-words">{m.content}</span>
+                )}
+                {editingMemory !== m.id && (
+                  <button
+                    type="button"
+                    onClick={() => beginEditMemory(m)}
+                    class="opacity-0 group-hover:opacity-100 text-ink-muted hover:text-seal transition-all duration-fast flex-shrink-0 mt-0.5"
+                    title="Edit this memory"
+                  >
+                    <Pencil size={12} />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => forget(m.id)}

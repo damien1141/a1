@@ -57,7 +57,7 @@ Skip for: one-shot runtime permission flips (use the `permission` tool — sessi
 **Needs a restart to apply:**
 
 - Newly **added** MCP servers — the pool loads at startup (`a1 mcp doctor` sees them; the running session's meta-tools do not until restart)
-- Every config.yaml key: models, permissions policy, agents, jev, browser, personal, semantic_search, ui, web, tools, `checks:`, config-declared `schedules:` (synced at boot)
+- Every config.yaml key: models, permissions policy, agents, jev, browser, personal, semantic_search, search, memory, ui, web, tools, `checks:`, config-declared `schedules:` (synced at boot)
 
 Sessions survive restarts — say so: the user resumes via `a1 sessions list` / `--continue-last` (CLI) or the session picker (TUI/GUI). Jobs park as pending and resume.
 

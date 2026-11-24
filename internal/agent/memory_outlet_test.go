@@ -56,10 +56,10 @@ Let me know if you need anything else.`
 func TestParseConsolidationOps_InvalidJSON(t *testing.T) {
 	cases := []string{
 		"not json at all",
-		"{ops:}",             // malformed
+		"{ops:}",                 // malformed
 		`{"ops":"not an array"}`, // ops is wrong type
-		`{`,                  // truncated
-		`}`,                  // closing without opening
+		`{`,                      // truncated
+		`}`,                      // closing without opening
 	}
 	for _, raw := range cases {
 		_, err := parseConsolidationOps(raw)

@@ -1,13 +1,13 @@
 package jev
 
 import (
-        "context"
-        "errors"
-        "strings"
-        "sync/atomic"
-        "time"
+	"context"
+	"errors"
+	"strings"
+	"sync/atomic"
+	"time"
 
-        "github.com/damien1141/a1/internal/debuglog"
+	"github.com/damien1141/a1/internal/debuglog"
 )
 
 // Provider names for Settings.Provider. An empty provider means
@@ -15,12 +15,12 @@ import (
 // TYPESAFE_API_KEY enables the api provider, exactly the pre-config
 // behavior), and when that too is absent JEV stays off.
 const (
-        // ProviderAPI is the hosted TypeSafe System One decision model.
-        ProviderAPI = "api"
-        // ProviderOllama is the local Ollama backend: the native
-        // /v1/systemone endpoint on Ollama >= 0.35, with a chat-model
-        // emulation standing in on older servers (see ollama.go).
-        ProviderOllama = "ollama"
+	// ProviderAPI is the hosted TypeSafe System One decision model.
+	ProviderAPI = "api"
+	// ProviderOllama is the local Ollama backend: the native
+	// /v1/systemone endpoint on Ollama >= 0.35, with a chat-model
+	// emulation standing in on older servers (see ollama.go).
+	ProviderOllama = "ollama"
 )
 
 // Settings is the `jev:` section of config.yaml. The host resolves it from
@@ -29,38 +29,38 @@ const (
 // OLLAMA_HOST on the ollama provider, so an env-only setup keeps working
 // with no jev: section at all.
 //
-//      jev:
-//        provider: ollama            # api | ollama; absent = env fallback / off
-//        model: qwen3:4b             # api: model alias; ollama: local model tag
-//        api_key: ...                # api provider (falls back to TYPESAFE_API_KEY)
-//        base_url: ...               # api provider, optional
-//        ollama_base_url: ...        # ollama provider, default http://127.0.0.1:11434
-//        timeout_sec: 20             # optional per-call ceiling override
+//	jev:
+//	  provider: ollama            # api | ollama; absent = env fallback / off
+//	  model: qwen3:4b             # api: model alias; ollama: local model tag
+//	  api_key: ...                # api provider (falls back to TYPESAFE_API_KEY)
+//	  base_url: ...               # api provider, optional
+//	  ollama_base_url: ...        # ollama provider, default http://127.0.0.1:11434
+//	  timeout_sec: 20             # optional per-call ceiling override
 type Settings struct {
-        // Provider selects the backend: ProviderAPI or ProviderOllama. Empty
-        // means unconfigured (env fallback, then off).
-        Provider string `yaml:"provider"         json:"provider,omitempty"`
-        // APIKey authenticates the api provider; falls back to
-        // TYPESAFE_API_KEY.
-        APIKey string `yaml:"api_key,omitempty"  json:"apiKey,omitempty"`
-        // BaseURL overrides the api provider endpoint; falls back to
-        // TYPESAFE_BASE_URL and then DefaultBaseURL.
-        BaseURL string `yaml:"base_url,omitempty" json:"baseUrl,omitempty"`
-        // Model names the decision model: the alias on the api provider, the
-        // local model tag on the ollama provider. Falls back to
-        // TYPESAFE_DEFAULT_MODEL / DefaultModel on api; required on ollama
-        // (pulling a local model is a user decision, never a default). On
-        // Ollama >= 0.35 prefer a decision model (d1:3b, nimble); older
-        // servers need a chat model that can hold the JSON contract.
-        Model string `yaml:"model,omitempty"    json:"model,omitempty"`
-        // OllamaBaseURL targets the local Ollama server; falls back to the
-        // OLLAMA_HOST environment variable and then http://127.0.0.1:11434.
-        OllamaBaseURL string `yaml:"ollama_base_url,omitempty" json:"ollamaBaseUrl,omitempty"`
-        // TimeoutSec overrides the per-call ceiling at both wired call sites
-        // (fetch classify, evidence verdict) when > 0. Zero keeps the
-        // provider-tuned defaults (seconds on the hosted API, tens of seconds
-        // on a local model).
-        TimeoutSec int `yaml:"timeout_sec,omitempty" json:"timeoutSec,omitempty"`
+	// Provider selects the backend: ProviderAPI or ProviderOllama. Empty
+	// means unconfigured (env fallback, then off).
+	Provider string `yaml:"provider"         json:"provider,omitempty"`
+	// APIKey authenticates the api provider; falls back to
+	// TYPESAFE_API_KEY.
+	APIKey string `yaml:"api_key,omitempty"  json:"apiKey,omitempty"`
+	// BaseURL overrides the api provider endpoint; falls back to
+	// TYPESAFE_BASE_URL and then DefaultBaseURL.
+	BaseURL string `yaml:"base_url,omitempty" json:"baseUrl,omitempty"`
+	// Model names the decision model: the alias on the api provider, the
+	// local model tag on the ollama provider. Falls back to
+	// TYPESAFE_DEFAULT_MODEL / DefaultModel on api; required on ollama
+	// (pulling a local model is a user decision, never a default). On
+	// Ollama >= 0.35 prefer a decision model (d1:3b, nimble); older
+	// servers need a chat model that can hold the JSON contract.
+	Model string `yaml:"model,omitempty"    json:"model,omitempty"`
+	// OllamaBaseURL targets the local Ollama server; falls back to the
+	// OLLAMA_HOST environment variable and then http://127.0.0.1:11434.
+	OllamaBaseURL string `yaml:"ollama_base_url,omitempty" json:"ollamaBaseUrl,omitempty"`
+	// TimeoutSec overrides the per-call ceiling at both wired call sites
+	// (fetch classify, evidence verdict) when > 0. Zero keeps the
+	// provider-tuned defaults (seconds on the hosted API, tens of seconds
+	// on a local model).
+	TimeoutSec int `yaml:"timeout_sec,omitempty" json:"timeoutSec,omitempty"`
 }
 
 // ErrNotConfigured is returned by the asker NewConfiguredAsker hands out
@@ -82,10 +82,10 @@ func Configure(s Settings) { configured.Store(s) }
 // pushed). It is a snapshot: resolution against the environment happens
 // per call, in resolveAsker.
 func CurrentSettings() Settings {
-        if s, ok := configured.Load().(Settings); ok {
-                return s
-        }
-        return Settings{}
+	if s, ok := configured.Load().(Settings); ok {
+		return s
+	}
+	return Settings{}
 }
 
 // Asker is the backend-agnostic decision-model seam: one state value, a
@@ -93,7 +93,7 @@ func CurrentSettings() Settings {
 // (fetch classify, evidence verdict) depend on it, which is what lets the
 // provider swap without touching them.
 type Asker interface {
-        SystemOneWithOptions(ctx context.Context, state any, questions Questions, opts Options) (Response, error)
+	SystemOneWithOptions(ctx context.Context, state any, questions Questions, opts Options) (Response, error)
 }
 
 // configuredAsker resolves the provider on every call. Construction-time
@@ -110,56 +110,56 @@ type configuredAsker struct{}
 func NewConfiguredAsker() Asker { return configuredAsker{} }
 
 func (configuredAsker) SystemOneWithOptions(
-        ctx context.Context,
-        state any,
-        questions Questions,
-        opts Options,
+	ctx context.Context,
+	state any,
+	questions Questions,
+	opts Options,
 ) (Response, error) {
-        asker := resolveAsker()
-        if asker == nil {
-                return Response{}, ErrNotConfigured
-        }
-        return asker.SystemOneWithOptions(ctx, state, questions, opts)
+	asker := resolveAsker()
+	if asker == nil {
+		return Response{}, ErrNotConfigured
+	}
+	return asker.SystemOneWithOptions(ctx, state, questions, opts)
 }
 
 // resolveAsker turns current settings plus the environment into a
 // concrete asker. Nil means off. Resolution order:
 //
-//      api     — Settings.APIKey, else TYPESAFE_API_KEY; no key anywhere → off
-//      ollama  — Settings.Model required; base URL: Settings.OllamaBaseURL,
-//                else OLLAMA_HOST, else http://127.0.0.1:11434
-//      ""      — TYPESAFE_API_KEY present → api (the pre-config behavior);
-//                otherwise off
-//      other   — off, with a debuglog note naming the bad provider
+//	api     — Settings.APIKey, else TYPESAFE_API_KEY; no key anywhere → off
+//	ollama  — Settings.Model required; base URL: Settings.OllamaBaseURL,
+//	          else OLLAMA_HOST, else http://127.0.0.1:11434
+//	""      — TYPESAFE_API_KEY present → api (the pre-config behavior);
+//	          otherwise off
+//	other   — off, with a debuglog note naming the bad provider
 func resolveAsker() Asker {
-        s := CurrentSettings()
-        switch strings.ToLower(strings.TrimSpace(s.Provider)) {
-        case ProviderAPI:
-                client, err := NewClient(Config{APIKey: s.APIKey, BaseURL: s.BaseURL, Model: s.Model})
-                if err != nil {
-                        debuglog.Logf("jev: api provider not usable: %v", err)
-                        return nil
-                }
-                return client
-        case ProviderOllama:
-                model := strings.TrimSpace(s.Model)
-                if model == "" {
-                        debuglog.Logf("jev: ollama provider requires jev.model (the local model tag)")
-                        return nil
-                }
-                return NewOllamaClient(OllamaConfig{BaseURL: s.OllamaBaseURL, Model: model})
-        case "":
-                // Unconfigured: the env-only fallback that predates the jev:
-                // section. A key in the environment keeps the api provider live.
-                client, err := NewClient(Config{})
-                if err != nil {
-                        return nil
-                }
-                return client
-        default:
-                debuglog.Logf("jev: unknown provider %q (want %q or %q)", s.Provider, ProviderAPI, ProviderOllama)
-                return nil
-        }
+	s := CurrentSettings()
+	switch strings.ToLower(strings.TrimSpace(s.Provider)) {
+	case ProviderAPI:
+		client, err := NewClient(Config{APIKey: s.APIKey, BaseURL: s.BaseURL, Model: s.Model})
+		if err != nil {
+			debuglog.Logf("jev: api provider not usable: %v", err)
+			return nil
+		}
+		return client
+	case ProviderOllama:
+		model := strings.TrimSpace(s.Model)
+		if model == "" {
+			debuglog.Logf("jev: ollama provider requires jev.model (the local model tag)")
+			return nil
+		}
+		return NewOllamaClient(OllamaConfig{BaseURL: s.OllamaBaseURL, Model: model})
+	case "":
+		// Unconfigured: the env-only fallback that predates the jev:
+		// section. A key in the environment keeps the api provider live.
+		client, err := NewClient(Config{})
+		if err != nil {
+			return nil
+		}
+		return client
+	default:
+		debuglog.Logf("jev: unknown provider %q (want %q or %q)", s.Provider, ProviderAPI, ProviderOllama)
+		return nil
+	}
 }
 
 // Configured reports whether a decision model resolves right now. The
@@ -177,10 +177,10 @@ const ollamaTimeoutHint = 20 * time.Second
 // TimeoutHint returns the current provider's suggested per-call ceiling;
 // zero means "no opinion — keep the caller's default".
 func TimeoutHint() time.Duration {
-        if providerIsOllama() {
-                return ollamaTimeoutHint
-        }
-        return 0
+	if providerIsOllama() {
+		return ollamaTimeoutHint
+	}
+	return 0
 }
 
 // EffectiveTimeout resolves the per-call ceiling for a call site: start
@@ -189,25 +189,25 @@ func TimeoutHint() time.Duration {
 // override either way — so a user on fast hardware can lower the Ollama
 // ceiling too, not just raise it.
 func EffectiveTimeout(site time.Duration) time.Duration {
-        if s := CurrentSettings(); s.TimeoutSec > 0 {
-                return time.Duration(s.TimeoutSec) * time.Second
-        }
-        if hint := TimeoutHint(); hint > site {
-                return hint
-        }
-        return site
+	if s := CurrentSettings(); s.TimeoutSec > 0 {
+		return time.Duration(s.TimeoutSec) * time.Second
+	}
+	if hint := TimeoutHint(); hint > site {
+		return hint
+	}
+	return site
 }
 
 // providerIsOllama reports whether the resolved provider (settings, then
 // env fallback) is ollama.
 func providerIsOllama() bool {
-        s := CurrentSettings()
-        switch strings.ToLower(strings.TrimSpace(s.Provider)) {
-        case ProviderOllama:
-                return true
-        case ProviderAPI, "":
-                return false
-        default:
-                return false
-        }
+	s := CurrentSettings()
+	switch strings.ToLower(strings.TrimSpace(s.Provider)) {
+	case ProviderOllama:
+		return true
+	case ProviderAPI, "":
+		return false
+	default:
+		return false
+	}
 }

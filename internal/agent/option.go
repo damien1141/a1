@@ -1,105 +1,105 @@
 package agent
 
 import (
-        "github.com/damien1141/a1/internal/evidence"
-        "github.com/damien1141/a1/internal/extension"
-        "github.com/damien1141/a1/internal/job"
-        "github.com/damien1141/a1/internal/llm"
-        llmclient "github.com/damien1141/a1/internal/llm/client"
-        "github.com/damien1141/a1/internal/mcp"
-        "github.com/damien1141/a1/internal/memstore"
-        "github.com/damien1141/a1/internal/permission"
-        "github.com/damien1141/a1/internal/project"
-        "github.com/damien1141/a1/internal/schedule"
-        "github.com/damien1141/a1/internal/tools"
-        "github.com/damien1141/a1/internal/tools/tooldef"
+	"github.com/damien1141/a1/internal/evidence"
+	"github.com/damien1141/a1/internal/extension"
+	"github.com/damien1141/a1/internal/job"
+	"github.com/damien1141/a1/internal/llm"
+	llmclient "github.com/damien1141/a1/internal/llm/client"
+	"github.com/damien1141/a1/internal/mcp"
+	"github.com/damien1141/a1/internal/memstore"
+	"github.com/damien1141/a1/internal/permission"
+	"github.com/damien1141/a1/internal/project"
+	"github.com/damien1141/a1/internal/schedule"
+	"github.com/damien1141/a1/internal/tools"
+	"github.com/damien1141/a1/internal/tools/tooldef"
 )
 
 // EngineOption configures optional NewEngine dependencies.
 type EngineOption func(*engineConfig)
 
 type engineConfig struct {
-        gate         permission.Gate
-        ask          permission.AskFunc
-        question     tooldef.QuestionFunc
-        continueAsk  ContinueFunc
-        tools        []tools.Tool
-        maxRounds    int
-        maxToolCalls int
-        jobs         *job.Manager
-        scheduler    *schedule.Scheduler // Bet 01 Clock: registers the schedule tool when set
-        agentDepth   int                // this engine's fleet depth (0 = top-level; Bet 04)
-        extensions   *extension.Runner
-        omitExtTools bool
-        mcp          *mcp.Pool
-        hooks        llmclient.Hooks
-        memStore     *memstore.Store
-        // memoryEnabled is the surface's raw memory toggle bit — NOT
-        // persona-adjusted; the engine derives the effective value in
-        // MemoryEnabled(). memoryEnabledSet distinguishes "unset" (default
-        // true: engines never told about a toggle keep the pre-toggle
-        // behavior) from an explicit false. The two surfaces set it
-        // explicitly: web via WithMemoryEnabled in engineOptions, TUI via
-        // WithMemoryEnabled at construction + SetMemoryEnabled on the
-        // Ctrl+K toggle.
-        memoryEnabled    bool
-        memoryEnabledSet bool
-        // Learning-loop intervals (learning.go): 0 = the default
-        // (defaultLearnNudgeInterval). Positive values tighten or widen the
-        // review windows.
-        learnMemInterval   int
-        learnSkillInterval int
-        // consolidationInterval pins the memory-consolidation cadence
-        // (memory_outlet.go): 0 = auto — every completed turn when the ops
-        // endpoint is remote, every localConsolidationInterval-th turn when
-        // it is local (a different-prefix call on a local server evicts the
-        // whole conversation's prompt cache, so per-turn consolidation would
-        // re-prefill everything on every turn). 1 = per turn, N = every Nth.
-        consolidationInterval int
-        embedder         memstore.Embedder // for opening per-persona SQLite stores lazily
-        windowProber     WindowProber
-        // evidence overrides the engine's default evidence ledger. Nil = the
-        // engine installs a session-persisted ledger automatically.
-        evidence *evidence.Ledger
-        // evidenceChecks are config-defined checks (config.yaml `checks:`)
-        // installed on the default ledger; ignored when evidence is wired.
-        evidenceChecks []evidence.CheckDef
-        // stallLimit / stallLimitSet configure the evidence verdict gate's
-        // anti-thrash limit (consecutive non-improving verification rounds
-        // before a turn stops). Unset = defaultEvidenceStallLimit.
-        stallLimit    int
-        stallLimitSet bool
-        // jevEvidence overrides the engine's JEV decision-model evidence
-        // advisor. Nil = the config-gated constructor (nil with no decision
-        // model configured — deterministic classifiers only).
-        jevEvidence *jevEvidenceAdvisor
-        // zeroRankBudget / zeroRankBudgetSet configure the Phase 3 zero-rank
-        // stop: extra verification rounds bought when the model tries to end a
-        // turn with declared contract checks not green. Unset =
-        // defaultZeroRankBudget.
-        zeroRankBudget    int
-        zeroRankBudgetSet bool
-        // budgetContracts / budgetContractsSet configure the Phase 5
-        // declared-budget gate: whether a model-declared tool-round budget
-        // (the `budget` tool) can stop the turn when it fires. Declarations
-        // are recorded and echoed either way. Unset = enabled.
-        budgetContracts    bool
-        budgetContractsSet bool
+	gate         permission.Gate
+	ask          permission.AskFunc
+	question     tooldef.QuestionFunc
+	continueAsk  ContinueFunc
+	tools        []tools.Tool
+	maxRounds    int
+	maxToolCalls int
+	jobs         *job.Manager
+	scheduler    *schedule.Scheduler // Bet 01 Clock: registers the schedule tool when set
+	agentDepth   int                 // this engine's fleet depth (0 = top-level; Bet 04)
+	extensions   *extension.Runner
+	omitExtTools bool
+	mcp          *mcp.Pool
+	hooks        llmclient.Hooks
+	memStore     *memstore.Store
+	// memoryEnabled is the surface's raw memory toggle bit — NOT
+	// persona-adjusted; the engine derives the effective value in
+	// MemoryEnabled(). memoryEnabledSet distinguishes "unset" (default
+	// true: engines never told about a toggle keep the pre-toggle
+	// behavior) from an explicit false. The two surfaces set it
+	// explicitly: web via WithMemoryEnabled in engineOptions, TUI via
+	// WithMemoryEnabled at construction + SetMemoryEnabled on the
+	// Ctrl+K toggle.
+	memoryEnabled    bool
+	memoryEnabledSet bool
+	// Learning-loop intervals (learning.go): 0 = the default
+	// (defaultLearnNudgeInterval). Positive values tighten or widen the
+	// review windows.
+	learnMemInterval   int
+	learnSkillInterval int
+	// consolidationInterval pins the memory-consolidation cadence
+	// (memory_outlet.go): 0 = auto — every completed turn when the ops
+	// endpoint is remote, every localConsolidationInterval-th turn when
+	// it is local (a different-prefix call on a local server evicts the
+	// whole conversation's prompt cache, so per-turn consolidation would
+	// re-prefill everything on every turn). 1 = per turn, N = every Nth.
+	consolidationInterval int
+	embedder              memstore.Embedder // for opening per-persona SQLite stores lazily
+	windowProber          WindowProber
+	// evidence overrides the engine's default evidence ledger. Nil = the
+	// engine installs a session-persisted ledger automatically.
+	evidence *evidence.Ledger
+	// evidenceChecks are config-defined checks (config.yaml `checks:`)
+	// installed on the default ledger; ignored when evidence is wired.
+	evidenceChecks []evidence.CheckDef
+	// stallLimit / stallLimitSet configure the evidence verdict gate's
+	// anti-thrash limit (consecutive non-improving verification rounds
+	// before a turn stops). Unset = defaultEvidenceStallLimit.
+	stallLimit    int
+	stallLimitSet bool
+	// jevEvidence overrides the engine's JEV decision-model evidence
+	// advisor. Nil = the config-gated constructor (nil with no decision
+	// model configured — deterministic classifiers only).
+	jevEvidence *jevEvidenceAdvisor
+	// zeroRankBudget / zeroRankBudgetSet configure the Phase 3 zero-rank
+	// stop: extra verification rounds bought when the model tries to end a
+	// turn with declared contract checks not green. Unset =
+	// defaultZeroRankBudget.
+	zeroRankBudget    int
+	zeroRankBudgetSet bool
+	// budgetContracts / budgetContractsSet configure the Phase 5
+	// declared-budget gate: whether a model-declared tool-round budget
+	// (the `budget` tool) can stop the turn when it fires. Declarations
+	// are recorded and echoed either way. Unset = enabled.
+	budgetContracts    bool
+	budgetContractsSet bool
 
-        // Persona apply-on-switch hooks. Optional; when nil, the
-        // corresponding persona setting is silently ignored on switch.
-        personaModelResolver PersonaModelResolver
-        permissionModeSetter PermissionModeSetter
-        // personalCfg supplies the live personal-data section (the master
-        // switch + calendar/mail dirs). Read at tool-mount time and again
-        // at every personal-tool call — a nil provider mounts no personal
-        // tools at all.
-        personalCfg func() project.PersonalConfig
-        // basePermissionMode is the mode the surface ran before any persona
-        // override. A switch to a persona WITHOUT a mode override (or to the
-        // default persona) restores it, so a readonly persona's restriction
-        // cannot leak into the next persona.
-        basePermissionMode permission.Mode
+	// Persona apply-on-switch hooks. Optional; when nil, the
+	// corresponding persona setting is silently ignored on switch.
+	personaModelResolver PersonaModelResolver
+	permissionModeSetter PermissionModeSetter
+	// personalCfg supplies the live personal-data section (the master
+	// switch + calendar/mail dirs). Read at tool-mount time and again
+	// at every personal-tool call — a nil provider mounts no personal
+	// tools at all.
+	personalCfg func() project.PersonalConfig
+	// basePermissionMode is the mode the surface ran before any persona
+	// override. A switch to a persona WITHOUT a mode override (or to the
+	// default persona) restores it, so a readonly persona's restriction
+	// cannot leak into the next persona.
+	basePermissionMode permission.Mode
 }
 
 // PersonaModelResolver looks up an llm.ModelConfig by name. Used by
@@ -123,38 +123,38 @@ type PermissionModeSetter func(mode permission.Mode)
 // memory_outlet.go). Tests use 1 to pin outlet mechanics on loopback
 // fake servers regardless of the local batching policy.
 func WithConsolidationInterval(n int) EngineOption {
-        return func(c *engineConfig) { c.consolidationInterval = n }
+	return func(c *engineConfig) { c.consolidationInterval = n }
 }
 
 // WithGate sets the permission gate (nil = allow all).
 func WithGate(gate permission.Gate) EngineOption {
-        return func(c *engineConfig) { c.gate = gate }
+	return func(c *engineConfig) { c.gate = gate }
 }
 
 // WithQuestion sets the AskUserQuestion handler. The tool dispatches through
 // this, so it needs the same TUI-backed asker the permission gate uses.
 func WithQuestion(fn tooldef.QuestionFunc) EngineOption {
-        return func(o *engineConfig) { o.question = fn }
+	return func(o *engineConfig) { o.question = fn }
 }
 
 // WithAsk sets the ask callback (nil = deny on Ask).
 func WithAsk(ask permission.AskFunc) EngineOption {
-        return func(c *engineConfig) { c.ask = ask }
+	return func(c *engineConfig) { c.ask = ask }
 }
 
 // WithContinueAsk sets the max-rounds continuation prompt (nil = ErrMaxRounds).
 func WithContinueAsk(fn ContinueFunc) EngineOption {
-        return func(c *engineConfig) { c.continueAsk = fn }
+	return func(c *engineConfig) { c.continueAsk = fn }
 }
 
 // WithTools sets the base tool list (nil = tools.DefaultTools(); sub-agents use ChildTools()).
 func WithTools(list []tools.Tool) EngineOption {
-        return func(c *engineConfig) { c.tools = list }
+	return func(c *engineConfig) { c.tools = list }
 }
 
 // WithMaxRounds sets the tool-round budget (0 = package default).
 func WithMaxRounds(n int) EngineOption {
-        return func(c *engineConfig) { c.maxRounds = n }
+	return func(c *engineConfig) { c.maxRounds = n }
 }
 
 // WithMaxToolCalls sets the per-turn tool-call budget (0 = unlimited).
@@ -162,12 +162,12 @@ func WithMaxRounds(n int) EngineOption {
 // that batches several calls consumes several budget slots. Unrestricted
 // gates (yolo mode, allow-all overrides) ignore the cap entirely.
 func WithMaxToolCalls(n int) EngineOption {
-        return func(c *engineConfig) { c.maxToolCalls = n }
+	return func(c *engineConfig) { c.maxToolCalls = n }
 }
 
 // WithJobs registers agent_* tools against the given job manager.
 func WithJobs(jobs *job.Manager) EngineOption {
-        return func(c *engineConfig) { c.jobs = jobs }
+	return func(c *engineConfig) { c.jobs = jobs }
 }
 
 // WithScheduler registers the schedule tool (Bet 01 Clock) against the
@@ -175,7 +175,7 @@ func WithJobs(jobs *job.Manager) EngineOption {
 // callback — in practice a job-manager spawn, so wake-ups reuse the
 // fleet's backpressure and run headless-strict by default.
 func WithScheduler(s *schedule.Scheduler) EngineOption {
-        return func(c *engineConfig) { c.scheduler = s }
+	return func(c *engineConfig) { c.scheduler = s }
 }
 
 // WithPersonalConfig supplies the live personal-data configuration
@@ -185,34 +185,34 @@ func WithScheduler(s *schedule.Scheduler) EngineOption {
 // Surfaces should hand in a closure over their live project config, not
 // a snapshot.
 func WithPersonalConfig(fn func() project.PersonalConfig) EngineOption {
-        return func(c *engineConfig) { c.personalCfg = fn }
+	return func(c *engineConfig) { c.personalCfg = fn }
 }
 
 // WithAgentDepth sets this engine's depth in the agent fleet (0 = top-level
 // parent). The depth flows into its spawns so per-depth step budgets and
 // the nesting ceiling hold (Bet 04).
 func WithAgentDepth(depth int) EngineOption {
-        return func(c *engineConfig) { c.agentDepth = depth }
+	return func(c *engineConfig) { c.agentDepth = depth }
 }
 
 // WithExtensions attaches an extension runner (nil = no extensions).
 func WithExtensions(runner *extension.Runner) EngineOption {
-        return func(c *engineConfig) { c.extensions = runner }
+	return func(c *engineConfig) { c.extensions = runner }
 }
 
 // WithOmitExtensionTools keeps Runner events but skips RegisterTool merge (sub-agents).
 func WithOmitExtensionTools(omit bool) EngineOption {
-        return func(c *engineConfig) { c.omitExtTools = omit }
+	return func(c *engineConfig) { c.omitExtTools = omit }
 }
 
 // WithMCP registers mcp_list/inspect/call meta-tools against the pool.
 func WithMCP(pool *mcp.Pool) EngineOption {
-        return func(c *engineConfig) { c.mcp = pool }
+	return func(c *engineConfig) { c.mcp = pool }
 }
 
 // WithHooks sets provider request interceptors (nil fields = no customization).
 func WithHooks(hooks llmclient.Hooks) EngineOption {
-        return func(c *engineConfig) { c.hooks = hooks }
+	return func(c *engineConfig) { c.hooks = hooks }
 }
 
 // WithMemoryStore attaches the agent memory system. When non-nil, the
@@ -220,14 +220,14 @@ func WithHooks(hooks llmclient.Hooks) EngineOption {
 // recalled memories into the per-turn context. When nil (default),
 // no memory tools are registered and no retrieval happens.
 func WithMemoryStore(store *memstore.Store) EngineOption {
-        return func(c *engineConfig) { c.memStore = store }
+	return func(c *engineConfig) { c.memStore = store }
 }
 
 // WithMemoryNudgeInterval sets how many user turns without a memory-tool
 // dispatch may pass before a turn ends with a background memory review
 // (learning.go). Zero or absent keeps the default.
 func WithMemoryNudgeInterval(turns int) EngineOption {
-        return func(c *engineConfig) { c.learnMemInterval = turns }
+	return func(c *engineConfig) { c.learnMemInterval = turns }
 }
 
 // WithSkillNudgeInterval sets how many model rounds without skill use
@@ -235,7 +235,7 @@ func WithMemoryNudgeInterval(turns int) EngineOption {
 // turn ends with a background skill review (learning.go). Zero or absent
 // keeps the default.
 func WithSkillNudgeInterval(iterations int) EngineOption {
-        return func(c *engineConfig) { c.learnSkillInterval = iterations }
+	return func(c *engineConfig) { c.learnSkillInterval = iterations }
 }
 
 // WithMemoryEnabled sets the surface's raw memory toggle — the global knob
@@ -246,10 +246,10 @@ func WithSkillNudgeInterval(iterations int) EngineOption {
 // engines that predate the toggle (sub-agents, embedders, tests) keep
 // their behavior; both real surfaces pass it explicitly.
 func WithMemoryEnabled(enabled bool) EngineOption {
-        return func(c *engineConfig) {
-                c.memoryEnabled = enabled
-                c.memoryEnabledSet = true
-        }
+	return func(c *engineConfig) {
+		c.memoryEnabled = enabled
+		c.memoryEnabledSet = true
+	}
 }
 
 // WithEmbedder attaches the embedding backend used to open per-persona
@@ -266,38 +266,38 @@ func WithMemoryEnabled(enabled bool) EngineOption {
 // tests — the activation math still works, just with weaker semantic
 // matching.
 func WithEmbedder(emb memstore.Embedder) EngineOption {
-        return func(c *engineConfig) { c.embedder = emb }
+	return func(c *engineConfig) { c.embedder = emb }
 }
 
 // WithPersonaModelResolver wires the model-name → ModelConfig lookup used
 // when SetPersona switches to a persona that has a non-empty Model field.
 // The CLI typically passes:
 //
-//      agent.WithPersonaModelResolver(func(name string) (llm.ModelConfig, bool) {
-//          if proj == nil || proj.Config() == nil { return llm.ModelConfig{}, false }
-//          return proj.Config().FindModel(name)
-//      })
+//	agent.WithPersonaModelResolver(func(name string) (llm.ModelConfig, bool) {
+//	    if proj == nil || proj.Config() == nil { return llm.ModelConfig{}, false }
+//	    return proj.Config().FindModel(name)
+//	})
 //
 // When nil (default), a persona with a Model field set has no effect —
 // the engine keeps its current model. This is the safe default: a
 // missing resolver shouldn't silently break a persona switch.
 func WithPersonaModelResolver(fn PersonaModelResolver) EngineOption {
-        return func(c *engineConfig) { c.personaModelResolver = fn }
+	return func(c *engineConfig) { c.personaModelResolver = fn }
 }
 
 // WithPermissionModeSetter wires the permission-mode setter used when
 // SetPersona switches to a persona that has a non-empty PermissionMode
 // field. The CLI typically passes:
 //
-//      agent.WithPermissionModeSetter(func(mode permission.Mode) {
-//          ctrl.SetPermissionMode(mode) // existing controller method
-//      })
+//	agent.WithPermissionModeSetter(func(mode permission.Mode) {
+//	    ctrl.SetPermissionMode(mode) // existing controller method
+//	})
 //
 // When nil (default), a persona with a PermissionMode field set has no
 // effect — the gate keeps its current mode. This is the safe default
 // for tests that don't wire a real gate.
 func WithPermissionModeSetter(fn PermissionModeSetter) EngineOption {
-        return func(c *engineConfig) { c.permissionModeSetter = fn }
+	return func(c *engineConfig) { c.permissionModeSetter = fn }
 }
 
 // WithBasePermissionMode records the mode the surface ran before any
@@ -307,7 +307,7 @@ func WithPermissionModeSetter(fn PermissionModeSetter) EngineOption {
 // target is the default persona — so persona mode overrides are scoped to
 // exactly the persona that declared them.
 func WithBasePermissionMode(mode permission.Mode) EngineOption {
-        return func(c *engineConfig) { c.basePermissionMode = mode }
+	return func(c *engineConfig) { c.basePermissionMode = mode }
 }
 
 // WithEvidenceLedger overrides the engine's evidence ledger. By default the
@@ -315,7 +315,7 @@ func WithBasePermissionMode(mode permission.Mode) EngineOption {
 // (memory-only for in-memory sessions). Callers who want receipts elsewhere
 // (or a shared ledger across engines) pass their own.
 func WithEvidenceLedger(l *evidence.Ledger) EngineOption {
-        return func(c *engineConfig) { c.evidence = l }
+	return func(c *engineConfig) { c.evidence = l }
 }
 
 // WithEvidenceChecks installs config-defined checks (config.yaml `checks:`)
@@ -324,7 +324,7 @@ func WithEvidenceLedger(l *evidence.Ledger) EngineOption {
 // variant of the contract's watched exit checks. Ignored when the ledger
 // is wired explicitly via WithEvidenceLedger.
 func WithEvidenceChecks(defs []evidence.CheckDef) EngineOption {
-        return func(c *engineConfig) { c.evidenceChecks = defs }
+	return func(c *engineConfig) { c.evidenceChecks = defs }
 }
 
 // WithStallLimit sets the evidence verdict gate's anti-thrash limit: how
@@ -333,7 +333,7 @@ func WithEvidenceChecks(defs []evidence.CheckDef) EngineOption {
 // tolerates before it stops and surfaces the residual failure set.
 // n <= 0 disables the stall stop. Default: 3.
 func WithStallLimit(n int) EngineOption {
-        return func(c *engineConfig) { c.stallLimit = n; c.stallLimitSet = true }
+	return func(c *engineConfig) { c.stallLimit = n; c.stallLimitSet = true }
 }
 
 // WithJevEvidenceAdvisor wires the JEV decision-model evidence advisor
@@ -344,7 +344,7 @@ func WithStallLimit(n int) EngineOption {
 // classifiers do not recognize. A nil override restores the
 // deterministic-only behavior.
 func WithJevEvidenceAdvisor(a *jevEvidenceAdvisor) EngineOption {
-        return func(c *engineConfig) { c.jevEvidence = a }
+	return func(c *engineConfig) { c.jevEvidence = a }
 }
 
 // WithZeroRankBudget sets the Phase 3 zero-rank stop's verification budget:
@@ -353,7 +353,7 @@ func WithJevEvidenceAdvisor(a *jevEvidenceAdvisor) EngineOption {
 // failure set each time. n <= 0 disables the zero-rank stop (the model's
 // done stands). Default: 2.
 func WithZeroRankBudget(n int) EngineOption {
-        return func(c *engineConfig) { c.zeroRankBudget = n; c.zeroRankBudgetSet = true }
+	return func(c *engineConfig) { c.zeroRankBudget = n; c.zeroRankBudgetSet = true }
 }
 
 // WithBudgetContracts toggles enforcement of model-declared tool-round
@@ -362,7 +362,7 @@ func WithZeroRankBudget(n int) EngineOption {
 // useful for surfaces that want the visibility without the binding. Default:
 // enabled.
 func WithBudgetContracts(enabled bool) EngineOption {
-        return func(c *engineConfig) { c.budgetContracts = enabled; c.budgetContractsSet = true }
+	return func(c *engineConfig) { c.budgetContracts = enabled; c.budgetContractsSet = true }
 }
 
 // WithWindowProber overrides how the engine discovers an unknown context
@@ -370,5 +370,5 @@ func WithBudgetContracts(enabled bool) EngineOption {
 // /props and ollama /api/show probe; tests inject a deterministic stub so
 // no engine test touches the network.
 func WithWindowProber(fn WindowProber) EngineOption {
-        return func(c *engineConfig) { c.windowProber = fn }
+	return func(c *engineConfig) { c.windowProber = fn }
 }

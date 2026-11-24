@@ -29,6 +29,7 @@ type Config struct {
 	Permissions    permission.Policy
 	Agents         AgentsConfig
 	SemanticSearch SemanticSearchConfig
+	Search         SearchConfig
 	Jev            jev.Settings
 	Browser        BrowserConfig
 	Personal       PersonalConfig
@@ -38,6 +39,7 @@ type Config struct {
 	Stoat          StoatConfig
 	Discord        DiscordConfig
 	Personas       *PersonasConfig
+	Memory         MemoryConfig
 	Tools          ToolsConfig
 	Checks         []CheckConfig
 	Schedules      []ScheduleConfig
@@ -320,6 +322,30 @@ type SemanticSearchConfig struct {
 	Enabled        bool   `yaml:"enabled"`
 	OllamaBaseURL  string `yaml:"ollama_base_url"`
 	EmbeddingModel string `yaml:"embedding_model"`
+}
+
+// MemoryConfig is the memory: section — which write path stores memories.
+type MemoryConfig struct {
+	// Extractor selects how memories are written: "" or "extractor" (default)
+	// uses the decision-model chunk extractor; "consolidation" restores the
+	// previous behavior where one LLM completion per N turns did everything.
+	Extractor string `yaml:"extractor,omitempty"`
+}
+
+// ExtractorEnabled reports whether the decision-model chunk extractor is the
+// memory write path. Unset means yes — extraction is the default; the escape
+// hatch is an explicit "consolidation", which restores the previous behavior
+// where one LLM completion per N turns did all the work.
+func (c MemoryConfig) ExtractorEnabled() bool {
+	return !strings.EqualFold(strings.TrimSpace(c.Extractor), "consolidation")
+}
+
+// SearchConfig configures the fetch tool's web-search backends.
+type SearchConfig struct {
+	// SearxngURL is a self-hosted SearXNG base URL ("http://127.0.0.1:8888").
+	// Empty leaves the engine unregistered, so the router keeps its previous
+	// scrape-based fallbacks. The A1_SEARXNG_URL env var overrides it.
+	SearxngURL string `yaml:"searxng_url,omitempty"`
 }
 
 // BrowserConfig controls browser tool behavior and profiles.
@@ -646,6 +672,16 @@ func parseConfigFile(path string) (*Config, error) {
 			TimeoutSec:    raw.Jev.TimeoutSec,
 		}
 	}
+	if raw.Memory != nil {
+		cfg.Memory = MemoryConfig{
+			Extractor: strings.ToLower(strings.TrimSpace(raw.Memory.Extractor)),
+		}
+	}
+	if raw.Search != nil {
+		cfg.Search = SearchConfig{
+			SearxngURL: strings.TrimSpace(raw.Search.SearxngURL),
+		}
+	}
 	if raw.Browser != nil {
 		cfg.Browser = BrowserConfig{
 			Profiles: append([]string(nil), raw.Browser.Profiles...),
@@ -791,6 +827,7 @@ type fileConfig struct {
 	Permissions    *permConfig           `yaml:"permissions"`
 	Agents         *agentsConfig         `yaml:"agents"`
 	SemanticSearch *semanticSearchConfig `yaml:"semantic_search"`
+	Search         *searchConfig         `yaml:"search"`
 	Jev            *jevConfig            `yaml:"jev"`
 	Browser        *browserConfig        `yaml:"browser"`
 	Personal       *personalConfig       `yaml:"personal"`
@@ -800,6 +837,7 @@ type fileConfig struct {
 	Stoat          *stoatYAML            `yaml:"stoat"`
 	Discord        *discordYAML          `yaml:"discord"`
 	Personas       *personasConfig       `yaml:"personas"`
+	Memory         *memoryConfig         `yaml:"memory"`
 	Tools          *toolsConfig          `yaml:"tools"`
 	Checks         []CheckConfig         `yaml:"checks"`
 	Schedules      []ScheduleConfig      `yaml:"schedules"`
@@ -811,6 +849,16 @@ type personasConfig struct {
 
 // toolsConfig mirrors the optional tools block. MaxToolCalls is a pointer so
 // an absent key stays unlimited rather than reading as an explicit 0.
+// searchConfig mirrors the optional search block.
+type searchConfig struct {
+	SearxngURL string `yaml:"searxng_url"`
+}
+
+// memoryConfig mirrors the optional memory block.
+type memoryConfig struct {
+	Extractor string `yaml:"extractor"`
+}
+
 type toolsConfig struct {
 	MaxToolCalls *int `yaml:"max_tool_calls"`
 }

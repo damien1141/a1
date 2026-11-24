@@ -10,6 +10,133 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **SearXNG search backend (`search.searxng_url`).** The fetch tool gains a
+  dependable general-web path: a self-hosted SearXNG instance answers its
+  documented JSON API, aggregates the upstream engines server-side, and is
+  not subject to the captcha walls that make the DuckDuckGo Lite scraper
+  unreliable on datacenter IPs — the "fetch does not work reliably" report.
+  Configured via `search.searxng_url` in config.yaml or the
+  `A1_SEARXNG_URL` env var (env wins, no file edit needed); unset means the
+  engine is never registered and the fallback order is byte-identical to
+  before. It ranks FIRST among the fallbacks, ahead of the DDG Lite scrape
+  and the BetterWright browser handoff. Failure modes are actionable rather
+  than mysterious: a 403 or a non-JSON 200 both say to enable `json` in the
+  instance's `search.formats`, because that is what the symptom always means.
+- **Persona memory panel reads the real memory store, with edit and reset.**
+  The manager listed the executor's per-call trace mirror (the JSONL bank)
+  rather than the semantic store `remember`/`recall`/consolidation actually
+  operate on, so a persona could remember plenty while the panel read "empty
+  bank". `GET /api/personas/memories` now serves `memstore.List` rows (with
+  the ids `Forget`/`Revise` take), `PUT /api/personas/memories` edits one in
+  place — re-embedding, so the correction reaches recall instead of leaving a
+  stale vector — and the panel grew inline edit alongside forget.
+  `DELETE /api/personas/avatar` resets an uploaded profile picture back to
+  the emoji rendering, closing the one-way door uploads used to be.
+
+### Fixed
+
+- **Clicking a message block selected nothing, so Ctrl+Shift+C copied the wrong
+  one.** Blocks are laid out with a one-row spacing gap that belongs to no entry
+  by the list's own contract — and with one-row blocks that made every OTHER row
+  dead. A click landing there resolved to no entry, no selection was recorded,
+  and the copy chord fell back to the last block, which is indistinguishable
+  from the feature being broken. The list keeps its exact contract (its tests
+  pin that a spacing row belongs to no entry); the click is now forgiving by one
+  row, because a user aiming at a block should not have to hit its exact row.
+  Rows outside the content still select nothing.
+- **Ctrl+Shift+C never copied a block.** xui's `CtrlC()` returns true for ANY
+  `ModCtrl+c` — shift included — and the stop/quit handler ran before the copy
+  handler, so the chord was claimed by "cancel the turn" and a copied block
+  never happened. Worse, most terminals without the kitty keyboard protocol send
+  the same byte (`0x03`) for both chords, so the modifier never arrives at all.
+  Three fixes: the copy chord is now offered *before* the Ctrl+C handler; when
+  nothing is running, a plain Ctrl+C with a selection copies it (the fallback for
+  terminals that cannot distinguish them); and the copy handler reports
+  UNHANDLED when there is nothing to copy, so the fallback cannot eat a plain
+  Ctrl+C and make quitting impossible.
+
+- **Mouse clicks never reached the message blocks.** They were used only for
+  the wheel and drag-selection, so every block's own click handling — a bash
+  block's expand/collapse on its title, an agent block's tree toggle — was dead
+  in the TUI. Selecting a long bash command without being able to expand it is
+  half a feature. Clicks are now dispatched to the block under the cursor in the
+  block's own coordinates; the title toggles, the body stays a selection surface
+  so dragging text inside the output never collapses it.
+
+- **Two clipboard-image tests failed for anyone on a real desktop.** They
+  asserted the clipboard read reported `ErrUnavailable`, which holds only on a
+  bare CI runner — the actual reader shells out to `wl-paste` / `xclip` /
+  `pbpaste` and succeeds on any developer machine, so `make test` was red for
+  every user while green in CI. The read is now an injectable seam on the
+  composer: the tests pin `ErrUnavailable` explicitly and pass on both.
+
+- **The block-selection highlight was invisible on most themes.** It painted a
+  hardcoded dark green tuned for one palette; on any other it was a tint you
+  could not see, so a working selection looked like no selection at all. It now
+  uses the theme's own `SelectionBg` token.
+
+- **Up/Down history browsing cost one press per LINE, so a draft looked lost.**
+  The arrows walked the *recalled entry's* wrapped rows before stepping between
+  entries, so a three-line command in history took three Ups to leave and three
+  Downs to get back — the draft was not destroyed, just several presses away,
+  which reads as "my text is gone". While browsing, the arrows now step entry by
+  entry, one press each, and the draft returns on the first Down past the newest
+  entry. A multi-line *draft* still keeps ordinary caret motion: Up moves the
+  caret and only recalls history from the first visual row, so the readline
+  contract is intact in both directions.
+
+- **The TUI ignored persona defaults on startup and on switch.** `resolveModel`
+  returned the controller's boot-time model without ever consulting the active
+  persona, so a TUI started while a persona with its own model was already
+  active ran the startup model until the user re-picked that persona to remind
+  it. The persona's model now wins at every session open, and `SetPersona`
+  refreshes the controller's cached model so the composer label and the
+  footer's context-fill denominator describe the model actually in use. A
+  persona without an override keeps the previous behavior, and a resolver miss
+  (a stale model name) degrades to the startup model rather than bricking the
+  session.
+- **The first Ctrl+C quit the TUI during a slow first token.** The stop/quit
+  split existed and worked, but `IsBusy()` derived everything from the
+  transcript — and between submitting and the first streamed token the model is
+  thinking, nothing is streaming, and no tool is running, so the first press
+  took the quit branch. A submit-to-first-token bridge now covers that gap: one
+  tap cancels the turn, two within the window exit. The bridge retires as soon
+  as the transcript has something to report, so a later turn can still quit.
+- **A long bash command claimed most of the viewport.** Only output had a
+  collapse budget; a multi-line heredoc or a flag-heavy one-liner rendered in
+  full before a single line of its result appeared. Collapsed rows now bound
+  the command to two wrapped rows, keeping the HEAD (a command's identity is
+  its verb and first arguments) and disclosing the hidden count. Expanding
+  still reveals the whole thing, and the toggle affordance now appears when the
+  command alone is truncated — previously that state showed an arrow only if
+  the block also had output.
+
+- **Memory consolidation was instructed to emit invalid JSON, so it never
+  harvested.** `prompt/memory-consolidation.tmpl` is `go:embed`-ed raw and
+  never executed through `text/template`, yet it carried text/template
+  escaping: every JSON example showed doubled braces (`{{"ops":...}}`), which
+  `json.Unmarshal` rejects at the first `{`. The outlet logged a parse
+  failure on every turn and wrote nothing — memory looked wired up and
+  silently stayed empty. The template's examples are now single-braced, and a
+  test feeds the prompt's own JSON back through the real parser so the two
+  cannot drift again.
+- **Every "never ask" mode now actually drops the bash sandbox.** Three gaps,
+  fixed together under one predicate. (1) The gate side keyed suppression on
+  `Mode == yolo` alone, so `dangerously_allow_all` and `allow_all_session` —
+  which short-circuit every rule and never prompt — still reported
+  `Sandboxed()`. (2) The exec side (`bashtool`) read only the config mode, so
+  the same flagged runs compiled a real containment profile. (3) The executor
+  attached the live mode from `ModeOf`, which returns "" for the shapes that
+  promise the most: `a1 run --yolo` builds a bare `AllowAll`, and an armed
+  session override reports its inner gate's mode. The result was walls around
+  a door nobody was guarding. Now `Policy.Unrestricted()` is the single
+  predicate: `sandboxEnforcing` consults it, `bashtool.sandboxSuppressed`
+  consults it, and the executor marks the tool context `yolo` for any
+  `permission.Unrestricted` gate — so a switch made from the shift-tab cycle,
+  the web footer pill, the settings row, or a persona's permission override
+  reaches the exec side on the next tool call. Prompting modes keep their
+  containment exactly as before, pinned by control cases.
+
 - **`models[].headers`: per-model extra HTTP headers on every provider
   request.** Gateways like nano-gpt route on headers, not keys — the
   same `api_key` can fan out to different upstreams by

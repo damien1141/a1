@@ -68,7 +68,7 @@ schedules:
 	h.ServeHTTP(getRec, get)
 	require.Equal(t, http.StatusOK, getRec.Code)
 	var doc struct {
-		Checks []map[string]any `json:"checks"`
+		Checks    []map[string]any `json:"checks"`
 		Schedules []map[string]any `json:"schedules"`
 	}
 	require.NoError(t, json.NewDecoder(getRec.Body).Decode(&doc))

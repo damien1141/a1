@@ -167,39 +167,67 @@ func TestBylineMatchesNaiveJoin_Differential(t *testing.T) {
 	}
 }
 
-// naiveWrapText is the spec restated with plain byte slicing: greedy chunks of
-// `width` bytes, hard newlines flush, and no trailing empty line unless the
-// input is empty (in which case exactly one empty line).
-func naiveWrapText(s string, width int) []string {
-	if width < 1 {
-		width = 1
-	}
-	var lines []string
-	var cur []byte
-	for i := 0; i < len(s); {
-		if s[i] == '\n' {
-			lines = append(lines, string(cur))
-			cur = nil
-			i++
-			continue
+// TestWrapSpans_BreaksBetweenWords_Differential pins the wrapping CONTRACT with
+// hand-written expectations.
+//
+// It deliberately does NOT compare against a second wrapping implementation. The
+// previous oracle was a naive per-grapheme reference, which is a tautology the
+// moment the behaviour being specified IS per-grapheme wrapping — it certified
+// "head -3" splitting into "hea" / "d -3", the very defect that made wrapped
+// blocks unreadable.
+func TestWrapSpans_BreaksBetweenWords_Differential(t *testing.T) {
+	join := func(lines []components.RichLine) []string {
+		out := make([]string, len(lines))
+		for i, l := range lines {
+			var b strings.Builder
+			for _, sp := range l {
+				b.WriteString(sp.Text)
+			}
+			out[i] = b.String()
 		}
-		if len(cur) == width {
-			lines = append(lines, string(cur))
-			cur = nil
-		}
-		cur = append(cur, s[i])
-		i++
+		return out
 	}
-	if len(cur) > 0 || len(lines) == 0 {
-		lines = append(lines, string(cur))
+
+	cases := []struct {
+		name  string
+		in    string
+		width int
+		want  []string
+	}{
+		// The reported bug: a shell line used to split mid-token.
+		{"command breaks at a space", "head -3; echo x", 12, []string{"head -3;", "echo x"}},
+		// Whole words fill a row; a row that is exactly full simply ends.
+		{"words fill", "aaa bbb ccc", 3, []string{"aaa", "bbb", "ccc"}},
+		{"row exactly full", "aaa bbb ccc", 7, []string{"aaa bbb", "ccc"}},
+		// A token wider than a whole row has no space to break at: hard-split.
+		{"unbreakable token", "babbb", 3, []string{"bab", "bb"}},
+		// Hard newlines are never wrapped away.
+		{"newline preserved", "a\nb", 40, []string{"a", "b"}},
+		// Width clamps to 1.
+		{"zero width clamps", "ab", 0, []string{"a", "b"}},
+		// Spaces beginning a REAL line are indentation and survive...
+		{"leading indent kept", "  indented", 20, []string{"  indented"}},
+		{"indent after newline kept", "a\n  b", 20, []string{"a", "  b"}},
+		// ...but a space that CAUSED a wrap is consumed, never a row of its own:
+		// a blank row is invisible height.
+		{"wrap space consumed", "aa bb", 2, []string{"aa", "bb"}},
+		// Empty input still yields one (empty) row so callers can paint it.
+		{"empty input", "", 5, []string{""}},
 	}
-	return lines
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, join(components.WrapSpans([]components.Span{{Text: tc.in}}, tc.width, xui.WidthUnicode)))
+		})
+	}
 }
 
-// oracle: the naive byte-wrap reference above on randomized ASCII inputs and
-// widths (including the 0 and negative clamps); WrapSpans must produce the
-// same visible rows.
-func TestWrapSpansMatchesNaiveWrap_Differential(t *testing.T) {
+// TestWrapSpans_Invariants_Negative checks properties that hold for ANY input,
+// without re-deriving the algorithm:
+//
+//   - no painted row is wider than the wrap width;
+//   - no non-space character is lost or reordered;
+//   - hard newlines survive.
+func TestWrapSpans_Invariants_Negative(t *testing.T) {
 	alphabet := []string{"a", "b", "c", " ", "\n"}
 	rng := rand.New(rand.NewSource(7))
 	for i := range 300 {
@@ -208,46 +236,33 @@ func TestWrapSpansMatchesNaiveWrap_Differential(t *testing.T) {
 			sb.WriteString(alphabet[rng.Intn(len(alphabet))])
 		}
 		s := sb.String()
-		width := rng.Intn(14) - 2 // includes negative and zero widths
+		width := rng.Intn(14) - 2
+		w := max(width, 1)
 
-		got := components.WrapSpans([]components.Span{{Text: s}}, width, xui.WidthUnicode)
-		want := naiveWrapText(s, width)
-		require.Len(t, got, len(want), "case %d: WrapSpans(%q, %d) row count", i, s, width)
-		for r, line := range got {
+		var got strings.Builder
+		rows := components.WrapSpans([]components.Span{{Text: s}}, width, xui.WidthUnicode)
+		for r, line := range rows {
 			var b strings.Builder
 			for _, sp := range line {
 				b.WriteString(sp.Text)
 			}
-			assert.Equal(t, want[r], b.String(), "case %d: WrapSpans(%q, %d) row %d", i, s, width, r)
+			row := b.String()
+			assert.LessOrEqual(t, xui.StringWidth(row, xui.WidthUnicode), w,
+				"case %d: WrapSpans(%q, %d) row %d = %q exceeds width", i, s, width, r, row)
+			got.WriteString(row)
 		}
-	}
 
-	// Edge cases the random walk may miss.
-	for _, s := range []string{"", "abcd", "abc\n", "ab\ncd", "\n", "abcdefg"} {
-		for _, width := range []int{-3, 0, 1, 2, 3, 100} {
-			got := components.WrapSpans([]components.Span{{Text: s}}, width, xui.WidthUnicode)
-			want := naiveWrapText(s, width)
-			require.Len(t, got, len(want), "WrapSpans(%q, %d) rows", s, width)
-			for r, line := range got {
-				var b strings.Builder
-				for _, sp := range line {
-					b.WriteString(sp.Text)
-				}
-				assert.Equal(t, want[r], b.String(), "WrapSpans(%q, %d) row %d", s, width, r)
-			}
+		// Content preservation: ignore spaces AND newlines, so a consumed break
+		// space is not a failure but a lost character is.
+		squash := func(x string) string {
+			return strings.NewReplacer(" ", "", "\n", "").Replace(x)
 		}
+		assert.Equal(t, squash(s), squash(got.String()),
+			"case %d: WrapSpans(%q, %d) must not lose content", i, s, width)
+
+		assert.GreaterOrEqual(t, len(rows), strings.Count(s, "\n"),
+			"case %d: %q keeps its hard newlines", i, s)
 	}
-
-	// Degenerate width still produces one cluster per row.
-	lines := components.WrapSpans([]components.Span{{Text: "abc"}}, 0, xui.WidthUnicode)
-	require.Len(t, lines, 3)
-	painted := components.PaintRichLines(1, lines, xui.WidthUnicode, nil)
-	assert.Equal(t, 3, painted.Size.Height, "one row per cluster at width 1")
-
-	// No lines at all still paint a 1-row surface.
-	blank := components.PaintRichLines(5, nil, xui.WidthUnicode, nil)
-	assert.Equal(t, 1, blank.Size.Height)
-	assert.Equal(t, "     \n", components.SurfaceText(blank))
 }
 
 // oracle: paint→extract round trip through two genuinely distinct code paths —

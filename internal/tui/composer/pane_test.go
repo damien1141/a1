@@ -16,7 +16,9 @@ import (
 	"github.com/damien1141/a1/internal/components/mention"
 	"github.com/damien1141/a1/internal/tui/commands"
 	"github.com/damien1141/a1/internal/tui/controller"
+	"github.com/damien1141/a1/internal/util/clipboard"
 	"github.com/damien1141/a1/internal/util/gitx"
+	imgutil "github.com/damien1141/a1/internal/util/image"
 )
 
 // png1x1Base64 is a 1x1 transparent PNG (same fixture as util/image tests).
@@ -38,14 +40,28 @@ func TestTryAttachClipboardImageFallsThroughWhenSupported(t *testing.T) {
 	c := NewComposerPane(components.DefaultTheme(), "m", "/tmp")
 	c.imageEnabled = func() bool { return true }
 
+	// Pin the read instead of depending on the machine. The real reader shells
+	// out to wl-paste / xclip / pbpaste and SUCCEEDS on any developer desktop,
+	// so assuming ErrUnavailable made this pass only on a bare CI runner and
+	// fail for every actual user of the TUI.
+	c.readClipboardImage = func() (imgutil.Result, error) {
+		return imgutil.Result{}, clipboard.ErrUnavailable
+	}
+
 	ctx := &components.EventContext{}
-	// No clipboard tooling in CI: the gate passes and the read reports
-	// ErrUnavailable, so the key is not consumed.
+	// ErrUnavailable means "no image / no tooling": the key is not consumed, so
+	// it falls through to the composer as a normal keystroke.
 	require.False(t, c.tryAttachClipboardImage(ctx))
 }
 
 func TestTryAttachClipboardImageAllowedWithoutModelInfo(t *testing.T) {
 	c := NewComposerPane(components.DefaultTheme(), "m", "/tmp")
+	// A model with no image capability advertised still allows the ATTEMPT;
+	// the read decides. Pin it, so this does not silently depend on whether the
+	// host happens to have a clipboard image sitting in it.
+	c.readClipboardImage = func() (imgutil.Result, error) {
+		return imgutil.Result{}, clipboard.ErrUnavailable
+	}
 
 	ctx := &components.EventContext{}
 	require.False(t, c.tryAttachClipboardImage(ctx))

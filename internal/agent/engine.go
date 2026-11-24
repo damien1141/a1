@@ -1,48 +1,48 @@
 package agent
 
 import (
-        "context"
-        "database/sql"
-        "encoding/json"
-        "errors"
-        "fmt"
-        "iter"
-        "path/filepath"
-        "strings"
-        "sync"
-        "sync/atomic"
-        "time"
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"iter"
+	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
-        "github.com/damien1141/a1/internal/agent/prompt"
-        "github.com/damien1141/a1/internal/contextbreakdown"
-        "github.com/damien1141/a1/internal/debuglog"
-        "github.com/damien1141/a1/internal/engineaccess"
-        "github.com/damien1141/a1/internal/evidence"
-        "github.com/damien1141/a1/internal/extension"
-        "github.com/damien1141/a1/internal/job"
-        "github.com/damien1141/a1/internal/llm"
-        llmclient "github.com/damien1141/a1/internal/llm/client"
-        "github.com/damien1141/a1/internal/llm/jev"
-        "github.com/damien1141/a1/internal/llm/skills"
-        "github.com/damien1141/a1/internal/mcp"
-        "github.com/damien1141/a1/internal/memstore"
-        "github.com/damien1141/a1/internal/permission"
-        "github.com/damien1141/a1/internal/project"
-        "github.com/damien1141/a1/internal/project/model"
-        "github.com/damien1141/a1/internal/schedule"
-        "github.com/damien1141/a1/internal/session"
-        "github.com/damien1141/a1/internal/session/compaction"
-        "github.com/damien1141/a1/internal/snapshot"
-        "github.com/damien1141/a1/internal/toolguard"
-        "github.com/damien1141/a1/internal/tools"
-        "github.com/damien1141/a1/internal/tools/calendartool"
-        "github.com/damien1141/a1/internal/tools/kanbantool"
-        "github.com/damien1141/a1/internal/tools/mailtool"
-        "github.com/damien1141/a1/internal/tools/memtool"
-        "github.com/damien1141/a1/internal/tools/scheduletool"
-        "github.com/damien1141/a1/internal/tools/sessiontool"
-        "github.com/damien1141/a1/internal/tools/skilltool"
-        "github.com/damien1141/a1/internal/tools/tooldef"
+	"github.com/damien1141/a1/internal/agent/prompt"
+	"github.com/damien1141/a1/internal/contextbreakdown"
+	"github.com/damien1141/a1/internal/debuglog"
+	"github.com/damien1141/a1/internal/engineaccess"
+	"github.com/damien1141/a1/internal/evidence"
+	"github.com/damien1141/a1/internal/extension"
+	"github.com/damien1141/a1/internal/job"
+	"github.com/damien1141/a1/internal/llm"
+	llmclient "github.com/damien1141/a1/internal/llm/client"
+	"github.com/damien1141/a1/internal/llm/jev"
+	"github.com/damien1141/a1/internal/llm/skills"
+	"github.com/damien1141/a1/internal/mcp"
+	"github.com/damien1141/a1/internal/memstore"
+	"github.com/damien1141/a1/internal/permission"
+	"github.com/damien1141/a1/internal/project"
+	"github.com/damien1141/a1/internal/project/model"
+	"github.com/damien1141/a1/internal/schedule"
+	"github.com/damien1141/a1/internal/session"
+	"github.com/damien1141/a1/internal/session/compaction"
+	"github.com/damien1141/a1/internal/snapshot"
+	"github.com/damien1141/a1/internal/toolguard"
+	"github.com/damien1141/a1/internal/tools"
+	"github.com/damien1141/a1/internal/tools/calendartool"
+	"github.com/damien1141/a1/internal/tools/kanbantool"
+	"github.com/damien1141/a1/internal/tools/mailtool"
+	"github.com/damien1141/a1/internal/tools/memtool"
+	"github.com/damien1141/a1/internal/tools/scheduletool"
+	"github.com/damien1141/a1/internal/tools/sessiontool"
+	"github.com/damien1141/a1/internal/tools/skilltool"
+	"github.com/damien1141/a1/internal/tools/tooldef"
 )
 
 // ErrMaxRounds is returned (wrapped) by Loop when the model exceeds the
@@ -59,32 +59,32 @@ var activeEngine atomic.Value
 // SetActiveEngine registers the active engine for tool/harness access.
 // Pass nil to clear.
 func SetActiveEngine(engine *Engine) {
-        activeEngine.Store(engine)
-        if engine == nil {
-                // Forwarding the typed nil (*Engine)(nil) would store a non-nil
-                // Engine interface in engineaccess and "clear" nothing — the clear
-                // path must send a literal nil so the registry actually empties.
-                engineaccess.SetActiveEngine(nil)
-                return
-        }
-        engineaccess.SetActiveEngine(engine)
+	activeEngine.Store(engine)
+	if engine == nil {
+		// Forwarding the typed nil (*Engine)(nil) would store a non-nil
+		// Engine interface in engineaccess and "clear" nothing — the clear
+		// path must send a literal nil so the registry actually empties.
+		engineaccess.SetActiveEngine(nil)
+		return
+	}
+	engineaccess.SetActiveEngine(engine)
 }
 
 // ActiveEngine returns the currently registered engine, or nil.
 func ActiveEngine() *Engine {
-        v := activeEngine.Load()
-        if v == nil {
-                return nil
-        }
-        return v.(*Engine)
+	v := activeEngine.Load()
+	if v == nil {
+		return nil
+	}
+	return v.(*Engine)
 }
 
 // Gate returns the current permission gate.
 func (engine *Engine) Gate() permission.Gate {
-        if engine == nil {
-                return nil
-        }
-        return engine.gate
+	if engine == nil {
+		return nil
+	}
+	return engine.gate
 }
 
 const defaultMaxToolRounds = 64
@@ -98,474 +98,474 @@ type ContinueFunc func(ctx context.Context, maxRounds int) (bool, error)
 // and yields session.Event for the TUI reducer. Context compaction is owned
 // here so Session stays a thin message store.
 type Engine struct {
-        client    *llmclient.Client
-        executor  *Executor
-        maxRounds int
-        // evidence is the engine's protected evidence ledger (VeriLoop-Governed
-        // Recurrence). It records deterministic check results (build/vet/tests)
-        // observed by the harness from bash runs; the model can never write it.
-        // Nil never happens in production — NewEngine always installs one — but
-        // the executor treats a nil ledger as "evidence disabled".
-        evidence *evidence.Ledger
-        // evidenceSnaps backs the per-turn verdict gate (Phase 2): pre-candidate
-        // baselines and enforced rollbacks. Lazily built from the session cwd;
-        // tests inject a fake via setEvidenceSnapshots.
-        evidenceSnaps evidenceSnapshots
-        // evidenceBaseline names the engine-owned baseline snapshot. It survives
-        // turns so the next turn's gate deletes the ref once superseded — engine
-        // baselines never accumulate in refs/a1/snapshots.
-        evidenceBaseline string
-        // stallLimit caps consecutive non-improving verification rounds before
-        // the verdict gate stops the turn (0 = disabled). Atomic to mirror
-        // maxToolCalls — the surface can retune it while a loop runs.
-        stallLimit atomic.Int64
-        // zeroRankBudget bounds the extra verification rounds bought when the
-        // model tries to end a turn with declared contract checks not green
-        // (0 = disabled: the model's done stands). Atomic to mirror stallLimit.
-        zeroRankBudget atomic.Int64
-        // turnContract is the turn's declared done-criteria (Phase 3): check
-        // ids the model proposes via the `contract` tool and the harness
-        // judges against the evidence ledger at turn end (zero-rank stop).
-        // Reset at every Loop entry; ratcheted within a turn.
-        turnContract turnContractState
-        // turnVerify is the per-turn workspace-mutation record the
-        // verify-on-stop gate judges an undeclared finish against (see
-        // verify_stop.go). Reset at every Loop entry, like turnContract.
-        turnVerify turnVerifyState
+	client    *llmclient.Client
+	executor  *Executor
+	maxRounds int
+	// evidence is the engine's protected evidence ledger (VeriLoop-Governed
+	// Recurrence). It records deterministic check results (build/vet/tests)
+	// observed by the harness from bash runs; the model can never write it.
+	// Nil never happens in production — NewEngine always installs one — but
+	// the executor treats a nil ledger as "evidence disabled".
+	evidence *evidence.Ledger
+	// evidenceSnaps backs the per-turn verdict gate (Phase 2): pre-candidate
+	// baselines and enforced rollbacks. Lazily built from the session cwd;
+	// tests inject a fake via setEvidenceSnapshots.
+	evidenceSnaps evidenceSnapshots
+	// evidenceBaseline names the engine-owned baseline snapshot. It survives
+	// turns so the next turn's gate deletes the ref once superseded — engine
+	// baselines never accumulate in refs/a1/snapshots.
+	evidenceBaseline string
+	// stallLimit caps consecutive non-improving verification rounds before
+	// the verdict gate stops the turn (0 = disabled). Atomic to mirror
+	// maxToolCalls — the surface can retune it while a loop runs.
+	stallLimit atomic.Int64
+	// zeroRankBudget bounds the extra verification rounds bought when the
+	// model tries to end a turn with declared contract checks not green
+	// (0 = disabled: the model's done stands). Atomic to mirror stallLimit.
+	zeroRankBudget atomic.Int64
+	// turnContract is the turn's declared done-criteria (Phase 3): check
+	// ids the model proposes via the `contract` tool and the harness
+	// judges against the evidence ledger at turn end (zero-rank stop).
+	// Reset at every Loop entry; ratcheted within a turn.
+	turnContract turnContractState
+	// turnVerify is the per-turn workspace-mutation record the
+	// verify-on-stop gate judges an undeclared finish against (see
+	// verify_stop.go). Reset at every Loop entry, like turnContract.
+	turnVerify turnVerifyState
 
-        // Learning loop (see learning.go): nudge counters that tick on
-        // opportunity and reset on actual use, plus the review-fork state.
-        // Session-scoped engine state, deliberately NOT reset per turn —
-        // the windows carry across Loops within the engine's lifetime.
-        learnMemInterval   atomic.Int64
-        turnsSinceMemory   atomic.Int64
-        learnSkillInterval atomic.Int64
-        itersSinceSkill    atomic.Int64
-        // Memory-consolidation cadence (memory_outlet.go): the pinned
-        // interval (1 = per turn, N = every Nth) and the completed-turn
-        // counter the auto-local policy gates on. Set once at construction;
-        // ticks are atomic because turn terminals fire from the Loop path
-        // while the surface may also drive drains.
-        consolidationInterval int
-        consolidateTicks      atomic.Int64
-        // consolidationBatchedLogged keeps the one-time local-batching notice
-        // to a single debuglog line per engine instead of one per skipped turn.
-        consolidationBatchedLogged atomic.Bool
-        reviewCancelMu     sync.Mutex
-        reviewCancel       context.CancelFunc
-        reviewInFlight     atomic.Bool
-        reviewOutstanding  atomic.Int64
-        // sessionValence is the session's mood (Bet 06), computed at each
-        // turn's end from outcomes (regressions pull down, certificates
-        // pull up) and fed to the next retrieval's mood-congruency cue.
-        // Atomic.Value: the outlet goroutine reads it while the loop
-        // writes it.
-        sessionValence atomic.Value // float64
-        // memfsckOnce guards the session-start MEMORY.md reconciliation
-        // (Bet 06).
-        memfsckOnce sync.Once
-        // taskContract is the session-scoped contract (Bet 04 task contracts):
-        // everything declared this session plus anything inherited from a
-        // parent fleet's finish line. Never reset — the add-only ratchet holds
-        // across turns and Loops, and spawns pass it to children so a fleet
-        // shares one finish line.
-        taskContract turnContractState
-        // contractSeed / contractSeedEnforce hold a fleet-inherited check set
-        // (Bet 04). The seed survives per-Loop resets — every turn of this
-        // engine starts with the inherited checks either enforced (worker
-        // children: the zero-rank stop holds them to the parent's finish line)
-        // or watch-only (explore/review: evidence records, no stop).
-        contractSeed        []string
-        contractSeedEnforce bool
-        // agentDepth is this engine's depth in the agent fleet (0 = top-level
-        // parent). Flows into spawns so per-depth budgets and the nesting
-        // ceiling hold (Bet 04).
-        agentDepth int
-        // turnBudget is the turn's declared tool-round budget (Phase 5): an
-        // absolute ceiling the model proposes via the `budget` tool and the
-        // harness holds — reaching it with tools still wanted runs one
-        // re-open round (extend or finish), and a further overrun stops the
-        // turn with a spend report. Zero unless declared, so plain chat
-        // turns are untouched. Reset at every Loop entry.
-        turnBudget turnBudgetState
-        // toolRoundsLive publishes the loop's tool-round counter to the
-        // budget tool handler, which runs inside executor.Run and cannot
-        // see Loop locals. Stored after every round increment; reset at
-        // Loop entry.
-        toolRoundsLive atomic.Int64
-        // budgetContracts gates enforcement of declared budgets (Phase 5):
-        // with it off, declarations are recorded and echoed but never stop
-        // the turn. Default on — a declared budget only ever binds the
-        // model that declared it, and extending is always one visible tool
-        // call away.
-        budgetContracts atomic.Bool
-        // governed is the session's coding-mode latch: the evidence surfaces
-        // only go live once the session has done something code-shaped. It
-        // flips on the first real contract declaration (the check-id grammar
-        // is only expressible for build/test work — a chat task has no
-        // finish line in that vocabulary) and never clears: later turns in
-        // the same session keep recording and rollback protection. A session
-        // that never declares leaves no evidence trace at all, so an
-        // incidental build command in a chat turn neither grows the ledger
-        // nor arms regression notes for later casual turns. IsGoverned
-        // additionally reads the ledger live, so a resumed session (receipts
-        // replayed by Load) or a directly seeded one is governed without an
-        // explicit declaration. One thin edge is accepted by design: a
-        // session that declared a contract but never ran a single check
-        // resumes ungoverned — it fails in the safe direction (under-
-        // govern, never over-govern).
-        governed atomic.Bool
-        // maxToolCalls caps executed tool calls per turn (0 = unlimited). Atomic
-        // because the TUI can raise or lower it while a loop is running; the
-        // loop reads it fresh at every tool round. Yolo permission mode ignores
-        // the cap entirely.
-        maxToolCalls atomic.Int64
-        modelCfg     llm.ModelConfig
-        // baseModelCfg is the model the engine was constructed with. A
-        // persona switch to a persona without a Model override (or to the
-        // default persona) restores it, mirroring basePermissionMode.
-        baseModelCfg llm.ModelConfig
-        // basePermissionMode is the mode the surface ran before any persona
-        // override; restored when the next persona declares none.
-        basePermissionMode permission.Mode
-        hooks              llmclient.Hooks
-        // baseHooks is the hooks set the engine was constructed with (the
-        // surface wires model.HooksFor(mainModel)). A persona model swap
-        // replaces hooks with the override model's preset; reverting to the
-        // base model restores these — vendor-specific wire shapes must
-        // follow the model actually in use, not the one the surface booted
-        // with.
-        baseHooks    llmclient.Hooks
-        gate         permission.Gate
-        ask          permission.AskFunc
-        question     tooldef.QuestionFunc
-        continueAsk  ContinueFunc
-        jobs         *job.Manager
-        scheduler    *schedule.Scheduler // nil = no schedule tool (Bet 01 Clock)
-        extensions   *extension.Runner   // nil = disabled; all methods are nil-safe no-ops
-        baseTools    []tools.Tool        // nil = DefaultTools; preserved across rebind
-        omitExtTools bool                // sub-agents: emit events but skip RegisterTool merge
-        mcp          *mcp.Pool
-        memStore     *memstore.Store   // nil = no shared bank; remember/recall/revise/forget registered only when non-nil AND memory effective-on
-        embedder     memstore.Embedder // for opening per-persona SQLite stores lazily; nil = fall back to engine.memStore
-        // Credential pools, keyed by key-set signature (poolFor). Shared
-        // across the client rebuilds that SetJobs, scheduler attach, and
-        // surface model switches all trigger through rebindTools, so a
-        // rate-limited key's cooldown survives them. Guarded by poolMu:
-        // the Loop goroutine rebinds while the memory-outlet goroutine
-        // builds diary clients.
-        poolMu sync.Mutex
-        pools  map[string]*llm.KeyPool
-        // memoryEnabled is the surface's raw memory toggle (see
-        // WithMemoryEnabled). Atomic so the palette/web toggle can flip it
-        // while a loop runs; MemoryEnabled() derives the effective value
-        // from it + the active persona's override.
-        memoryEnabled atomic.Bool
-        // lastMemRider is the semantic memory bundle the most recent
-        // runtime rider persisted (see runtime_rider.go). The rider is
-        // change-gated against it: an identical bundle re-retrieved next
-        // turn is skipped — it is already frozen in history from the turn
-        // that injected it. Cleared on persona switch (the new persona's
-        // bank must re-inject) and empty on a fresh engine (one harmless
-        // re-injection after a resume).
-        lastMemRider string
-        // Persona apply-on-switch hooks. Optional; when nil, the
-        // corresponding persona setting is silently ignored on switch.
-        personaModelResolver PersonaModelResolver
-        permissionModeSetter PermissionModeSetter
-        // personalCfg supplies the live personal-data section for the
-        // agent-side personal tools (nil = no personal tools mount). Read
-        // at mount and at every call — see WithPersonalConfig.
-        personalCfg func() project.PersonalConfig
+	// Learning loop (see learning.go): nudge counters that tick on
+	// opportunity and reset on actual use, plus the review-fork state.
+	// Session-scoped engine state, deliberately NOT reset per turn —
+	// the windows carry across Loops within the engine's lifetime.
+	learnMemInterval   atomic.Int64
+	turnsSinceMemory   atomic.Int64
+	learnSkillInterval atomic.Int64
+	itersSinceSkill    atomic.Int64
+	// Memory-consolidation cadence (memory_outlet.go): the pinned
+	// interval (1 = per turn, N = every Nth) and the completed-turn
+	// counter the auto-local policy gates on. Set once at construction;
+	// ticks are atomic because turn terminals fire from the Loop path
+	// while the surface may also drive drains.
+	consolidationInterval int
+	consolidateTicks      atomic.Int64
+	// consolidationBatchedLogged keeps the one-time local-batching notice
+	// to a single debuglog line per engine instead of one per skipped turn.
+	consolidationBatchedLogged atomic.Bool
+	reviewCancelMu             sync.Mutex
+	reviewCancel               context.CancelFunc
+	reviewInFlight             atomic.Bool
+	reviewOutstanding          atomic.Int64
+	// sessionValence is the session's mood (Bet 06), computed at each
+	// turn's end from outcomes (regressions pull down, certificates
+	// pull up) and fed to the next retrieval's mood-congruency cue.
+	// Atomic.Value: the outlet goroutine reads it while the loop
+	// writes it.
+	sessionValence atomic.Value // float64
+	// memfsckOnce guards the session-start MEMORY.md reconciliation
+	// (Bet 06).
+	memfsckOnce sync.Once
+	// taskContract is the session-scoped contract (Bet 04 task contracts):
+	// everything declared this session plus anything inherited from a
+	// parent fleet's finish line. Never reset — the add-only ratchet holds
+	// across turns and Loops, and spawns pass it to children so a fleet
+	// shares one finish line.
+	taskContract turnContractState
+	// contractSeed / contractSeedEnforce hold a fleet-inherited check set
+	// (Bet 04). The seed survives per-Loop resets — every turn of this
+	// engine starts with the inherited checks either enforced (worker
+	// children: the zero-rank stop holds them to the parent's finish line)
+	// or watch-only (explore/review: evidence records, no stop).
+	contractSeed        []string
+	contractSeedEnforce bool
+	// agentDepth is this engine's depth in the agent fleet (0 = top-level
+	// parent). Flows into spawns so per-depth budgets and the nesting
+	// ceiling hold (Bet 04).
+	agentDepth int
+	// turnBudget is the turn's declared tool-round budget (Phase 5): an
+	// absolute ceiling the model proposes via the `budget` tool and the
+	// harness holds — reaching it with tools still wanted runs one
+	// re-open round (extend or finish), and a further overrun stops the
+	// turn with a spend report. Zero unless declared, so plain chat
+	// turns are untouched. Reset at every Loop entry.
+	turnBudget turnBudgetState
+	// toolRoundsLive publishes the loop's tool-round counter to the
+	// budget tool handler, which runs inside executor.Run and cannot
+	// see Loop locals. Stored after every round increment; reset at
+	// Loop entry.
+	toolRoundsLive atomic.Int64
+	// budgetContracts gates enforcement of declared budgets (Phase 5):
+	// with it off, declarations are recorded and echoed but never stop
+	// the turn. Default on — a declared budget only ever binds the
+	// model that declared it, and extending is always one visible tool
+	// call away.
+	budgetContracts atomic.Bool
+	// governed is the session's coding-mode latch: the evidence surfaces
+	// only go live once the session has done something code-shaped. It
+	// flips on the first real contract declaration (the check-id grammar
+	// is only expressible for build/test work — a chat task has no
+	// finish line in that vocabulary) and never clears: later turns in
+	// the same session keep recording and rollback protection. A session
+	// that never declares leaves no evidence trace at all, so an
+	// incidental build command in a chat turn neither grows the ledger
+	// nor arms regression notes for later casual turns. IsGoverned
+	// additionally reads the ledger live, so a resumed session (receipts
+	// replayed by Load) or a directly seeded one is governed without an
+	// explicit declaration. One thin edge is accepted by design: a
+	// session that declared a contract but never ran a single check
+	// resumes ungoverned — it fails in the safe direction (under-
+	// govern, never over-govern).
+	governed atomic.Bool
+	// maxToolCalls caps executed tool calls per turn (0 = unlimited). Atomic
+	// because the TUI can raise or lower it while a loop is running; the
+	// loop reads it fresh at every tool round. Yolo permission mode ignores
+	// the cap entirely.
+	maxToolCalls atomic.Int64
+	modelCfg     llm.ModelConfig
+	// baseModelCfg is the model the engine was constructed with. A
+	// persona switch to a persona without a Model override (or to the
+	// default persona) restores it, mirroring basePermissionMode.
+	baseModelCfg llm.ModelConfig
+	// basePermissionMode is the mode the surface ran before any persona
+	// override; restored when the next persona declares none.
+	basePermissionMode permission.Mode
+	hooks              llmclient.Hooks
+	// baseHooks is the hooks set the engine was constructed with (the
+	// surface wires model.HooksFor(mainModel)). A persona model swap
+	// replaces hooks with the override model's preset; reverting to the
+	// base model restores these — vendor-specific wire shapes must
+	// follow the model actually in use, not the one the surface booted
+	// with.
+	baseHooks    llmclient.Hooks
+	gate         permission.Gate
+	ask          permission.AskFunc
+	question     tooldef.QuestionFunc
+	continueAsk  ContinueFunc
+	jobs         *job.Manager
+	scheduler    *schedule.Scheduler // nil = no schedule tool (Bet 01 Clock)
+	extensions   *extension.Runner   // nil = disabled; all methods are nil-safe no-ops
+	baseTools    []tools.Tool        // nil = DefaultTools; preserved across rebind
+	omitExtTools bool                // sub-agents: emit events but skip RegisterTool merge
+	mcp          *mcp.Pool
+	memStore     *memstore.Store   // nil = no shared bank; remember/recall/revise/forget registered only when non-nil AND memory effective-on
+	embedder     memstore.Embedder // for opening per-persona SQLite stores lazily; nil = fall back to engine.memStore
+	// Credential pools, keyed by key-set signature (poolFor). Shared
+	// across the client rebuilds that SetJobs, scheduler attach, and
+	// surface model switches all trigger through rebindTools, so a
+	// rate-limited key's cooldown survives them. Guarded by poolMu:
+	// the Loop goroutine rebinds while the memory-outlet goroutine
+	// builds diary clients.
+	poolMu sync.Mutex
+	pools  map[string]*llm.KeyPool
+	// memoryEnabled is the surface's raw memory toggle (see
+	// WithMemoryEnabled). Atomic so the palette/web toggle can flip it
+	// while a loop runs; MemoryEnabled() derives the effective value
+	// from it + the active persona's override.
+	memoryEnabled atomic.Bool
+	// lastMemRider is the semantic memory bundle the most recent
+	// runtime rider persisted (see runtime_rider.go). The rider is
+	// change-gated against it: an identical bundle re-retrieved next
+	// turn is skipped — it is already frozen in history from the turn
+	// that injected it. Cleared on persona switch (the new persona's
+	// bank must re-inject) and empty on a fresh engine (one harmless
+	// re-injection after a resume).
+	lastMemRider string
+	// Persona apply-on-switch hooks. Optional; when nil, the
+	// corresponding persona setting is silently ignored on switch.
+	personaModelResolver PersonaModelResolver
+	permissionModeSetter PermissionModeSetter
+	// personalCfg supplies the live personal-data section for the
+	// agent-side personal tools (nil = no personal tools mount). Read
+	// at mount and at every call — see WithPersonalConfig.
+	personalCfg func() project.PersonalConfig
 
-        session *Session
-        // readCache backs the executor's read elision (see readcache.go):
-        // last full file-mode read per resolved path, keyed with the tool
-        // call whose message carries the content. Guarded by readCacheMu
-        // because read-only tool batches run concurrently. In-memory only —
-        // a restarted session starts cold, which is merely a missed elision.
-        readCacheMu sync.Mutex
-        readCache   map[string]readCacheEntry
-        // lastCompactEstimate is the expected context size right after the last
-        // compaction, used by the growth gate (billion-context §3.4). Compaction
-        // shrinks the context sharply, so gating on post-compaction size measures
-        // the consumed increment since then rather than the absolute size.
-        lastCompactEstimate int
-        // compactMu serializes compaction: the loop's post-turn auto path and
-        // a surface's ForceCompact (web /compact, TUI :compact) run on
-        // different goroutines, and two preparations against the same leaf
-        // would append two compaction entries — the second summarizing a
-        // zone the first already folded.
-        compactMu sync.Mutex
-        // jevAdv is the optional JEV decision-model advisor for evidence
-        // admission (nil = deterministic classifiers only). See
-        // jev_evidence.go.
-        jevAdv *jevEvidenceAdvisor
+	session *Session
+	// readCache backs the executor's read elision (see readcache.go):
+	// last full file-mode read per resolved path, keyed with the tool
+	// call whose message carries the content. Guarded by readCacheMu
+	// because read-only tool batches run concurrently. In-memory only —
+	// a restarted session starts cold, which is merely a missed elision.
+	readCacheMu sync.Mutex
+	readCache   map[string]readCacheEntry
+	// lastCompactEstimate is the expected context size right after the last
+	// compaction, used by the growth gate (billion-context §3.4). Compaction
+	// shrinks the context sharply, so gating on post-compaction size measures
+	// the consumed increment since then rather than the absolute size.
+	lastCompactEstimate int
+	// compactMu serializes compaction: the loop's post-turn auto path and
+	// a surface's ForceCompact (web /compact, TUI :compact) run on
+	// different goroutines, and two preparations against the same leaf
+	// would append two compaction entries — the second summarizing a
+	// zone the first already folded.
+	compactMu sync.Mutex
+	// jevAdv is the optional JEV decision-model advisor for evidence
+	// admission (nil = deterministic classifiers only). See
+	// jev_evidence.go.
+	jevAdv *jevEvidenceAdvisor
 
-        // Runtime context-window resolution (see engine_window.go and
-        // doc/context-folding-math.md §4). ctxWindow is the effective window the
-        // compaction triggers use — atomic because the TUI footer reads it live
-        // while a loop may still be resolving. windowResolved gates the one-time
-        // probe/assume. windowProber is injectable for tests.
-        ctxWindow      atomic.Int64
-        windowResolved atomic.Bool
-        windowProber   WindowProber
+	// Runtime context-window resolution (see engine_window.go and
+	// doc/context-folding-math.md §4). ctxWindow is the effective window the
+	// compaction triggers use — atomic because the TUI footer reads it live
+	// while a loop may still be resolving. windowResolved gates the one-time
+	// probe/assume. windowProber is injectable for tests.
+	ctxWindow      atomic.Int64
+	windowResolved atomic.Bool
+	windowProber   WindowProber
 }
 
 // NewEngine wires an LLM client, tool executor, and an externally created session.
 func NewEngine(model llm.ModelConfig, sess *Session, opts ...EngineOption) (*Engine, error) {
-        if sess == nil {
-                return nil, errors.New("agent: session is required")
-        }
-        var cfg engineConfig
-        for _, opt := range opts {
-                opt(&cfg)
-        }
-        engine := &Engine{
-                maxRounds:            defaultMaxToolRounds,
-                modelCfg:             model,
-                baseModelCfg:         model,
-                hooks:                cfg.hooks,
-                baseHooks:            cfg.hooks,
-                session:              sess,
-                gate:                 cfg.gate,
-                ask:                  cfg.ask,
-                question:             cfg.question,
-                continueAsk:          cfg.continueAsk,
-                jobs:                 cfg.jobs,
-                scheduler:            cfg.scheduler,
-                agentDepth:           cfg.agentDepth,
-                extensions:           cfg.extensions,
-                omitExtTools:         cfg.omitExtTools,
-                mcp:                  cfg.mcp,
-                memStore:             cfg.memStore,
-                embedder:             cfg.embedder,
-                personaModelResolver: cfg.personaModelResolver,
-                personalCfg:          cfg.personalCfg,
-                pools:                make(map[string]*llm.KeyPool),
-                permissionModeSetter: cfg.permissionModeSetter,
-                basePermissionMode:   cfg.basePermissionMode,
-                evidence:             defaultEvidenceLedger(sess, cfg.evidence, cfg.evidenceChecks),
-        }
-        // Raw surface toggle: default ON when the surface never set it —
-        // engines that predate the toggle keep their behavior. The two
-        // real surfaces always pass WithMemoryEnabled explicitly.
-        engine.memoryEnabled.Store(!cfg.memoryEnabledSet || cfg.memoryEnabled)
-        if cfg.maxRounds > 0 {
-                engine.maxRounds = cfg.maxRounds
-        }
-        if cfg.maxToolCalls > 0 {
-                engine.maxToolCalls.Store(int64(cfg.maxToolCalls))
-        }
-        engine.stallLimit.Store(defaultEvidenceStallLimit)
-        if cfg.stallLimitSet {
-                engine.stallLimit.Store(int64(max(cfg.stallLimit, 0)))
-        }
-        engine.zeroRankBudget.Store(defaultZeroRankBudget)
-        if cfg.zeroRankBudgetSet {
-                engine.zeroRankBudget.Store(int64(max(cfg.zeroRankBudget, 0)))
-        }
-        engine.budgetContracts.Store(true)
-        if cfg.budgetContractsSet {
-                engine.budgetContracts.Store(cfg.budgetContracts)
-        }
-        if cfg.windowProber != nil {
-                engine.windowProber = cfg.windowProber
-        }
-        // JEV evidence advisor: explicit wiring wins (tests); otherwise the
-        // config-gated constructor — nil with no decision model configured
-        // (jev: section or TYPESAFE_API_KEY), so the default engine is
-        // byte-for-byte the pre-JEV behavior.
-        engine.jevAdv = cfg.jevEvidence
-        if engine.jevAdv == nil {
-                engine.jevAdv = newJevEvidenceAdvisor()
-        }
-        engine.resetWindowForModel(model)
-        engine.baseTools = cfg.tools
-        engine.extensions.SetBaseTools(engine.buildCoreTools(engine.baseTools))
-        engine.extensions.SetMeta(engine.SessionID(), engine.SessionCwd())
-        toolList := engine.buildToolList(engine.baseTools)
-        engine.client = llmclient.NewClient(model, engine.hooks, tools.Definitions(toolList), engine.systemPrompt()).SetKeyPool(engine.poolFor(model)).SetCacheScope(engine.cacheScope())
-        // Learning loop intervals: a review every defaultLearnNudgeInterval
-        // opportunities unless an option said otherwise (learning.go owns
-        // the semantics; this is just the default install).
-        engine.learnMemInterval.Store(defaultLearnNudgeInterval)
-        engine.learnSkillInterval.Store(defaultLearnNudgeInterval)
-        engine.consolidationInterval = engine.resolveConsolidationInterval(cfg.consolidationInterval)
-        if cfg.learnMemInterval > 0 {
-                engine.learnMemInterval.Store(int64(cfg.learnMemInterval))
-        }
-        if cfg.learnSkillInterval > 0 {
-                engine.learnSkillInterval.Store(int64(cfg.learnSkillInterval))
-        }
-        engine.bindExecutor(tools.NewRegistry(toolList))
-        return engine, nil
+	if sess == nil {
+		return nil, errors.New("agent: session is required")
+	}
+	var cfg engineConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	engine := &Engine{
+		maxRounds:            defaultMaxToolRounds,
+		modelCfg:             model,
+		baseModelCfg:         model,
+		hooks:                cfg.hooks,
+		baseHooks:            cfg.hooks,
+		session:              sess,
+		gate:                 cfg.gate,
+		ask:                  cfg.ask,
+		question:             cfg.question,
+		continueAsk:          cfg.continueAsk,
+		jobs:                 cfg.jobs,
+		scheduler:            cfg.scheduler,
+		agentDepth:           cfg.agentDepth,
+		extensions:           cfg.extensions,
+		omitExtTools:         cfg.omitExtTools,
+		mcp:                  cfg.mcp,
+		memStore:             cfg.memStore,
+		embedder:             cfg.embedder,
+		personaModelResolver: cfg.personaModelResolver,
+		personalCfg:          cfg.personalCfg,
+		pools:                make(map[string]*llm.KeyPool),
+		permissionModeSetter: cfg.permissionModeSetter,
+		basePermissionMode:   cfg.basePermissionMode,
+		evidence:             defaultEvidenceLedger(sess, cfg.evidence, cfg.evidenceChecks),
+	}
+	// Raw surface toggle: default ON when the surface never set it —
+	// engines that predate the toggle keep their behavior. The two
+	// real surfaces always pass WithMemoryEnabled explicitly.
+	engine.memoryEnabled.Store(!cfg.memoryEnabledSet || cfg.memoryEnabled)
+	if cfg.maxRounds > 0 {
+		engine.maxRounds = cfg.maxRounds
+	}
+	if cfg.maxToolCalls > 0 {
+		engine.maxToolCalls.Store(int64(cfg.maxToolCalls))
+	}
+	engine.stallLimit.Store(defaultEvidenceStallLimit)
+	if cfg.stallLimitSet {
+		engine.stallLimit.Store(int64(max(cfg.stallLimit, 0)))
+	}
+	engine.zeroRankBudget.Store(defaultZeroRankBudget)
+	if cfg.zeroRankBudgetSet {
+		engine.zeroRankBudget.Store(int64(max(cfg.zeroRankBudget, 0)))
+	}
+	engine.budgetContracts.Store(true)
+	if cfg.budgetContractsSet {
+		engine.budgetContracts.Store(cfg.budgetContracts)
+	}
+	if cfg.windowProber != nil {
+		engine.windowProber = cfg.windowProber
+	}
+	// JEV evidence advisor: explicit wiring wins (tests); otherwise the
+	// config-gated constructor — nil with no decision model configured
+	// (jev: section or TYPESAFE_API_KEY), so the default engine is
+	// byte-for-byte the pre-JEV behavior.
+	engine.jevAdv = cfg.jevEvidence
+	if engine.jevAdv == nil {
+		engine.jevAdv = newJevEvidenceAdvisor()
+	}
+	engine.resetWindowForModel(model)
+	engine.baseTools = cfg.tools
+	engine.extensions.SetBaseTools(engine.buildCoreTools(engine.baseTools))
+	engine.extensions.SetMeta(engine.SessionID(), engine.SessionCwd())
+	toolList := engine.buildToolList(engine.baseTools)
+	engine.client = llmclient.NewClient(model, engine.hooks, tools.Definitions(toolList), engine.systemPrompt()).SetKeyPool(engine.poolFor(model)).SetCacheScope(engine.cacheScope())
+	// Learning loop intervals: a review every defaultLearnNudgeInterval
+	// opportunities unless an option said otherwise (learning.go owns
+	// the semantics; this is just the default install).
+	engine.learnMemInterval.Store(defaultLearnNudgeInterval)
+	engine.learnSkillInterval.Store(defaultLearnNudgeInterval)
+	engine.consolidationInterval = engine.resolveConsolidationInterval(cfg.consolidationInterval)
+	if cfg.learnMemInterval > 0 {
+		engine.learnMemInterval.Store(int64(cfg.learnMemInterval))
+	}
+	if cfg.learnSkillInterval > 0 {
+		engine.learnSkillInterval.Store(int64(cfg.learnSkillInterval))
+	}
+	engine.bindExecutor(tools.NewRegistry(toolList))
+	return engine, nil
 }
 
 func (engine *Engine) buildToolList(base []tools.Tool) []tools.Tool {
-        out := engine.buildCoreTools(base)
-        if !engine.omitExtTools {
-                if extTools := engine.extensions.ExtensionTools(); len(extTools) > 0 {
-                        merged := make([]tools.Tool, 0, len(out)+len(extTools))
-                        merged = append(merged, out...)
-                        merged = append(merged, extTools...)
-                        return merged
-                }
-        }
-        return out
+	out := engine.buildCoreTools(base)
+	if !engine.omitExtTools {
+		if extTools := engine.extensions.ExtensionTools(); len(extTools) > 0 {
+			merged := make([]tools.Tool, 0, len(out)+len(extTools))
+			merged = append(merged, out...)
+			merged = append(merged, extTools...)
+			return merged
+		}
+	}
+	return out
 }
 
 // buildCoreTools returns builtin (+ MCP + agent_* + memory) tools without extension RegisterTool.
 func (engine *Engine) buildCoreTools(base []tools.Tool) []tools.Tool {
-        if base == nil {
-                base = tools.DefaultTools()
-        }
-        out := base
-        // contract tool: the model's declaration surface for machine-checked
-        // done-criteria (Phase 3 zero-rank stop). Registered unconditionally —
-        // a contract can be declared even in a fresh workspace with no
-        // evidence yet; the residual judgment handles no-evidence checks.
-        out = append(out, engine.contractTool())
-        // budget tool: the model's declaration surface for tool-round budgets
-        // (Phase 5 budget contracting). Registered unconditionally — an
-        // undeclared budget simply never binds, so plain chat turns are
-        // untouched.
-        out = append(out, engine.budgetTool())
-        // list_skills tool: lets the model discover available skills
-        // on demand instead of the skills catalog being injected into
-        // the system prompt (~3.4K token saving per request). The tool
-        // reads the skill directory from the model config's SkillPath.
-        if skillPath := engine.modelCfg.SkillPath; skillPath != "" {
-                out = append(out, skilltool.ListSkillsTool(skillPath))
-        }
-        // session_search tool: raw-transcript recall over this project's
-        // past sessions. The memory bank holds distilled facts; the
-        // transcripts hold what was actually said — the two answer
-        // different questions, and only the human could browse the second
-        // one until now. Registered whenever the session persists under a
-        // directory a listing can read; in-memory sessions (tests) have
-        // nothing to search. The live session id rides along so the tool
-        // never restates the transcript the model already holds.
-        if dir := engine.SessionDir(); dir != "" {
-                out = append(out, sessiontool.SessionSearchTool(dir, engine.SessionID()))
-        }
-        // Memory tools (remember/recall/revise/forget) are registered only
-        // when a shared bank is attached AND memory is effectively on —
-        // MemoryEnabled() folds the surface's raw toggle (Ctrl+K / web
-        // settings) together with the ACTIVE persona's memory_enabled
-        // override, so a persona that opts out (or in) moves tool
-        // registration on the very next switch/rebind.
-        if engine.memStore != nil && engine.MemoryEnabled() {
-                memTools := memtool.Tools(engine.memStore)
-                if len(memTools) > 0 {
-                        merged := make([]tools.Tool, 0, len(out)+len(memTools))
-                        merged = append(merged, out...)
-                        merged = append(merged, memTools...)
-                        out = merged
-                }
-        }
-        if engine.mcp != nil {
-                mcpTools := tools.MCPTools(engine.mcp)
-                if len(mcpTools) > 0 {
-                        merged := make([]tools.Tool, 0, len(out)+len(mcpTools))
-                        merged = append(merged, out...)
-                        merged = append(merged, mcpTools...)
-                        out = merged
-                }
-        }
-        // Personal-data tools (dashboard chunks 2+): the calendar, kanban,
-        // and mail facades mount only when the LIVE personal section is
-        // enabled and the active model opted into reads. This is the
-        // convenience check — the enforcement is in the tools, which re-read
-        // the switch and the model's flags on every call, so a stale or
-        // mis-built mount can neither read nor write. Deliberately BEFORE
-        // the jobs early return: personal data is not fleet machinery, and
-        // an engine without a job manager (most chat sessions) still gets
-        // it.
-        if engine.personalConfig().EnabledResolved() && engine.modelCfg.PersonalRead {
-                out = append(out, calendartool.CalendarTool(calendartool.Deps{
-                        CalendarDir:  engine.personalCalendarDir,
-                        ReadAllowed:  engine.personalReadAllowed,
-                        WriteAllowed: engine.personalWriteAllowed,
-                }))
-                // The board has no directory to configure — it lives in
-                // the vault beside the sessions and tool runs, so the
-                // facade takes its handle from the process-wide default
-                // the TUI and web surfaces install (the evidence ledger's
-                // path), read live at call time: no vault, honest refusal.
-                out = append(out, kanbantool.KanbanTool(kanbantool.Deps{
-                        DB: func() *sql.DB {
-                                if v := session.DefaultVault(); v != nil {
-                                        return v.DB()
-                                }
-                                return nil
-                        },
-                        ReadAllowed:  engine.personalReadAllowed,
-                        WriteAllowed: engine.personalWriteAllowed,
-                }))
-                // The Maildir facade is the read-only personal surface: no
-                // write hook exists on it at all, and the model reads the
-                // envelope only (bodies are a webui privilege) — the strictest
-                // of the three by design, because mail is the most personal.
-                out = append(out, mailtool.MailTool(mailtool.Deps{
-                        MailDir:     engine.personalMailDir,
-                        ReadAllowed: engine.personalReadAllowed,
-                }))
-        }
-        if engine.jobs == nil {
-                return out
-        }
-        agentTools := tools.AgentTools(tools.AgentDeps{
-                Manager:       engine.jobs,
-                ParentID:      engine.SessionID,
-                WorkDir:       engine.SessionCwd,
-                Depth:         engine.agentDepth,
-                FleetContract: engine.TaskContract,
-        })
-        merged := make([]tools.Tool, 0, len(out)+len(agentTools))
-        merged = append(merged, out...)
-        merged = append(merged, agentTools...)
-        out = merged
-        // Schedule tool (Bet 01 Clock): registered only when the surface
-        // wired a scheduler. One facade with an action enum — the
-        // always-on tool count stays put (see the anti-goals).
-        if engine.scheduler != nil {
-                out = append(out, scheduletool.ScheduleTool(scheduletool.Deps{
-                        Scheduler:     engine.scheduler,
-                        WorkDir:       engine.SessionCwd,
-                        FleetContract: engine.TaskContract,
-                }))
-        }
-        return out
+	if base == nil {
+		base = tools.DefaultTools()
+	}
+	out := base
+	// contract tool: the model's declaration surface for machine-checked
+	// done-criteria (Phase 3 zero-rank stop). Registered unconditionally —
+	// a contract can be declared even in a fresh workspace with no
+	// evidence yet; the residual judgment handles no-evidence checks.
+	out = append(out, engine.contractTool())
+	// budget tool: the model's declaration surface for tool-round budgets
+	// (Phase 5 budget contracting). Registered unconditionally — an
+	// undeclared budget simply never binds, so plain chat turns are
+	// untouched.
+	out = append(out, engine.budgetTool())
+	// list_skills tool: lets the model discover available skills
+	// on demand instead of the skills catalog being injected into
+	// the system prompt (~3.4K token saving per request). The tool
+	// reads the skill directory from the model config's SkillPath.
+	if skillPath := engine.modelCfg.SkillPath; skillPath != "" {
+		out = append(out, skilltool.ListSkillsTool(skillPath))
+	}
+	// session_search tool: raw-transcript recall over this project's
+	// past sessions. The memory bank holds distilled facts; the
+	// transcripts hold what was actually said — the two answer
+	// different questions, and only the human could browse the second
+	// one until now. Registered whenever the session persists under a
+	// directory a listing can read; in-memory sessions (tests) have
+	// nothing to search. The live session id rides along so the tool
+	// never restates the transcript the model already holds.
+	if dir := engine.SessionDir(); dir != "" {
+		out = append(out, sessiontool.SessionSearchTool(dir, engine.SessionID()))
+	}
+	// Memory tools (remember/recall/revise/forget) are registered only
+	// when a shared bank is attached AND memory is effectively on —
+	// MemoryEnabled() folds the surface's raw toggle (Ctrl+K / web
+	// settings) together with the ACTIVE persona's memory_enabled
+	// override, so a persona that opts out (or in) moves tool
+	// registration on the very next switch/rebind.
+	if engine.memStore != nil && engine.MemoryEnabled() {
+		memTools := memtool.Tools(engine.memStore)
+		if len(memTools) > 0 {
+			merged := make([]tools.Tool, 0, len(out)+len(memTools))
+			merged = append(merged, out...)
+			merged = append(merged, memTools...)
+			out = merged
+		}
+	}
+	if engine.mcp != nil {
+		mcpTools := tools.MCPTools(engine.mcp)
+		if len(mcpTools) > 0 {
+			merged := make([]tools.Tool, 0, len(out)+len(mcpTools))
+			merged = append(merged, out...)
+			merged = append(merged, mcpTools...)
+			out = merged
+		}
+	}
+	// Personal-data tools (dashboard chunks 2+): the calendar, kanban,
+	// and mail facades mount only when the LIVE personal section is
+	// enabled and the active model opted into reads. This is the
+	// convenience check — the enforcement is in the tools, which re-read
+	// the switch and the model's flags on every call, so a stale or
+	// mis-built mount can neither read nor write. Deliberately BEFORE
+	// the jobs early return: personal data is not fleet machinery, and
+	// an engine without a job manager (most chat sessions) still gets
+	// it.
+	if engine.personalConfig().EnabledResolved() && engine.modelCfg.PersonalRead {
+		out = append(out, calendartool.CalendarTool(calendartool.Deps{
+			CalendarDir:  engine.personalCalendarDir,
+			ReadAllowed:  engine.personalReadAllowed,
+			WriteAllowed: engine.personalWriteAllowed,
+		}))
+		// The board has no directory to configure — it lives in
+		// the vault beside the sessions and tool runs, so the
+		// facade takes its handle from the process-wide default
+		// the TUI and web surfaces install (the evidence ledger's
+		// path), read live at call time: no vault, honest refusal.
+		out = append(out, kanbantool.KanbanTool(kanbantool.Deps{
+			DB: func() *sql.DB {
+				if v := session.DefaultVault(); v != nil {
+					return v.DB()
+				}
+				return nil
+			},
+			ReadAllowed:  engine.personalReadAllowed,
+			WriteAllowed: engine.personalWriteAllowed,
+		}))
+		// The Maildir facade is the read-only personal surface: no
+		// write hook exists on it at all, and the model reads the
+		// envelope only (bodies are a webui privilege) — the strictest
+		// of the three by design, because mail is the most personal.
+		out = append(out, mailtool.MailTool(mailtool.Deps{
+			MailDir:     engine.personalMailDir,
+			ReadAllowed: engine.personalReadAllowed,
+		}))
+	}
+	if engine.jobs == nil {
+		return out
+	}
+	agentTools := tools.AgentTools(tools.AgentDeps{
+		Manager:       engine.jobs,
+		ParentID:      engine.SessionID,
+		WorkDir:       engine.SessionCwd,
+		Depth:         engine.agentDepth,
+		FleetContract: engine.TaskContract,
+	})
+	merged := make([]tools.Tool, 0, len(out)+len(agentTools))
+	merged = append(merged, out...)
+	merged = append(merged, agentTools...)
+	out = merged
+	// Schedule tool (Bet 01 Clock): registered only when the surface
+	// wired a scheduler. One facade with an action enum — the
+	// always-on tool count stays put (see the anti-goals).
+	if engine.scheduler != nil {
+		out = append(out, scheduletool.ScheduleTool(scheduletool.Deps{
+			Scheduler:     engine.scheduler,
+			WorkDir:       engine.SessionCwd,
+			FleetContract: engine.TaskContract,
+		}))
+	}
+	return out
 }
 
 // personalConfig returns the live personal section (zero when no provider
 // was wired — locked, the safe default).
 func (engine *Engine) personalConfig() project.PersonalConfig {
-        if engine == nil || engine.personalCfg == nil {
-                return project.PersonalConfig{}
-        }
-        return engine.personalCfg()
+	if engine == nil || engine.personalCfg == nil {
+		return project.PersonalConfig{}
+	}
+	return engine.personalCfg()
 }
 
 func (engine *Engine) personalCalendarDir() string {
-        return engine.personalConfig().CalendarDir
+	return engine.personalConfig().CalendarDir
 }
 
 // personalMailDir is personalCalendarDir for the Maildir root.
 func (engine *Engine) personalMailDir() string {
-        return engine.personalConfig().MailDir
+	return engine.personalConfig().MailDir
 }
 
 // personalReadAllowed folds the live master switch with the ACTIVE model's
 // opt-in — read at call time, never captured.
 func (engine *Engine) personalReadAllowed() bool {
-        return engine.personalConfig().EnabledResolved() && engine.modelCfg.PersonalRead
+	return engine.personalConfig().EnabledResolved() && engine.modelCfg.PersonalRead
 }
 
 // personalWriteAllowed is personalReadAllowed for the write face.
 func (engine *Engine) personalWriteAllowed() bool {
-        return engine.personalConfig().EnabledResolved() && engine.modelCfg.PersonalWrite
+	return engine.personalConfig().EnabledResolved() && engine.modelCfg.PersonalWrite
 }
 
 // RefreshPersonalTools rebuilds the tool bindings so a personal-config
@@ -575,17 +575,17 @@ func (engine *Engine) personalWriteAllowed() bool {
 // every other rebind trigger is (the running loop keeps its client
 // reference, the next round picks up the new binding).
 func (engine *Engine) RefreshPersonalTools() {
-        if engine == nil {
-                return
-        }
-        engine.rebindTools()
+	if engine == nil {
+		return
+	}
+	engine.rebindTools()
 }
 
 // SetModel replaces the LLM client and model-related settings without
 // discarding the session tree. Agent tools remain registered when Jobs is set.
 // Hooks are left unchanged; use SetModelWithHooks when switching presets.
 func (engine *Engine) SetModel(cfg llm.ModelConfig) {
-        engine.SetModelWithHooks(cfg, engine.hooks)
+	engine.SetModelWithHooks(cfg, engine.hooks)
 }
 
 // SetModelWithHooks replaces the model config and request hooks together.
@@ -601,12 +601,12 @@ func (engine *Engine) SetModel(cfg llm.ModelConfig) {
 // reverted live engines to whatever model they booted with — the footer
 // then showed a different model than the settings panel had picked.
 func (engine *Engine) SetModelWithHooks(cfg llm.ModelConfig, hooks llmclient.Hooks) {
-        engine.modelCfg = cfg
-        engine.baseModelCfg = cfg
-        engine.hooks = hooks
-        engine.baseHooks = hooks
-        engine.resetWindowForModel(cfg)
-        engine.rebindTools()
+	engine.modelCfg = cfg
+	engine.baseModelCfg = cfg
+	engine.hooks = hooks
+	engine.baseHooks = hooks
+	engine.resetWindowForModel(cfg)
+	engine.rebindTools()
 }
 
 // SetMemoryStore attaches or detaches the semantic memory bank and rebuilds
@@ -614,11 +614,11 @@ func (engine *Engine) SetModelWithHooks(cfg llm.ModelConfig, hooks llmclient.Hoo
 // nil unregisters them. Used by the web surface's memory toggle to rebind
 // live engines without restarting their sessions.
 func (engine *Engine) SetMemoryStore(store *memstore.Store) {
-        if engine == nil {
-                return
-        }
-        engine.memStore = store
-        engine.rebindTools()
+	if engine == nil {
+		return
+	}
+	engine.memStore = store
+	engine.rebindTools()
 }
 
 // SetMemoryEnabled sets the surface's raw memory toggle (the global knob the
@@ -630,11 +630,11 @@ func (engine *Engine) SetMemoryStore(store *memstore.Store) {
 // handlers do exactly that when the active persona carries an explicit
 // setting).
 func (engine *Engine) SetMemoryEnabled(enabled bool) {
-        if engine == nil {
-                return
-        }
-        engine.memoryEnabled.Store(enabled)
-        engine.rebindTools()
+	if engine == nil {
+		return
+	}
+	engine.memoryEnabled.Store(enabled)
+	engine.rebindTools()
 }
 
 // MemoryEnabled reports the EFFECTIVE memory state: the active persona's
@@ -649,53 +649,53 @@ func (engine *Engine) SetMemoryEnabled(enabled bool) {
 // The persona is read live, so a SetPersona (or a persona edit) takes effect
 // on the next MemoryEnabled() call without any extra invalidation.
 func (engine *Engine) MemoryEnabled() bool {
-        if engine == nil {
-                return false
-        }
-        pstore := engine.personaStore()
-        if pstore == nil {
-                return engine.memoryEnabled.Load()
-        }
-        p, err := pstore.ActivePersona()
-        if err != nil {
-                return engine.memoryEnabled.Load()
-        }
-        if p.MemoryEnabled != nil {
-                return *p.MemoryEnabled
-        }
-        return engine.memoryEnabled.Load()
+	if engine == nil {
+		return false
+	}
+	pstore := engine.personaStore()
+	if pstore == nil {
+		return engine.memoryEnabled.Load()
+	}
+	p, err := pstore.ActivePersona()
+	if err != nil {
+		return engine.memoryEnabled.Load()
+	}
+	if p.MemoryEnabled != nil {
+		return *p.MemoryEnabled
+	}
+	return engine.memoryEnabled.Load()
 }
 
 // SetJobs attaches or detaches the job manager and rebuilds the tool list.
 // Pass nil to unregister agent_* tools (sub-agents disabled).
 func (engine *Engine) SetJobs(jobs *job.Manager) {
-        if engine == nil {
-                return
-        }
-        engine.jobs = jobs
-        engine.rebindTools()
+	if engine == nil {
+		return
+	}
+	engine.jobs = jobs
+	engine.rebindTools()
 }
 
 // SetScheduler attaches or detaches the Clock's scheduler (Bet 01) and
 // rebinds, so the schedule tool appears/disappears live — mirroring SetJobs.
 func (engine *Engine) SetScheduler(s *schedule.Scheduler) {
-        if engine == nil {
-                return
-        }
-        engine.scheduler = s
-        engine.rebindTools()
+	if engine == nil {
+		return
+	}
+	engine.scheduler = s
+	engine.rebindTools()
 }
 
 func (engine *Engine) rebindTools() {
-        engine.extensions.SetBaseTools(engine.buildCoreTools(engine.baseTools))
-        toolList := engine.buildToolList(engine.baseTools)
-        engine.client = llmclient.NewClient(
-                engine.modelCfg,
-                engine.hooks,
-                tools.Definitions(toolList),
-                engine.systemPrompt(),
-        ).SetKeyPool(engine.poolFor(engine.modelCfg)).SetCacheScope(engine.cacheScope())
-        engine.bindExecutor(tools.NewRegistry(toolList))
+	engine.extensions.SetBaseTools(engine.buildCoreTools(engine.baseTools))
+	toolList := engine.buildToolList(engine.baseTools)
+	engine.client = llmclient.NewClient(
+		engine.modelCfg,
+		engine.hooks,
+		tools.Definitions(toolList),
+		engine.systemPrompt(),
+	).SetKeyPool(engine.poolFor(engine.modelCfg)).SetCacheScope(engine.cacheScope())
+	engine.bindExecutor(tools.NewRegistry(toolList))
 }
 
 // poolFor returns the shared credential pool for a model config's key set,
@@ -705,44 +705,44 @@ func (engine *Engine) rebindTools() {
 // rate-limit memory intact. Nil (fewer than two unique keys) is the
 // single-key world; SetKeyPool reads nil as "no pool".
 func (engine *Engine) poolFor(cfg llm.ModelConfig) *llm.KeyPool {
-        all := append([]string{cfg.APIKey}, cfg.APIKeys...)
-        sig := llm.KeySetSignature(all)
-        engine.poolMu.Lock()
-        defer engine.poolMu.Unlock()
-        if p, ok := engine.pools[sig]; ok {
-                return p
-        }
-        p := llm.NewKeyPool(all)
-        if p == nil {
-                return nil
-        }
-        engine.pools[sig] = p
-        return p
+	all := append([]string{cfg.APIKey}, cfg.APIKeys...)
+	sig := llm.KeySetSignature(all)
+	engine.poolMu.Lock()
+	defer engine.poolMu.Unlock()
+	if p, ok := engine.pools[sig]; ok {
+		return p
+	}
+	p := llm.NewKeyPool(all)
+	if p == nil {
+		return nil
+	}
+	engine.pools[sig] = p
+	return p
 }
 
 func (engine *Engine) systemPrompt() string {
-        // Persona takeover: when the active persona opts in ("replace the
-        // default system prompt"), its prompt IS the system prompt — the
-        // built-in a1 behavioral template, project context, skills and MCP
-        // catalogs are all dropped so the persona's voice is the only voice.
-        // Runtime context (persona memories, the change-gated memory
-        // bundle, job notices) rides as persisted Runtime-marked user
-        // messages (see runtime_rider.go); the clock and the forecast are
-        // fetch engines the model calls when it needs them.
-        if engine.session != nil {
-                if p, ok := engine.session.activePersona(); ok && p.ReplacesSystemPrompt() {
-                        return strings.TrimSpace(p.SystemPrompt)
-                }
-        }
-        var mcpServers []string
-        if engine.mcp != nil {
-                mcpServers = engine.mcp.ServerNames()
-        }
-        maxConcurrent := 0
-        if engine.jobs != nil {
-                maxConcurrent = engine.jobs.MaxConcurrent()
-        }
-        return prompt.Build(engine.modelCfg.SkillPath, engine.jobs != nil, maxConcurrent, mcpServers)
+	// Persona takeover: when the active persona opts in ("replace the
+	// default system prompt"), its prompt IS the system prompt — the
+	// built-in a1 behavioral template, project context, skills and MCP
+	// catalogs are all dropped so the persona's voice is the only voice.
+	// Runtime context (persona memories, the change-gated memory
+	// bundle, job notices) rides as persisted Runtime-marked user
+	// messages (see runtime_rider.go); the clock and the forecast are
+	// fetch engines the model calls when it needs them.
+	if engine.session != nil {
+		if p, ok := engine.session.activePersona(); ok && p.ReplacesSystemPrompt() {
+			return strings.TrimSpace(p.SystemPrompt)
+		}
+	}
+	var mcpServers []string
+	if engine.mcp != nil {
+		mcpServers = engine.mcp.ServerNames()
+	}
+	maxConcurrent := 0
+	if engine.jobs != nil {
+		maxConcurrent = engine.jobs.MaxConcurrent()
+	}
+	return prompt.Build(engine.modelCfg.SkillPath, engine.jobs != nil, maxConcurrent, mcpServers)
 }
 
 // SetPersona switches the active persona on this engine and rebinds the LLM
@@ -774,15 +774,15 @@ func (engine *Engine) systemPrompt() string {
 // off mid-session is honored immediately on the next turn without needing
 // an explicit clear here.
 func (engine *Engine) SetPersona(id string) error {
-        if engine == nil {
-                return errors.New("agent: nil engine")
-        }
-        if err := engine.session.SetPersona(id); err != nil {
-                return err
-        }
-        engine.applyPersonaSettings()
-        engine.rebindTools()
-        return nil
+	if engine == nil {
+		return errors.New("agent: nil engine")
+	}
+	if err := engine.session.SetPersona(id); err != nil {
+		return err
+	}
+	engine.applyPersonaSettings()
+	engine.rebindTools()
+	return nil
 }
 
 // applyPersonaSettings reads the active persona and applies its per-persona
@@ -810,101 +810,101 @@ func (engine *Engine) SetPersona(id string) error {
 // misconfigured persona setting should never break the persona switch
 // itself. The user keeps a working setup; the bad setting is just ignored.
 func (engine *Engine) applyPersonaSettings() {
-        if engine == nil || engine.session == nil {
-                return
-        }
-        // 1. Clear the memory-rider gate. The new persona has its own
-        //    semantic memory namespace; a bundle injected by the previous
-        //    persona must not suppress the new one's first injection.
-        //    The rider is rebuilt on the next turn via
-        //    injectSemanticMemories().
-        engine.lastMemRider = ""
+	if engine == nil || engine.session == nil {
+		return
+	}
+	// 1. Clear the memory-rider gate. The new persona has its own
+	//    semantic memory namespace; a bundle injected by the previous
+	//    persona must not suppress the new one's first injection.
+	//    The rider is rebuilt on the next turn via
+	//    injectSemanticMemories().
+	engine.lastMemRider = ""
 
-        // Look up the active persona. No store (or read error) → treat as
-        // the default persona: restore base settings, clear nothing else.
-        pstore := engine.personaStore()
-        if pstore == nil {
-                return
-        }
-        p, err := pstore.ActivePersona()
-        if err != nil {
-                return
-        }
+	// Look up the active persona. No store (or read error) → treat as
+	// the default persona: restore base settings, clear nothing else.
+	pstore := engine.personaStore()
+	if pstore == nil {
+		return
+	}
+	p, err := pstore.ActivePersona()
+	if err != nil {
+		return
+	}
 
-        // 2. Apply the model override, or revert to base when this persona
-        //    doesn't name one. Both directions reset the runtime context
-        //    window: the new model's provider may have a different window,
-        //    and a stale denominator would mis-trigger (or skip) compaction.
-        //    Hooks follow the model in use — a persona model on another
-        //    provider needs that provider's wire shape, not the main one's.
-        if p.Model != "" {
-                if engine.personaModelResolver != nil {
-                        if m, ok := engine.personaModelResolver(p.Model); ok {
-                                engine.modelCfg = m
-                                engine.hooks = model.HooksFor(m.Name)
-                                engine.resetWindowForModel(m)
-                        }
-                        // Resolver miss → keep the previous modelCfg. The user
-                        // will see the wrong model in use; better to keep a
-                        // working model than to break the engine.
-                }
-        } else if engine.modelCfg.Name != engine.baseModelCfg.Name {
-                engine.modelCfg = engine.baseModelCfg
-                engine.hooks = engine.baseHooks
-                engine.resetWindowForModel(engine.baseModelCfg)
-        }
+	// 2. Apply the model override, or revert to base when this persona
+	//    doesn't name one. Both directions reset the runtime context
+	//    window: the new model's provider may have a different window,
+	//    and a stale denominator would mis-trigger (or skip) compaction.
+	//    Hooks follow the model in use — a persona model on another
+	//    provider needs that provider's wire shape, not the main one's.
+	if p.Model != "" {
+		if engine.personaModelResolver != nil {
+			if m, ok := engine.personaModelResolver(p.Model); ok {
+				engine.modelCfg = m
+				engine.hooks = model.HooksFor(m.Name)
+				engine.resetWindowForModel(m)
+			}
+			// Resolver miss → keep the previous modelCfg. The user
+			// will see the wrong model in use; better to keep a
+			// working model than to break the engine.
+		}
+	} else if engine.modelCfg.Name != engine.baseModelCfg.Name {
+		engine.modelCfg = engine.baseModelCfg
+		engine.hooks = engine.baseHooks
+		engine.resetWindowForModel(engine.baseModelCfg)
+	}
 
-        // 3. Apply the permission-mode override, or restore the base mode.
-        //    The setter rebuilds the surface's gate, so the restriction (or
-        //    its removal) is live from the very next tool call.
-        if engine.permissionModeSetter == nil {
-                return
-        }
-        if p.PermissionMode != "" {
-                engine.permissionModeSetter(permission.Mode(p.PermissionMode))
-                return
-        }
-        if engine.basePermissionMode != "" && engine.basePermissionMode != permission.ModeOf(engine.gate) {
-                engine.permissionModeSetter(engine.basePermissionMode)
-        }
+	// 3. Apply the permission-mode override, or restore the base mode.
+	//    The setter rebuilds the surface's gate, so the restriction (or
+	//    its removal) is live from the very next tool call.
+	if engine.permissionModeSetter == nil {
+		return
+	}
+	if p.PermissionMode != "" {
+		engine.permissionModeSetter(permission.Mode(p.PermissionMode))
+		return
+	}
+	if engine.basePermissionMode != "" && engine.basePermissionMode != permission.ModeOf(engine.gate) {
+		engine.permissionModeSetter(engine.basePermissionMode)
+	}
 }
 
 func (engine *Engine) bindExecutor(registry tools.Registry) {
-        engine.executor = NewExecutor(registry, engine.gate, engine.ask, engine.extensions, engine.question)
-        engine.executor.approveAdmit = approveAdmitFunc(engine.gate)
-        engine.executor.SetMeta(engine.SessionID(), engine.SessionCwd())
-        engine.executor.SetEvidenceLedger(engine.evidence)
-        // The governed latch is read live at record time, so a mid-session
-        // ledger swap (SetEvidenceLedger) or the first declaration takes
-        // effect on the very next bash run without rebinding.
-        engine.executor.SetGovernedFn(engine.IsGoverned)
-        // JEV decision-model evidence advisor (see jev_evidence.go): admits
-        // evidence for check-like commands no deterministic parser knows.
-        engine.executor.SetJevAdvisor(engine.jevAdv)
-        // Read elision rides on every engine: the check is cheap, the payoff
-        // (not re-sending a file the model provably still has) compounds over
-        // a long session, and the compaction-aware liveness check keeps it
-        // safe by construction.
-        engine.executor.SetReadElider(engine.elideUnchangedRead)
-        // Image blocks ride tool results only for vision-capable models;
-        // rebind on every model switch so the flag never goes stale.
-        engine.executor.SetImageEnabled(engine.modelCfg.ImageEnabled)
-        // Learning loop: the dispatch sink resets the nudge counters on
-        // actual memory/skill use — the executor calls it after every gate
-        // has passed, just before the tool runs.
-        engine.executor.SetLearningSink(engine.learningSink)
-        // Tool loop guardrails (hermes tool_guardrails): warnings on every
-        // engine; hard stops on the unattended ones — anything at fleet
-        // depth > 0 runs without a human watching to say "stop", which is
-        // exactly where a replay loop burns the budget. Per-turn state
-        // resets at Loop entry.
-        engine.executor.SetLoopGuard(toolguard.New(toolguard.Config{
-                Warnings: true,
-                HardStop: engine.agentDepth > 0,
-        }))
-        if engine.session != nil {
-                engine.executor.SetMemoryBank(engine.session.MemoryBank())
-        }
+	engine.executor = NewExecutor(registry, engine.gate, engine.ask, engine.extensions, engine.question)
+	engine.executor.approveAdmit = approveAdmitFunc(engine.gate)
+	engine.executor.SetMeta(engine.SessionID(), engine.SessionCwd())
+	engine.executor.SetEvidenceLedger(engine.evidence)
+	// The governed latch is read live at record time, so a mid-session
+	// ledger swap (SetEvidenceLedger) or the first declaration takes
+	// effect on the very next bash run without rebinding.
+	engine.executor.SetGovernedFn(engine.IsGoverned)
+	// JEV decision-model evidence advisor (see jev_evidence.go): admits
+	// evidence for check-like commands no deterministic parser knows.
+	engine.executor.SetJevAdvisor(engine.jevAdv)
+	// Read elision rides on every engine: the check is cheap, the payoff
+	// (not re-sending a file the model provably still has) compounds over
+	// a long session, and the compaction-aware liveness check keeps it
+	// safe by construction.
+	engine.executor.SetReadElider(engine.elideUnchangedRead)
+	// Image blocks ride tool results only for vision-capable models;
+	// rebind on every model switch so the flag never goes stale.
+	engine.executor.SetImageEnabled(engine.modelCfg.ImageEnabled)
+	// Learning loop: the dispatch sink resets the nudge counters on
+	// actual memory/skill use — the executor calls it after every gate
+	// has passed, just before the tool runs.
+	engine.executor.SetLearningSink(engine.learningSink)
+	// Tool loop guardrails (hermes tool_guardrails): warnings on every
+	// engine; hard stops on the unattended ones — anything at fleet
+	// depth > 0 runs without a human watching to say "stop", which is
+	// exactly where a replay loop burns the budget. Per-turn state
+	// resets at Loop entry.
+	engine.executor.SetLoopGuard(toolguard.New(toolguard.Config{
+		Warnings: true,
+		HardStop: engine.agentDepth > 0,
+	}))
+	if engine.session != nil {
+		engine.executor.SetMemoryBank(engine.session.MemoryBank())
+	}
 }
 
 // defaultEvidenceLedger installs the engine's evidence ledger. Explicit
@@ -916,39 +916,39 @@ func (engine *Engine) bindExecutor(registry tools.Registry) {
 // ledger; a bad success pattern logs and drops the set rather than
 // blocking engine construction.
 func defaultEvidenceLedger(sess *Session, wired *evidence.Ledger, checks []evidence.CheckDef) *evidence.Ledger {
-        if wired != nil {
-                return wired
-        }
-        // Bet 08: when the vault is live, receipts are rows keyed by the same
-        // project scope the file era used (the session file's directory).
-        if v := session.DefaultVault(); v != nil {
-                if f := sess.File(); f != "" {
-                        ledger := evidence.NewVaultLedger(filepath.Dir(f), v)
-                        if len(checks) > 0 {
-                                if err := ledger.SetChecks(checks); err != nil {
-                                        debuglog.Logf("agent: evidence checks install: %v", err)
-                                }
-                        }
-                        if err := ledger.Load(); err != nil {
-                                debuglog.Logf("agent: evidence ledger load (vault): %v", err)
-                        }
-                        return ledger
-                }
-        }
-        var path string
-        if f := sess.File(); f != "" {
-                path = filepath.Join(filepath.Dir(f), "evidence.jsonl")
-        }
-        ledger := evidence.NewLedger(path)
-        if len(checks) > 0 {
-                if err := ledger.SetChecks(checks); err != nil {
-                        debuglog.Logf("agent: evidence checks install: %v", err)
-                }
-        }
-        if err := ledger.Load(); err != nil {
-                debuglog.Logf("agent: evidence ledger load %s: %v", path, err)
-        }
-        return ledger
+	if wired != nil {
+		return wired
+	}
+	// Bet 08: when the vault is live, receipts are rows keyed by the same
+	// project scope the file era used (the session file's directory).
+	if v := session.DefaultVault(); v != nil {
+		if f := sess.File(); f != "" {
+			ledger := evidence.NewVaultLedger(filepath.Dir(f), v)
+			if len(checks) > 0 {
+				if err := ledger.SetChecks(checks); err != nil {
+					debuglog.Logf("agent: evidence checks install: %v", err)
+				}
+			}
+			if err := ledger.Load(); err != nil {
+				debuglog.Logf("agent: evidence ledger load (vault): %v", err)
+			}
+			return ledger
+		}
+	}
+	var path string
+	if f := sess.File(); f != "" {
+		path = filepath.Join(filepath.Dir(f), "evidence.jsonl")
+	}
+	ledger := evidence.NewLedger(path)
+	if len(checks) > 0 {
+		if err := ledger.SetChecks(checks); err != nil {
+			debuglog.Logf("agent: evidence checks install: %v", err)
+		}
+	}
+	if err := ledger.Load(); err != nil {
+		debuglog.Logf("agent: evidence ledger load %s: %v", path, err)
+	}
+	return ledger
 }
 
 // IsGoverned reports whether the session's evidence surfaces are live:
@@ -958,92 +958,92 @@ func defaultEvidenceLedger(sess *Session, wired *evidence.Ledger, checks []evide
 // a non-empty ledger (resumed receipts, direct seeding) also reads as
 // governed, so derivation needs no second flag.
 func (engine *Engine) IsGoverned() bool {
-        if engine == nil {
-                return false
-        }
-        if engine.governed.Load() {
-                return true
-        }
-        if l := engine.evidence; l != nil && len(l.State()) > 0 {
-                return true
-        }
-        return false
+	if engine == nil {
+		return false
+	}
+	if engine.governed.Load() {
+		return true
+	}
+	if l := engine.evidence; l != nil && len(l.State()) > 0 {
+		return true
+	}
+	return false
 }
 
 // SetEvidenceLedger replaces the engine's evidence ledger (primarily for
 // tests). The executor is rebound so the new ledger takes effect
 // immediately.
 func (engine *Engine) SetEvidenceLedger(l *evidence.Ledger) {
-        if engine == nil {
-                return
-        }
-        engine.evidence = l
-        if engine.executor != nil {
-                engine.executor.SetEvidenceLedger(l)
-        }
+	if engine == nil {
+		return
+	}
+	engine.evidence = l
+	if engine.executor != nil {
+		engine.executor.SetEvidenceLedger(l)
+	}
 }
 
 // EvidenceLedger returns the engine's evidence ledger (nil-safe).
 func (engine *Engine) EvidenceLedger() *evidence.Ledger {
-        if engine == nil {
-                return nil
-        }
-        return engine.evidence
+	if engine == nil {
+		return nil
+	}
+	return engine.evidence
 }
 
 // SetStallLimit retunes the verdict gate's anti-thrash limit: the number of
 // consecutive non-improving verification rounds a turn tolerates before it
 // stops with the residual failure set. n <= 0 disables the stall stop.
 func (engine *Engine) SetStallLimit(n int) {
-        if engine == nil {
-                return
-        }
-        engine.stallLimit.Store(int64(max(n, 0)))
+	if engine == nil {
+		return
+	}
+	engine.stallLimit.Store(int64(max(n, 0)))
 }
 
 // StallLimit reports the verdict gate's anti-thrash limit (0 = disabled).
 func (engine *Engine) StallLimit() int {
-        if engine == nil {
-                return 0
-        }
-        return int(engine.stallLimit.Load())
+	if engine == nil {
+		return 0
+	}
+	return int(engine.stallLimit.Load())
 }
 
 // SetZeroRankBudget retunes the Phase 3 zero-rank stop's verification
 // budget (extra rounds bought when the model tries to end a turn with
 // declared checks not green). n <= 0 disables the zero-rank stop.
 func (engine *Engine) SetZeroRankBudget(n int) {
-        if engine == nil {
-                return
-        }
-        engine.zeroRankBudget.Store(int64(max(n, 0)))
+	if engine == nil {
+		return
+	}
+	engine.zeroRankBudget.Store(int64(max(n, 0)))
 }
 
 // ZeroRankBudget reports the zero-rank verification budget (0 = disabled).
 func (engine *Engine) ZeroRankBudget() int {
-        if engine == nil {
-                return 0
-        }
-        return int(engine.zeroRankBudget.Load())
+	if engine == nil {
+		return 0
+	}
+	return int(engine.zeroRankBudget.Load())
 }
 
 // TurnContract returns the checks currently declared in the turn's
 // contract (sorted copy; empty when nothing is declared).
 func (engine *Engine) TurnContract() []string {
-        if engine == nil {
-                return nil
-        }
-        return engine.turnContract.snapshot()
+	if engine == nil {
+		return nil
+	}
+	return engine.turnContract.snapshot()
 }
 
 // TaskContract returns the session's task-scoped contract: every check
 // declared this session plus any fleet-inherited checks (sorted copy).
 // Spawns forward this set so children share the parent's finish line.
 func (engine *Engine) TaskContract() []string {
-        if engine == nil {
-                return nil
-        }
-        return engine.taskContract.snapshot()
+	if engine == nil {
+		return nil
+	}
+	return engine.taskContract.snapshot()
 }
 
 // SeedTaskContract seeds the engine with a parent fleet's declared check
@@ -1056,82 +1056,82 @@ func (engine *Engine) TaskContract() []string {
 // line it cannot green. The seed also enters the task contract, so this
 // engine's own spawns inherit it unchanged.
 func (engine *Engine) SeedTaskContract(checks []string, enforce bool) {
-        if engine == nil {
-                return
-        }
-        valid := make([]string, 0, len(checks))
-        for _, raw := range checks {
-                id := strings.TrimSpace(raw)
-                if evidence.ValidCheckID(id) {
-                        valid = append(valid, id)
-                }
-        }
-        if len(valid) == 0 {
-                return
-        }
-        engine.contractSeed = valid
-        engine.contractSeedEnforce = enforce
-        engine.taskContract.declare(valid)
+	if engine == nil {
+		return
+	}
+	valid := make([]string, 0, len(checks))
+	for _, raw := range checks {
+		id := strings.TrimSpace(raw)
+		if evidence.ValidCheckID(id) {
+			valid = append(valid, id)
+		}
+	}
+	if len(valid) == 0 {
+		return
+	}
+	engine.contractSeed = valid
+	engine.contractSeedEnforce = enforce
+	engine.taskContract.declare(valid)
 }
 
 // applyContractSeed re-applies the fleet-inherited contract seed after a
 // per-Loop reset. Called at every Loop entry; a no-op for unseeded engines
 // (every pre-Bet-04 session is byte-identical).
 func (engine *Engine) applyContractSeed() {
-        if engine == nil || len(engine.contractSeed) == 0 {
-                return
-        }
-        if engine.contractSeedEnforce {
-                engine.turnContract.declare(engine.contractSeed)
-        }
-        for _, id := range engine.contractSeed {
-                engine.evidence.Watch(id)
-        }
-        engine.governed.Store(true)
+	if engine == nil || len(engine.contractSeed) == 0 {
+		return
+	}
+	if engine.contractSeedEnforce {
+		engine.turnContract.declare(engine.contractSeed)
+	}
+	for _, id := range engine.contractSeed {
+		engine.evidence.Watch(id)
+	}
+	engine.governed.Store(true)
 }
 
 // SetBudgetContracts toggles enforcement of model-declared tool-round
 // budgets at runtime. Declarations are always recorded and echoed either
 // way; enforcement decides whether a firing can stop the turn.
 func (engine *Engine) SetBudgetContracts(enabled bool) {
-        if engine == nil {
-                return
-        }
-        engine.budgetContracts.Store(enabled)
+	if engine == nil {
+		return
+	}
+	engine.budgetContracts.Store(enabled)
 }
 
 // BudgetContracts reports whether declared tool-round budgets are enforced.
 func (engine *Engine) BudgetContracts() bool {
-        if engine == nil {
-                return false
-        }
-        return engine.budgetContracts.Load()
+	if engine == nil {
+		return false
+	}
+	return engine.budgetContracts.Load()
 }
 
 // TurnBudgetCeiling reports the turn's declared tool-round ceiling
 // (0 = nothing declared this turn).
 func (engine *Engine) TurnBudgetCeiling() int {
-        if engine == nil {
-                return 0
-        }
-        ceiling, _, _ := engine.turnBudget.snapshot()
-        return ceiling
+	if engine == nil {
+		return 0
+	}
+	ceiling, _, _ := engine.turnBudget.snapshot()
+	return ceiling
 }
 
 // evidenceSnapshots lazily builds the snapshot manager backing the verdict
 // gate. Session cwd is fixed for the engine's lifetime, so the manager is
 // built once and reused across turns.
 func (engine *Engine) evidenceSnapshots() evidenceSnapshots {
-        if engine.evidenceSnaps == nil {
-                engine.evidenceSnaps = snapshot.NewManager(engine.SessionCwd())
-        }
-        return engine.evidenceSnaps
+	if engine.evidenceSnaps == nil {
+		engine.evidenceSnaps = snapshot.NewManager(engine.SessionCwd())
+	}
+	return engine.evidenceSnaps
 }
 
 // setEvidenceSnapshots overrides the snapshot backend used by the verdict
 // gate (test seam; production uses the git snapshot manager).
 func (engine *Engine) setEvidenceSnapshots(s evidenceSnapshots) {
-        engine.evidenceSnaps = s
+	engine.evidenceSnaps = s
 }
 
 // newEvidenceGate builds the per-turn verdict gate: pre-candidate
@@ -1140,14 +1140,14 @@ func (engine *Engine) setEvidenceSnapshots(s evidenceSnapshots) {
 // APPA mode is the strictness dial) and hands each baseline name back to
 // the engine so the next turn's gate can clean it up once superseded.
 func (engine *Engine) newEvidenceGate() *turnEvidenceGate {
-        return newTurnEvidenceGate(
-                engine.evidenceSnapshots(),
-                engine.evidence,
-                func() permission.Mode { return permission.ModeOf(engine.gate) },
-                int(engine.stallLimit.Load()),
-                engine.evidenceBaseline,
-                func(name string) { engine.evidenceBaseline = name },
-        )
+	return newTurnEvidenceGate(
+		engine.evidenceSnapshots(),
+		engine.evidence,
+		func() permission.Mode { return permission.ModeOf(engine.gate) },
+		int(engine.stallLimit.Load()),
+		engine.evidenceBaseline,
+		func(name string) { engine.evidenceBaseline = name },
+	)
 }
 
 // ContextTokens estimates the total context usage in tokens (system prompt +
@@ -1158,27 +1158,27 @@ func (engine *Engine) newEvidenceGate() *turnEvidenceGate {
 //
 // Nil-safe: returns 0 when the engine or session isn't initialized.
 func (engine *Engine) ContextTokens() int {
-        if engine == nil || engine.session == nil {
-                return 0
-        }
-        totalBytes := 0
-        // System prompt: the template + project context + MCP block, as
-        // built by prompt.Build (same call the client constructor makes).
-        sysPrompt := engine.systemPrompt()
-        totalBytes += len(sysPrompt)
-        // Messages: the full conversation including tool messages.
-        msgs := engine.session.BuildContext()
-        for _, msg := range msgs {
-                totalBytes += len(msg.Content)
-                totalBytes += len(msg.ReasoningContent)
-                for _, tc := range msg.ToolCalls {
-                        totalBytes += len(tc.Function.Name) + len(tc.Function.Arguments)
-                }
-        }
-        // Tool schemas.
-        toolBytes, _ := engine.ToolSchemaBytes()
-        totalBytes += toolBytes
-        return totalBytes / contextbreakdown.BytesPerToken
+	if engine == nil || engine.session == nil {
+		return 0
+	}
+	totalBytes := 0
+	// System prompt: the template + project context + MCP block, as
+	// built by prompt.Build (same call the client constructor makes).
+	sysPrompt := engine.systemPrompt()
+	totalBytes += len(sysPrompt)
+	// Messages: the full conversation including tool messages.
+	msgs := engine.session.BuildContext()
+	for _, msg := range msgs {
+		totalBytes += len(msg.Content)
+		totalBytes += len(msg.ReasoningContent)
+		for _, tc := range msg.ToolCalls {
+			totalBytes += len(tc.Function.Name) + len(tc.Function.Arguments)
+		}
+	}
+	// Tool schemas.
+	toolBytes, _ := engine.ToolSchemaBytes()
+	totalBytes += toolBytes
+	return totalBytes / contextbreakdown.BytesPerToken
 }
 
 // ToolSchemaBytes returns the combined serialized size of every registered tool
@@ -1186,71 +1186,71 @@ func (engine *Engine) ContextTokens() int {
 // category: schemas are context the model pays for before the conversation
 // starts, and they grow as extensions and MCP servers register.
 func (engine *Engine) ToolSchemaBytes() (bytes, count int) {
-        if engine == nil || engine.executor == nil {
-                return 0, 0
-        }
-        for _, t := range engine.executor.registry {
-                bytes += len(t.Definition.Name) + len(t.Definition.Description)
-                if t.Definition.Params == nil {
-                        count++
-                        continue
-                }
-                bytes += len(t.Definition.Params.Type)
-                for k, v := range t.Definition.Params.Properties {
-                        bytes += len(k) + toolsSchemaValueBytes(v)
-                }
-                for _, r := range t.Definition.Params.Required {
-                        bytes += len(r)
-                }
-                count++
-        }
-        return bytes, count
+	if engine == nil || engine.executor == nil {
+		return 0, 0
+	}
+	for _, t := range engine.executor.registry {
+		bytes += len(t.Definition.Name) + len(t.Definition.Description)
+		if t.Definition.Params == nil {
+			count++
+			continue
+		}
+		bytes += len(t.Definition.Params.Type)
+		for k, v := range t.Definition.Params.Properties {
+			bytes += len(k) + toolsSchemaValueBytes(v)
+		}
+		for _, r := range t.Definition.Params.Required {
+			bytes += len(r)
+		}
+		count++
+	}
+	return bytes, count
 }
 
 // HasTool reports whether a tool is currently registered on the executor.
 func (engine *Engine) HasTool(name string) bool {
-        if engine == nil || engine.executor == nil {
-                return false
-        }
-        _, ok := engine.executor.registry[name]
-        return ok
+	if engine == nil || engine.executor == nil {
+		return false
+	}
+	_, ok := engine.executor.registry[name]
+	return ok
 }
 
 // toolsSchemaValueBytes sizes a JSON-schema-ish value without pulling
 // encoding/json into a per-call path.
 func toolsSchemaValueBytes(v any) int {
-        switch t := v.(type) {
-        case string:
-                return len(t)
-        case map[string]any:
-                n := 0
-                for k, vv := range t {
-                        n += len(k) + toolsSchemaValueBytes(vv)
-                }
-                return n
-        case []any:
-                n := 0
-                for _, vv := range t {
-                        n += toolsSchemaValueBytes(vv)
-                }
-                return n
-        default:
-                return 0
-        }
+	switch t := v.(type) {
+	case string:
+		return len(t)
+	case map[string]any:
+		n := 0
+		for k, vv := range t {
+			n += len(k) + toolsSchemaValueBytes(vv)
+		}
+		return n
+	case []any:
+		n := 0
+		for _, vv := range t {
+			n += toolsSchemaValueBytes(vv)
+		}
+		return n
+	default:
+		return 0
+	}
 }
 
 // SetPermission updates the gate and ask handler used by the tool executor.
 func (engine *Engine) SetPermission(gate permission.Gate, ask permission.AskFunc) {
-        if engine == nil {
-                return
-        }
-        engine.gate = gate
-        engine.ask = ask
-        if engine.executor != nil {
-                engine.executor.gate = gate
-                engine.executor.ask = ask
-                engine.executor.approveAdmit = approveAdmitFunc(gate)
-        }
+	if engine == nil {
+		return
+	}
+	engine.gate = gate
+	engine.ask = ask
+	if engine.executor != nil {
+		engine.executor.gate = gate
+		engine.executor.ask = ask
+		engine.executor.approveAdmit = approveAdmitFunc(gate)
+	}
 }
 
 // SetBasePermissionMode updates the mode restored when a persona without a
@@ -1261,50 +1261,50 @@ func (engine *Engine) SetPermission(gate permission.Gate, ask permission.AskFunc
 // booted with. The persona path itself never calls this: overrides apply
 // without touching the base, which is exactly what keeps them restorable.
 func (engine *Engine) SetBasePermissionMode(mode permission.Mode) {
-        if engine == nil {
-                return
-        }
-        engine.basePermissionMode = mode
+	if engine == nil {
+		return
+	}
+	engine.basePermissionMode = mode
 }
 
 // approveAdmitFunc returns the callback that folds an approved Gate 2
 // admission into the trajectory. Nil when the gate cannot approve admissions.
 func approveAdmitFunc(gate permission.Gate) func(permission.Request) {
-        static := permission.StaticGateOf(gate)
-        if static == nil {
-                return nil
-        }
-        return static.ApproveAdmit
+	static := permission.StaticGateOf(gate)
+	if static == nil {
+		return nil
+	}
+	return static.ApproveAdmit
 }
 
 // SetContinueAsk sets the handler invoked when the tool-round budget is exhausted.
 // Pass nil to hard-fail with ErrMaxRounds (default for headless runs).
 func (engine *Engine) SetContinueAsk(fn ContinueFunc) {
-        if engine == nil {
-                return
-        }
-        engine.continueAsk = fn
+	if engine == nil {
+		return
+	}
+	engine.continueAsk = fn
 }
 
 // SetMaxToolCalls sets the per-turn tool-call budget (0 = unlimited). Safe to
 // call while a loop is running — the change takes effect at the next tool
 // round. Yolo permission mode overrides the cap with unlimited.
 func (engine *Engine) SetMaxToolCalls(n int) {
-        if engine == nil {
-                return
-        }
-        if n < 0 {
-                n = 0
-        }
-        engine.maxToolCalls.Store(int64(n))
+	if engine == nil {
+		return
+	}
+	if n < 0 {
+		n = 0
+	}
+	engine.maxToolCalls.Store(int64(n))
 }
 
 // MaxToolCalls returns the configured per-turn tool-call budget (0 = unlimited).
 func (engine *Engine) MaxToolCalls() int {
-        if engine == nil {
-                return 0
-        }
-        return int(engine.maxToolCalls.Load())
+	if engine == nil {
+		return 0
+	}
+	return int(engine.maxToolCalls.Load())
 }
 
 // toolBudgetUnlimited reports whether the tool-call budget is suppressed for
@@ -1317,25 +1317,25 @@ func (engine *Engine) MaxToolCalls() int {
 // ModeOf-only check missed all but the literal mode, so the cap still fired
 // under flags whose whole point was lifting it.
 func (engine *Engine) toolBudgetUnlimited() bool {
-        return permission.Unrestricted(engine.gate)
+	return permission.Unrestricted(engine.gate)
 }
 
 // SetExtensions replaces the extension runner. Pass nil to disable extensions.
 // Rebinds tools so RegisterTool from the new runner takes effect.
 func (engine *Engine) SetExtensions(r *extension.Runner) {
-        if engine == nil {
-                return
-        }
-        engine.extensions = r
-        engine.rebindTools()
+	if engine == nil {
+		return
+	}
+	engine.extensions = r
+	engine.rebindTools()
 }
 
 // SessionID returns the durable session id.
 func (engine *Engine) SessionID() string {
-        if engine == nil || engine.session == nil {
-                return ""
-        }
-        return engine.session.ID()
+	if engine == nil || engine.session == nil {
+		return ""
+	}
+	return engine.session.ID()
 }
 
 // cacheScope returns the session's logical prompt-cache scope for request
@@ -1344,43 +1344,43 @@ func (engine *Engine) SessionID() string {
 // each rebuild, exactly like the credential pool does. Nil session means
 // no scope, which leaves the wire as it was before scopes existed.
 func (engine *Engine) cacheScope() string {
-        if engine == nil || engine.session == nil {
-                return ""
-        }
-        return engine.session.CacheScope()
+	if engine == nil || engine.session == nil {
+		return ""
+	}
+	return engine.session.CacheScope()
 }
 
 // SessionFile returns the JSONL path (empty in memory mode).
 func (engine *Engine) SessionFile() string {
-        if engine == nil || engine.session == nil {
-                return ""
-        }
-        return engine.session.File()
+	if engine == nil || engine.session == nil {
+		return ""
+	}
+	return engine.session.File()
 }
 
 // SessionDir returns the directory the session persists under (empty in
 // memory mode).
 func (engine *Engine) SessionDir() string {
-        if engine == nil || engine.session == nil {
-                return ""
-        }
-        return engine.session.SessionDir()
+	if engine == nil || engine.session == nil {
+		return ""
+	}
+	return engine.session.SessionDir()
 }
 
 // SessionCwd returns the cwd recorded on the session header.
 func (engine *Engine) SessionCwd() string {
-        if engine == nil || engine.session == nil {
-                return ""
-        }
-        return engine.session.Cwd()
+	if engine == nil || engine.session == nil {
+		return ""
+	}
+	return engine.session.Cwd()
 }
 
 // Session returns the underlying session wrapper (for UI transcript replay).
 func (engine *Engine) Session() *Session {
-        if engine == nil {
-                return nil
-        }
-        return engine.session
+	if engine == nil {
+		return nil
+	}
+	return engine.session
 }
 
 // recentUserMessages returns up to maxCount of the most recent user
@@ -1394,30 +1394,30 @@ func (engine *Engine) Session() *Session {
 // call, but the outlet is a background goroutine so the cost is hidden
 // from the user-facing turn.
 func (engine *Engine) recentUserMessages(maxCount int) []string {
-        if engine == nil || engine.session == nil || maxCount <= 0 {
-                return nil
-        }
-        msgs := engine.session.BuildContext()
-        var collected []string
-        for i := len(msgs) - 1; i >= 0 && len(collected) < maxCount; i-- {
-                if msgs[i].Role == llm.RoleUser && !msgs[i].Runtime {
-                        collected = append(collected, msgs[i].Content)
-                }
-        }
-        // Reverse to oldest-first order.
-        for i, j := 0, len(collected)-1; i < j; i, j = i+1, j-1 {
-                collected[i], collected[j] = collected[j], collected[i]
-        }
-        return collected
+	if engine == nil || engine.session == nil || maxCount <= 0 {
+		return nil
+	}
+	msgs := engine.session.BuildContext()
+	var collected []string
+	for i := len(msgs) - 1; i >= 0 && len(collected) < maxCount; i-- {
+		if msgs[i].Role == llm.RoleUser && !msgs[i].Runtime {
+			collected = append(collected, msgs[i].Content)
+		}
+	}
+	// Reverse to oldest-first order.
+	for i, j := 0, len(collected)-1; i < j; i, j = i+1, j-1 {
+		collected[i], collected[j] = collected[j], collected[i]
+	}
+	return collected
 }
 
 // LoopOpts configures a single agent loop turn.
 type LoopOpts struct {
-        // PendingSkills are skill names the user selected in the composer.
-        // When set, the model is instructed to read those SKILL.md files first.
-        PendingSkills []string
-        // Images are base64 attachments from the composer pending queue.
-        Images []llm.Image
+	// PendingSkills are skill names the user selected in the composer.
+	// When set, the model is instructed to read those SKILL.md files first.
+	PendingSkills []string
+	// Images are base64 attachments from the composer pending queue.
+	Images []llm.Image
 }
 
 // Loop appends the user prompt and runs inference + tool rounds until the
@@ -1433,546 +1433,546 @@ type LoopOpts struct {
 //     window; a numberless overflow halves the retry window (turn-local) so
 //     the post-compaction context fits windows smaller than configured.
 func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) iter.Seq2[session.Event, error] {
-        return func(yield func(session.Event, error) bool) {
-                // The extension runner is nil-safe (nil = disabled), so calls are
-                // unconditional no-ops when no extensions are loaded.
-                content, handled := engine.extensions.EmitUserInput(prompt)
-                if handled {
-                        return
-                }
-                if instr := pendingSkillsInstruction(engine.modelCfg.SkillPath, opts.PendingSkills); instr != "" {
-                        if content == "" {
-                                content = instr
-                        } else {
-                                content = instr + "\n\n" + content
-                        }
-                }
-                rewritten, extra := engine.extensions.EmitBeforeAgentStart(content)
-                content = rewritten
-                if extra != "" {
-                        content = content + "\n\n" + extra
-                }
-                engine.extensions.EmitAgentStart()
-                defer engine.extensions.EmitAgentEnd()
-                // Runtime-context rider (see runtime_rider.go): the
-                // change-gated memory bundle and delivered job notices,
-                // built and PERSISTED before the user message so every byte
-                // that changes per turn lands at the tail the request cache
-                // is about to write, then freezes into history. The clock
-                // and the forecast are fetch engines now — asked for, not
-                // injected. The old shape (transient RoleSystem injections
-                // hoisted into the cached system block) re-billed the full
-                // context as a cache write on every round. A rider with
-                // nothing new to say is skipped entirely.
-                if rider, ok := engine.buildRuntimeRider(ctx, content); ok {
-                        if err := engine.session.Append(rider); err != nil {
-                                yield(nil, err)
-                                return
-                        }
-                }
-                if err := engine.session.Append(llm.Message{
-                        Role:    llm.RoleUser,
-                        Content: content,
-                        Images:  append([]llm.Image(nil), opts.Images...),
-                }); err != nil {
-                        yield(nil, err)
-                        return
-                }
+	return func(yield func(session.Event, error) bool) {
+		// The extension runner is nil-safe (nil = disabled), so calls are
+		// unconditional no-ops when no extensions are loaded.
+		content, handled := engine.extensions.EmitUserInput(prompt)
+		if handled {
+			return
+		}
+		if instr := pendingSkillsInstruction(engine.modelCfg.SkillPath, opts.PendingSkills); instr != "" {
+			if content == "" {
+				content = instr
+			} else {
+				content = instr + "\n\n" + content
+			}
+		}
+		rewritten, extra := engine.extensions.EmitBeforeAgentStart(content)
+		content = rewritten
+		if extra != "" {
+			content = content + "\n\n" + extra
+		}
+		engine.extensions.EmitAgentStart()
+		defer engine.extensions.EmitAgentEnd()
+		// Runtime-context rider (see runtime_rider.go): the
+		// change-gated memory bundle and delivered job notices,
+		// built and PERSISTED before the user message so every byte
+		// that changes per turn lands at the tail the request cache
+		// is about to write, then freezes into history. The clock
+		// and the forecast are fetch engines now — asked for, not
+		// injected. The old shape (transient RoleSystem injections
+		// hoisted into the cached system block) re-billed the full
+		// context as a cache write on every round. A rider with
+		// nothing new to say is skipped entirely.
+		if rider, ok := engine.buildRuntimeRider(ctx, content); ok {
+			if err := engine.session.Append(rider); err != nil {
+				yield(nil, err)
+				return
+			}
+		}
+		if err := engine.session.Append(llm.Message{
+			Role:    llm.RoleUser,
+			Content: content,
+			Images:  append([]llm.Image(nil), opts.Images...),
+		}); err != nil {
+			yield(nil, err)
+			return
+		}
 
-                // memfsck (Bet 06): reconcile <cwd>/memory with MEMORY.md
-                // once per session start, as the package doc always said.
-                engine.runMemfsckAtSessionStart()
+		// memfsck (Bet 06): reconcile <cwd>/memory with MEMORY.md
+		// once per session start, as the package doc always said.
+		engine.runMemfsckAtSessionStart()
 
-                toolRounds := 0
-                toolCallsUsed := 0
-                // Zero-rank stop (Phase 3): a fresh user prompt starts a
-                // fresh contract, and the verification-round counter the
-                // contract gate buys against starts at zero.
-                engine.turnContract.reset()
-                // Verify-on-stop: fresh mutation state for the fresh turn.
-                engine.turnVerify.reset()
-                // Verify-on-stop nudge budget: the gate is a brake, not a
-                // wall — after the budget the model's answer stands.
-                verifyNudges := 0
-                // Learning loop: preempt any in-flight review fork —
-                // self-improvement never overlaps a live user turn — then
-                // tick the memory counter for this turn.
-                engine.cancelLearningReview()
-                fireMemoryNudge := engine.tickMemoryNudge()
-                // Task contracts (Bet 04): a fleet-inherited seed re-enters the
-                // fresh turn contract (workers) or arms its watches (explore/
-                // review) so the child is held to — or at least records evidence
-                // for — the parent's declared finish line, every turn.
-                engine.applyContractSeed()
-                zeroRankRounds := 0
-                // Declared-budget gate (Phase 5): a fresh user prompt starts
-                // a fresh budget, and the live round counter the budget tool
-                // declares against starts at zero.
-                engine.turnBudget.reset()
-                engine.toolRoundsLive.Store(0)
-                // Verdict gate (Phase 2): per-turn evidence ratchet. Any verdicts
-                // left undrained by an aborted prior turn are stale for this
-                // one — discard them so the candidate marker stays honest.
-                engine.executor.DrainEvidenceVerdicts()
-                // Tool loop guardrails: fresh state for the fresh prompt. The
-                // streaks are per-turn by design — a new user message is a new
-                // experiment, and re-reads or re-tries after it are never
-                // flagged.
-                engine.executor.ResetLoopGuard()
-                evGate := engine.newEvidenceGate()
-                // Overflow recovery state (doc/context-folding-math.md §5):
-                // overflowStreak counts consecutive recoveries and resets on
-                // any successful stream round; recoveryWindow is the
-                // turn-local window the recovery compaction derives its
-                // settings from (0 = use the engine window). A numberless
-                // overflow halves it per retry so the post-compaction
-                // context fits even when the real window is smaller than
-                // anything configured or probed. It is deliberately
-                // turn-local: a numberless overflow is usually one oversized
-                // request, not proof the persistent window is wrong.
-                overflowStreak := 0
-                recoveryWindow := 0
-                // Empty-response ladder (see empty_guard.go): one guard per
-                // user turn — the streak proves determinism only within a
-                // turn, and a new prompt is a new experiment.
-                emptyGuard := &emptyResponseGuard{}
-                // Engine-layer transient retries used this turn: bounded so a
-                // dead endpoint cannot park the loop (see the error path).
-                transientRetries := 0
-                // Resolve the runtime window (config → probe → assumed)
-                // before the first stream so folding works from the very
-                // first turn on unknown-window models.
-                engine.ensureWindow(ctx)
-                for {
-                        if ctx.Err() != nil {
-                                return
-                        }
+		toolRounds := 0
+		toolCallsUsed := 0
+		// Zero-rank stop (Phase 3): a fresh user prompt starts a
+		// fresh contract, and the verification-round counter the
+		// contract gate buys against starts at zero.
+		engine.turnContract.reset()
+		// Verify-on-stop: fresh mutation state for the fresh turn.
+		engine.turnVerify.reset()
+		// Verify-on-stop nudge budget: the gate is a brake, not a
+		// wall — after the budget the model's answer stands.
+		verifyNudges := 0
+		// Learning loop: preempt any in-flight review fork —
+		// self-improvement never overlaps a live user turn — then
+		// tick the memory counter for this turn.
+		engine.cancelLearningReview()
+		fireMemoryNudge := engine.tickMemoryNudge()
+		// Task contracts (Bet 04): a fleet-inherited seed re-enters the
+		// fresh turn contract (workers) or arms its watches (explore/
+		// review) so the child is held to — or at least records evidence
+		// for — the parent's declared finish line, every turn.
+		engine.applyContractSeed()
+		zeroRankRounds := 0
+		// Declared-budget gate (Phase 5): a fresh user prompt starts
+		// a fresh budget, and the live round counter the budget tool
+		// declares against starts at zero.
+		engine.turnBudget.reset()
+		engine.toolRoundsLive.Store(0)
+		// Verdict gate (Phase 2): per-turn evidence ratchet. Any verdicts
+		// left undrained by an aborted prior turn are stale for this
+		// one — discard them so the candidate marker stays honest.
+		engine.executor.DrainEvidenceVerdicts()
+		// Tool loop guardrails: fresh state for the fresh prompt. The
+		// streaks are per-turn by design — a new user message is a new
+		// experiment, and re-reads or re-tries after it are never
+		// flagged.
+		engine.executor.ResetLoopGuard()
+		evGate := engine.newEvidenceGate()
+		// Overflow recovery state (doc/context-folding-math.md §5):
+		// overflowStreak counts consecutive recoveries and resets on
+		// any successful stream round; recoveryWindow is the
+		// turn-local window the recovery compaction derives its
+		// settings from (0 = use the engine window). A numberless
+		// overflow halves it per retry so the post-compaction
+		// context fits even when the real window is smaller than
+		// anything configured or probed. It is deliberately
+		// turn-local: a numberless overflow is usually one oversized
+		// request, not proof the persistent window is wrong.
+		overflowStreak := 0
+		recoveryWindow := 0
+		// Empty-response ladder (see empty_guard.go): one guard per
+		// user turn — the streak proves determinism only within a
+		// turn, and a new prompt is a new experiment.
+		emptyGuard := &emptyResponseGuard{}
+		// Engine-layer transient retries used this turn: bounded so a
+		// dead endpoint cannot park the loop (see the error path).
+		transientRetries := 0
+		// Resolve the runtime window (config → probe → assumed)
+		// before the first stream so folding works from the very
+		// first turn on unknown-window models.
+		engine.ensureWindow(ctx)
+		for {
+			if ctx.Err() != nil {
+				return
+			}
 
-                        engine.extensions.EmitTurnStart(toolRounds)
+			engine.extensions.EmitTurnStart(toolRounds)
 
-                        // Learning loop: the skill counter ticks once per
-                        // model round, before the API call.
-                        engine.tickSkillIteration()
-                        msgs := engine.session.BuildContext()
+			// Learning loop: the skill counter ticks once per
+			// model round, before the API call.
+			engine.tickSkillIteration()
+			msgs := engine.session.BuildContext()
 
-                        msg, completeEvent, err := engine.streamTurn(ctx, yield, msgs)
-                        if err != nil {
-                                // Delivered-partial contract (hermes partial_result):
-                                // a stream that already showed text or reasoning is
-                                // terminal — the delivered text is the reply body,
-                                // persisted as the assistant row so a restart and the
-                                // next turn's context replay what was actually said.
-                                // Never retried: a fresh assistant id would duplicate
-                                // what the user already watched. The repetition cut
-                                // routes here by design — its message carries only the
-                                // placeholder, never the looped bytes.
-                                if strings.TrimSpace(msg.Content) != "" || strings.TrimSpace(msg.ReasoningContent) != "" {
-                                        engine.persistDeliveredPartial(msg)
-                                        yield(nil, err)
-                                        return
-                                }
-                                overflow := llm.IsContextOverflow(err)
-                                // Opaque 400/413 (doc/context-folding-math.md §5):
-                                // a gateway that answers "Provider returned error"
-                                // swallowed the upstream reason, so no overflow
-                                // pattern can match. In a session this large the
-                                // cause is almost always a request-size limit the
-                                // configured window doesn't know about (a proxy
-                                // cap, an upstream truncation) — without recovery
-                                // here, every later turn re-sends the same
-                                // oversized history and fails identically: the
-                                // session is bricked. Treat it as a probable
-                                // overflow and let compaction try; the original
-                                // error still surfaces when shrinking doesn't help.
-                                suspected := !overflow &&
-                                        llm.IsSuspectedOverflow(err) &&
-                                        engine.contextCouldBeOverflow()
-                                if (overflow || suspected) && overflowStreak < maxConsecutiveOverflowRecoveries {
-                                        // Learn the real window when the provider states
-                                        // it; that is ground truth and persists. Otherwise
-                                        // halve the retry window (turn-local) so the
-                                        // recovery compaction keeps more headroom on each
-                                        // attempt.
-                                        statedLimit := false
-                                        if limit, ok := llm.ParseContextLimit(err); ok {
-                                                engine.setContextWindow(limit)
-                                                recoveryWindow = limit
-                                                statedLimit = true
-                                        } else if recoveryWindow <= 0 {
-                                                engine.ensureWindow(ctx)
-                                                if suspected {
-                                                        // The request was built under the engine
-                                                        // window and the endpoint refused it
-                                                        // anyway, so that window is wrong for this
-                                                        // endpoint. Halve immediately: the recovery
-                                                        // compaction then keeps real headroom
-                                                        // instead of re-deriving the same
-                                                        // too-large settings and hoping.
-                                                        recoveryWindow = max(engine.ContextWindow()/2, llm.ContextWindowFloor())
-                                                } else {
-                                                        recoveryWindow = engine.ContextWindow()
-                                                }
-                                        } else {
-                                                recoveryWindow = max(recoveryWindow/2, llm.ContextWindowFloor())
-                                        }
-                                        did, cerr := engine.runCompact(ctx, yield, 0, true, recoveryWindow)
-                                        if cerr == nil && did {
-                                                // Byte-scored progress gate (hermes #88960):
-                                                // token estimates are byte-blind to images, so
-                                                // progress is measured in serialized request
-                                                // bytes. Enforced only when the provider STATED
-                                                // the limit — with ground truth the compaction
-                                                // knew exactly how much to keep, so a request
-                                                // still within 5% of the failed one will fail
-                                                // identically and the original error surfaces.
-                                                // A numberless overflow keeps its retry: the
-                                                // halving recovery window cuts deeper on every
-                                                // attempt, so progress is structural.
-                                                before := llm.RequestBytes(msgs)
-                                                after := llm.RequestBytes(engine.session.BuildContext())
-                                                if !statedLimit || before == 0 || after == 0 || after*20 < before*19 {
-                                                        overflowStreak++
-                                                        continue
-                                                }
-                                                // Under 5%: fall through — the compaction
-                                                // bought nothing, and the original overflow
-                                                // below is the honest thing to surface.
-                                        }
-                                        // Compaction failed or had nothing left to
-                                        // shrink: fall through and surface the original
-                                        // overflow instead of burning more retries.
-                                }
-                                // Engine-layer transient retry: the failures the
-                                // HTTP layer cannot see (408 statuses, mid-stream
-                                // drops, wrapped transport errors). Status-level
-                                // 429/5xx patience is already owned and spent by
-                                // the HTTP client — re-retrying it here would
-                                // multiply a many-minute stall into a turn-killer.
-                                if v := llm.Classify(err); v.Retryable && !llm.StatusRetryOwned(err) && transientRetries < maxEngineTransientRetries {
-                                        transientRetries++
-                                        select {
-                                        case <-time.After(v.Backoff(transientRetries - 1)):
-                                        case <-ctx.Done():
-                                                yield(nil, ctx.Err())
-                                                return
-                                        }
-                                        continue
-                                }
-                                yield(nil, err)
-                                return
-                        }
-                        // A successful round proves the context fits: reset the
-                        // recovery streak and window.
-                        overflowStreak = 0
-                        recoveryWindow = 0
-                        if completeEvent == nil {
-                                // Cancelled or consumer stopped — no error to surface.
-                                return
-                        }
+			msg, completeEvent, err := engine.streamTurn(ctx, yield, msgs)
+			if err != nil {
+				// Delivered-partial contract (hermes partial_result):
+				// a stream that already showed text or reasoning is
+				// terminal — the delivered text is the reply body,
+				// persisted as the assistant row so a restart and the
+				// next turn's context replay what was actually said.
+				// Never retried: a fresh assistant id would duplicate
+				// what the user already watched. The repetition cut
+				// routes here by design — its message carries only the
+				// placeholder, never the looped bytes.
+				if strings.TrimSpace(msg.Content) != "" || strings.TrimSpace(msg.ReasoningContent) != "" {
+					engine.persistDeliveredPartial(msg)
+					yield(nil, err)
+					return
+				}
+				overflow := llm.IsContextOverflow(err)
+				// Opaque 400/413 (doc/context-folding-math.md §5):
+				// a gateway that answers "Provider returned error"
+				// swallowed the upstream reason, so no overflow
+				// pattern can match. In a session this large the
+				// cause is almost always a request-size limit the
+				// configured window doesn't know about (a proxy
+				// cap, an upstream truncation) — without recovery
+				// here, every later turn re-sends the same
+				// oversized history and fails identically: the
+				// session is bricked. Treat it as a probable
+				// overflow and let compaction try; the original
+				// error still surfaces when shrinking doesn't help.
+				suspected := !overflow &&
+					llm.IsSuspectedOverflow(err) &&
+					engine.contextCouldBeOverflow()
+				if (overflow || suspected) && overflowStreak < maxConsecutiveOverflowRecoveries {
+					// Learn the real window when the provider states
+					// it; that is ground truth and persists. Otherwise
+					// halve the retry window (turn-local) so the
+					// recovery compaction keeps more headroom on each
+					// attempt.
+					statedLimit := false
+					if limit, ok := llm.ParseContextLimit(err); ok {
+						engine.setContextWindow(limit)
+						recoveryWindow = limit
+						statedLimit = true
+					} else if recoveryWindow <= 0 {
+						engine.ensureWindow(ctx)
+						if suspected {
+							// The request was built under the engine
+							// window and the endpoint refused it
+							// anyway, so that window is wrong for this
+							// endpoint. Halve immediately: the recovery
+							// compaction then keeps real headroom
+							// instead of re-deriving the same
+							// too-large settings and hoping.
+							recoveryWindow = max(engine.ContextWindow()/2, llm.ContextWindowFloor())
+						} else {
+							recoveryWindow = engine.ContextWindow()
+						}
+					} else {
+						recoveryWindow = max(recoveryWindow/2, llm.ContextWindowFloor())
+					}
+					did, cerr := engine.runCompact(ctx, yield, 0, true, recoveryWindow)
+					if cerr == nil && did {
+						// Byte-scored progress gate (hermes #88960):
+						// token estimates are byte-blind to images, so
+						// progress is measured in serialized request
+						// bytes. Enforced only when the provider STATED
+						// the limit — with ground truth the compaction
+						// knew exactly how much to keep, so a request
+						// still within 5% of the failed one will fail
+						// identically and the original error surfaces.
+						// A numberless overflow keeps its retry: the
+						// halving recovery window cuts deeper on every
+						// attempt, so progress is structural.
+						before := llm.RequestBytes(msgs)
+						after := llm.RequestBytes(engine.session.BuildContext())
+						if !statedLimit || before == 0 || after == 0 || after*20 < before*19 {
+							overflowStreak++
+							continue
+						}
+						// Under 5%: fall through — the compaction
+						// bought nothing, and the original overflow
+						// below is the honest thing to surface.
+					}
+					// Compaction failed or had nothing left to
+					// shrink: fall through and surface the original
+					// overflow instead of burning more retries.
+				}
+				// Engine-layer transient retry: the failures the
+				// HTTP layer cannot see (408 statuses, mid-stream
+				// drops, wrapped transport errors). Status-level
+				// 429/5xx patience is already owned and spent by
+				// the HTTP client — re-retrying it here would
+				// multiply a many-minute stall into a turn-killer.
+				if v := llm.Classify(err); v.Retryable && !llm.StatusRetryOwned(err) && transientRetries < maxEngineTransientRetries {
+					transientRetries++
+					select {
+					case <-time.After(v.Backoff(transientRetries - 1)):
+					case <-ctx.Done():
+						yield(nil, ctx.Err())
+						return
+					}
+					continue
+				}
+				yield(nil, err)
+				return
+			}
+			// A successful round proves the context fits: reset the
+			// recovery streak and window.
+			overflowStreak = 0
+			recoveryWindow = 0
+			if completeEvent == nil {
+				// Cancelled or consumer stopped — no error to surface.
+				return
+			}
 
-                        // Empty-response guard (see empty_guard.go): a successful
-                        // stream that produced no visible text, no reasoning, and no
-                        // tool calls re-bills the full input on every retry, so the
-                        // ladder is budgeted — and a streak that proves the emptiness
-                        // deterministic fails the turn fast with the sentinel row
-                        // persisted (a blank assistant row re-seeds empty loops on
-                        // replay). Ambiguous evidence keeps the full budget.
-                        if emptyCompletion(msg) {
-                                if emptyGuard.observe(engine.modelCfg.Name, msg.Usage, false) {
-                                        select {
-                                        case <-time.After(emptyBackoffDelay(emptyGuard.retries)):
-                                        case <-ctx.Done():
-                                                yield(nil, ctx.Err())
-                                                return
-                                        }
-                                        continue
-                                }
-                                settled := settleCompleteText(completeEvent, EmptyResponseSentinel)
-                                if !yield(settled, nil) {
-                                        return
-                                }
-                                if err := engine.session.Append(llm.Message{
-                                        Role:    llm.RoleAssistant,
-                                        Content: EmptyResponseSentinel,
-                                }); err != nil {
-                                        yield(nil, err)
-                                        return
-                                }
-                                yield(nil, fmt.Errorf(
-                                        "agent: model returned no content after %d attempts (empty-response guard)",
-                                        len(emptyGuard.attempts),
-                                ))
-                                return
-                        }
+			// Empty-response guard (see empty_guard.go): a successful
+			// stream that produced no visible text, no reasoning, and no
+			// tool calls re-bills the full input on every retry, so the
+			// ladder is budgeted — and a streak that proves the emptiness
+			// deterministic fails the turn fast with the sentinel row
+			// persisted (a blank assistant row re-seeds empty loops on
+			// replay). Ambiguous evidence keeps the full budget.
+			if emptyCompletion(msg) {
+				if emptyGuard.observe(engine.modelCfg.Name, msg.Usage, false) {
+					select {
+					case <-time.After(emptyBackoffDelay(emptyGuard.retries)):
+					case <-ctx.Done():
+						yield(nil, ctx.Err())
+						return
+					}
+					continue
+				}
+				settled := settleCompleteText(completeEvent, EmptyResponseSentinel)
+				if !yield(settled, nil) {
+					return
+				}
+				if err := engine.session.Append(llm.Message{
+					Role:    llm.RoleAssistant,
+					Content: EmptyResponseSentinel,
+				}); err != nil {
+					yield(nil, err)
+					return
+				}
+				yield(nil, fmt.Errorf(
+					"agent: model returned no content after %d attempts (empty-response guard)",
+					len(emptyGuard.attempts),
+				))
+				return
+			}
 
-                        // Defer publishing and persisting the terminal assistant update until
-                        // the tool budget is checked. An over-budget tool request must not
-                        // leave an unexecuted tool call in the session or UI.
-                        if len(msg.ToolCalls) > 0 && toolRounds >= engine.maxRounds {
-                                if engine.continueAsk == nil {
-                                        yield(nil, fmt.Errorf("agent: %w (%d)", ErrMaxRounds, engine.maxRounds))
-                                        return
-                                }
-                                ok, askErr := engine.continueAsk(ctx, engine.maxRounds)
-                                if askErr != nil {
-                                        yield(nil, askErr)
-                                        return
-                                }
-                                if !ok {
-                                        yield(nil, fmt.Errorf("agent: %w (%d)", ErrMaxRounds, engine.maxRounds))
-                                        return
-                                }
-                                // Granted: reset the budget; the current and following tool
-                                // rounds run under the fresh budget.
-                                toolRounds = 0
-                        }
-                        // Declared-budget gate (Phase 5): the model's self-declared
-                        // tool-round budget. Under the held ceiling nothing changes;
-                        // at the ceiling with tools still wanted, the round runs on
-                        // the turn's one re-open (extend or finish — a note lands
-                        // after the batch); a second overrun without a new
-                        // declaration stops the turn with a spend report. No
-                        // declaration = no gate, so plain chat turns are untouched.
-                        budget := engine.budgetGate(toolRounds, msg.ToolCalls)
-                        if budget.Terminal {
-                                // Memory outlet: a budget-terminal stop is still a
-                                // completed turn — the conversation content is real
-                                // even though the pending calls were rejected.
-                                engine.consolidateTurn(content, msg)
-                                engine.maybeLearn(fireMemoryNudge)
-                                engine.budgetTerminalStop(msg, completeEvent, toolRounds, yield)
-                                return
-                        }
-                        if !yield(completeEvent, nil) {
-                                return
-                        }
+			// Defer publishing and persisting the terminal assistant update until
+			// the tool budget is checked. An over-budget tool request must not
+			// leave an unexecuted tool call in the session or UI.
+			if len(msg.ToolCalls) > 0 && toolRounds >= engine.maxRounds {
+				if engine.continueAsk == nil {
+					yield(nil, fmt.Errorf("agent: %w (%d)", ErrMaxRounds, engine.maxRounds))
+					return
+				}
+				ok, askErr := engine.continueAsk(ctx, engine.maxRounds)
+				if askErr != nil {
+					yield(nil, askErr)
+					return
+				}
+				if !ok {
+					yield(nil, fmt.Errorf("agent: %w (%d)", ErrMaxRounds, engine.maxRounds))
+					return
+				}
+				// Granted: reset the budget; the current and following tool
+				// rounds run under the fresh budget.
+				toolRounds = 0
+			}
+			// Declared-budget gate (Phase 5): the model's self-declared
+			// tool-round budget. Under the held ceiling nothing changes;
+			// at the ceiling with tools still wanted, the round runs on
+			// the turn's one re-open (extend or finish — a note lands
+			// after the batch); a second overrun without a new
+			// declaration stops the turn with a spend report. No
+			// declaration = no gate, so plain chat turns are untouched.
+			budget := engine.budgetGate(toolRounds, msg.ToolCalls)
+			if budget.Terminal {
+				// Memory outlet: a budget-terminal stop is still a
+				// completed turn — the conversation content is real
+				// even though the pending calls were rejected.
+				engine.extractTurn(content, msg)
+				engine.maybeLearn(fireMemoryNudge)
+				engine.budgetTerminalStop(msg, completeEvent, toolRounds, yield)
+				return
+			}
+			if !yield(completeEvent, nil) {
+				return
+			}
 
-                        if len(msg.ToolCalls) == 0 {
-                                // No tool calls: persist the assistant message
-                                // before the turn ends so the next BuildContext
-                                // (for the next user prompt) sees it. The Append
-                                // can't be deferred past here — there's no tool
-                                // work to overlap it with.
-                                if err := engine.session.Append(msg); err != nil {
-                                        yield(nil, err)
-                                        return
-                                }
-                                // Memory outlet (background, post-LLM): consolidate this
-                                // turn's content into the persona's semantic memory store.
-                                // Every completed-turn terminal path fires this (see
-                                // consolidateTurn); the goroutine has its own 30s timeout
-                                // and self-removes when done.
-                                engine.consolidateTurn(content, msg)
-                                engine.extensions.EmitTurnEnd(toolRounds)
-                                // Zero-rank stop (Phase 3): "the model said
-                                // done" is not done. If the turn declared a
-                                // contract, judge it against the evidence
-                                // ledger now: residual checks re-open the
-                                // loop (bounded), a clean contract certifies
-                                // the end, an exhausted budget stops the
-                                // turn with the residual set surfaced.
-                                if zr := engine.zeroRankCheck(&zeroRankRounds); zr.Note != "" || zr.Continue || zr.Stop {
-                                        if err := engine.session.Append(llm.Message{Role: llm.RoleUser, Content: zr.Note}); err != nil {
-                                                yield(nil, err)
-                                                return
-                                        }
-                                        if !yield(session.UserAppend{Text: zr.Note}, nil) {
-                                                return
-                                        }
-                                        if zr.Continue {
-                                                continue
-                                        }
-                                        if zr.Stop {
-                                                engine.maybeLearn(fireMemoryNudge)
-                                                return
-                                        }
-                                        // Certificate: fall through to the
-                                        // normal end (steering, compaction).
-                                }
-                                // Verify-on-stop gate (see verify_stop.go): a model
-                                // that edited code and tries to finish without a
-                                // single check passing since the edits gets its answer
-                                // held as an interim row plus a synthetic nudge, and
-                                // the turn re-opens — capped, then the answer stands.
-                                if note := engine.verifyStopCheck(&verifyNudges); note != "" {
-                                        if err := engine.session.Append(llm.Message{Role: llm.RoleUser, Content: note}); err != nil {
-                                                yield(nil, err)
-                                                return
-                                        }
-                                        if !yield(session.UserAppend{Text: note}, nil) {
-                                                return
-                                        }
-                                        continue
-                                }
-                                if cont, steer := engine.extensions.EmitTurnStopping(toolRounds); cont {
-                                        steerMsg := steer
-                                        if steerMsg == "" {
-                                                steerMsg = "continue"
-                                        }
-                                        if err := engine.session.Append(
-                                                llm.Message{Role: llm.RoleUser, Content: steerMsg},
-                                        ); err != nil {
-                                                yield(nil, err)
-                                                return
-                                        }
-                                        continue
-                                }
-                                // Learning loop: a completed turn is the
-                                // review opportunity.
-                                engine.maybeLearn(fireMemoryNudge)
-                                // Turn finished — compact using this assistant's usage. The
-                                // threshold reads context size the same way the composer does.
-                                if _, err := engine.runCompact(ctx, yield, msg.Usage.ContextTokens(), false, 0); err != nil {
-                                        yield(nil, err)
-                                }
-                                return
-                        }
+			if len(msg.ToolCalls) == 0 {
+				// No tool calls: persist the assistant message
+				// before the turn ends so the next BuildContext
+				// (for the next user prompt) sees it. The Append
+				// can't be deferred past here — there's no tool
+				// work to overlap it with.
+				if err := engine.session.Append(msg); err != nil {
+					yield(nil, err)
+					return
+				}
+				// Memory outlet (background, post-LLM): consolidate this
+				// turn's content into the persona's semantic memory store.
+				// Every completed-turn terminal path fires this (see
+				// consolidateTurn); the goroutine has its own 30s timeout
+				// and self-removes when done.
+				engine.extractTurn(content, msg)
+				engine.extensions.EmitTurnEnd(toolRounds)
+				// Zero-rank stop (Phase 3): "the model said
+				// done" is not done. If the turn declared a
+				// contract, judge it against the evidence
+				// ledger now: residual checks re-open the
+				// loop (bounded), a clean contract certifies
+				// the end, an exhausted budget stops the
+				// turn with the residual set surfaced.
+				if zr := engine.zeroRankCheck(&zeroRankRounds); zr.Note != "" || zr.Continue || zr.Stop {
+					if err := engine.session.Append(llm.Message{Role: llm.RoleUser, Content: zr.Note}); err != nil {
+						yield(nil, err)
+						return
+					}
+					if !yield(session.UserAppend{Text: zr.Note}, nil) {
+						return
+					}
+					if zr.Continue {
+						continue
+					}
+					if zr.Stop {
+						engine.maybeLearn(fireMemoryNudge)
+						return
+					}
+					// Certificate: fall through to the
+					// normal end (steering, compaction).
+				}
+				// Verify-on-stop gate (see verify_stop.go): a model
+				// that edited code and tries to finish without a
+				// single check passing since the edits gets its answer
+				// held as an interim row plus a synthetic nudge, and
+				// the turn re-opens — capped, then the answer stands.
+				if note := engine.verifyStopCheck(&verifyNudges); note != "" {
+					if err := engine.session.Append(llm.Message{Role: llm.RoleUser, Content: note}); err != nil {
+						yield(nil, err)
+						return
+					}
+					if !yield(session.UserAppend{Text: note}, nil) {
+						return
+					}
+					continue
+				}
+				if cont, steer := engine.extensions.EmitTurnStopping(toolRounds); cont {
+					steerMsg := steer
+					if steerMsg == "" {
+						steerMsg = "continue"
+					}
+					if err := engine.session.Append(
+						llm.Message{Role: llm.RoleUser, Content: steerMsg},
+					); err != nil {
+						yield(nil, err)
+						return
+					}
+					continue
+				}
+				// Learning loop: a completed turn is the
+				// review opportunity.
+				engine.maybeLearn(fireMemoryNudge)
+				// Turn finished — compact using this assistant's usage. The
+				// threshold reads context size the same way the composer does.
+				if _, err := engine.runCompact(ctx, yield, msg.Usage.ContextTokens(), false, 0); err != nil {
+					yield(nil, err)
+				}
+				return
+			}
 
-                        // Tool calls: run the tools FIRST, then persist the
-                        // assistant message and tool results together. This
-                        // overlaps the disk write (Append) with the network/
-                        // tool work that just finished, instead of serializing
-                        // the tools behind the Append. The assistant message
-                        // is already cached in `msg` from streamTurn, so the
-                        // executor has what it needs without the session tree.
-                        toolRounds++
-                        // Publish the live round count for the budget tool
-                        // handler (Phase 5): a declaration made during this
-                        // round prices itself against rounds already used,
-                        // including this one once it completes.
-                        engine.toolRoundsLive.Store(int64(toolRounds))
-                        // Per-turn tool-call budget: each executed call consumes a
-                        // slot. Over-budget calls are rejected (so the session and
-                        // UI never hold unexecuted tool calls) and the turn ends
-                        // cleanly with a system note. Unrestricted gates (yolo, allow-all
-                        // overrides) run unlimited.
-                        allowance := -1
-                        if limit := int(engine.maxToolCalls.Load()); limit > 0 && !engine.toolBudgetUnlimited() {
-                                allowance = limit - toolCallsUsed
-                                if allowance < 0 {
-                                        allowance = 0
-                                }
-                        }
-                        engine.executor.SetCallAllowance(allowance)
-                        // Verdict gate (Phase 2): take the pre-candidate baseline
-                        // before a mutating batch can touch the workspace, and
-                        // capture the evidence state to diff against when the
-                        // batch completes.
-                        mutating := engine.executor.BatchMutates(msg.ToolCalls)
-                        evGate.beforeBatch(ctx, mutating)
-                        preEvidence := engine.evidence.State()
-                        // Sources stash: the executor emits each run's ranked sources
-                        // with the ToolData event (the SSE stream mirrors them live),
-                        // but the persisted tool result needs them too — otherwise a
-                        // reloaded session loses its source pills. Keyed by tool_use
-                        // id, drained into the AppendToolResult calls below.
-                        toolSources := make(map[string][]session.ToolSource)
-                        toolMsgs, stop, _ := engine.executor.Run(ctx, msg.ToolCalls, func(td session.ToolData) bool {
-                                if len(td.Run.Sources) > 0 {
-                                        toolSources[td.Run.ToolUseID] = td.Run.Sources
-                                }
-                                return yield(td, nil)
-                        })
-                        toolCallsUsed += engine.executor.AllowanceUsed()
-                        // Verify-on-stop: fold this batch's mutations into
-                        // the turn state the finish will be judged against.
-                        engine.turnVerify.fold(engine.executor.DrainMutations())
-                        // Persist the assistant message, then the tool results.
-                        // Order matters: Append(msg) sets the leaf so each
-                        // tool message's ParentID points at the assistant msg.
-                        if err := engine.session.Append(msg); err != nil {
-                                yield(nil, err)
-                                return
-                        }
-                        for _, tm := range toolMsgs {
-                                var sources []session.ToolSource
-                                if tm.Role == llm.RoleTool {
-                                        sources = toolSources[tm.ToolCallID]
-                                }
-                                if err := engine.session.AppendToolResult(tm, sources); err != nil {
-                                        yield(nil, err)
-                                        return
-                                }
-                        }
-                        engine.extensions.EmitTurnEnd(toolRounds - 1)
-                        // Verdict gate (Phase 2): judge the completed batch
-                        // against its pre-candidate evidence — enforced rollback
-                        // on protected regression, baseline advance on clean
-                        // candidates, stall tracking. The note lands as a system
-                        // note the model reads next round; Stop ends the turn
-                        // with the residual failure set instead of burning
-                        // budget. The fold runs before honoring executor stop so
-                        // a regression is still rejected on the way out.
-                        action := evGate.afterBatch(ctx, preEvidence, len(engine.executor.DrainEvidenceVerdicts()) > 0, mutating)
-                        if action.Note != "" {
-                                if err := engine.session.Append(llm.Message{Role: llm.RoleUser, Content: action.Note}); err != nil {
-                                        yield(nil, err)
-                                        return
-                                }
-                                if !yield(session.UserAppend{Text: action.Note}, nil) {
-                                        return
-                                }
-                        }
-                        if action.Stop {
-                                // Memory outlet: a verdict-gate stop still ends a
-                                // completed turn — the exchange is worth keeping.
-                                engine.consolidateTurn(content, msg)
-                                engine.maybeLearn(fireMemoryNudge)
-                                return
-                        }
-                        if stop {
-                                // Memory outlet: an executor stop still ends a
-                                // completed turn.
-                                engine.consolidateTurn(content, msg)
-                                engine.maybeLearn(fireMemoryNudge)
-                                return
-                        }
+			// Tool calls: run the tools FIRST, then persist the
+			// assistant message and tool results together. This
+			// overlaps the disk write (Append) with the network/
+			// tool work that just finished, instead of serializing
+			// the tools behind the Append. The assistant message
+			// is already cached in `msg` from streamTurn, so the
+			// executor has what it needs without the session tree.
+			toolRounds++
+			// Publish the live round count for the budget tool
+			// handler (Phase 5): a declaration made during this
+			// round prices itself against rounds already used,
+			// including this one once it completes.
+			engine.toolRoundsLive.Store(int64(toolRounds))
+			// Per-turn tool-call budget: each executed call consumes a
+			// slot. Over-budget calls are rejected (so the session and
+			// UI never hold unexecuted tool calls) and the turn ends
+			// cleanly with a system note. Unrestricted gates (yolo, allow-all
+			// overrides) run unlimited.
+			allowance := -1
+			if limit := int(engine.maxToolCalls.Load()); limit > 0 && !engine.toolBudgetUnlimited() {
+				allowance = limit - toolCallsUsed
+				if allowance < 0 {
+					allowance = 0
+				}
+			}
+			engine.executor.SetCallAllowance(allowance)
+			// Verdict gate (Phase 2): take the pre-candidate baseline
+			// before a mutating batch can touch the workspace, and
+			// capture the evidence state to diff against when the
+			// batch completes.
+			mutating := engine.executor.BatchMutates(msg.ToolCalls)
+			evGate.beforeBatch(ctx, mutating)
+			preEvidence := engine.evidence.State()
+			// Sources stash: the executor emits each run's ranked sources
+			// with the ToolData event (the SSE stream mirrors them live),
+			// but the persisted tool result needs them too — otherwise a
+			// reloaded session loses its source pills. Keyed by tool_use
+			// id, drained into the AppendToolResult calls below.
+			toolSources := make(map[string][]session.ToolSource)
+			toolMsgs, stop, _ := engine.executor.Run(ctx, msg.ToolCalls, func(td session.ToolData) bool {
+				if len(td.Run.Sources) > 0 {
+					toolSources[td.Run.ToolUseID] = td.Run.Sources
+				}
+				return yield(td, nil)
+			})
+			toolCallsUsed += engine.executor.AllowanceUsed()
+			// Verify-on-stop: fold this batch's mutations into
+			// the turn state the finish will be judged against.
+			engine.turnVerify.fold(engine.executor.DrainMutations())
+			// Persist the assistant message, then the tool results.
+			// Order matters: Append(msg) sets the leaf so each
+			// tool message's ParentID points at the assistant msg.
+			if err := engine.session.Append(msg); err != nil {
+				yield(nil, err)
+				return
+			}
+			for _, tm := range toolMsgs {
+				var sources []session.ToolSource
+				if tm.Role == llm.RoleTool {
+					sources = toolSources[tm.ToolCallID]
+				}
+				if err := engine.session.AppendToolResult(tm, sources); err != nil {
+					yield(nil, err)
+					return
+				}
+			}
+			engine.extensions.EmitTurnEnd(toolRounds - 1)
+			// Verdict gate (Phase 2): judge the completed batch
+			// against its pre-candidate evidence — enforced rollback
+			// on protected regression, baseline advance on clean
+			// candidates, stall tracking. The note lands as a system
+			// note the model reads next round; Stop ends the turn
+			// with the residual failure set instead of burning
+			// budget. The fold runs before honoring executor stop so
+			// a regression is still rejected on the way out.
+			action := evGate.afterBatch(ctx, preEvidence, len(engine.executor.DrainEvidenceVerdicts()) > 0, mutating)
+			if action.Note != "" {
+				if err := engine.session.Append(llm.Message{Role: llm.RoleUser, Content: action.Note}); err != nil {
+					yield(nil, err)
+					return
+				}
+				if !yield(session.UserAppend{Text: action.Note}, nil) {
+					return
+				}
+			}
+			if action.Stop {
+				// Memory outlet: a verdict-gate stop still ends a
+				// completed turn — the exchange is worth keeping.
+				engine.extractTurn(content, msg)
+				engine.maybeLearn(fireMemoryNudge)
+				return
+			}
+			if stop {
+				// Memory outlet: an executor stop still ends a
+				// completed turn.
+				engine.extractTurn(content, msg)
+				engine.maybeLearn(fireMemoryNudge)
+				return
+			}
 
-                        // Budget exhausted mid-turn: stop cleanly instead of erroring.
-                        // The over-budget calls already came back as rejected results,
-                        // so the session stays consistent; the note lands in the
-                        // transcript and the session history so the model knows on the
-                        // next prompt why the turn ended early.
-                        if engine.executor.AllowanceTripped() {
-                                note := fmt.Sprintf(
-                                        "System note: tool call budget (%d) reached — the turn was stopped. Raise the cap from the command palette (Max tool calls) or ask to continue.",
-                                        engine.maxToolCalls.Load(),
-                                )
-                                if err := engine.session.Append(llm.Message{Role: llm.RoleUser, Content: note}); err != nil {
-                                        yield(nil, err)
-                                        return
-                                }
-                                yield(session.UserAppend{Text: note}, nil)
-                                // Memory outlet: the turn was cut short by the
-                                // tool-call budget, but the conversation still
-                                // happened — consolidate it.
-                                engine.consolidateTurn(content, msg)
-                                engine.maybeLearn(fireMemoryNudge)
-                                return
-                        }
+			// Budget exhausted mid-turn: stop cleanly instead of erroring.
+			// The over-budget calls already came back as rejected results,
+			// so the session stays consistent; the note lands in the
+			// transcript and the session history so the model knows on the
+			// next prompt why the turn ended early.
+			if engine.executor.AllowanceTripped() {
+				note := fmt.Sprintf(
+					"System note: tool call budget (%d) reached — the turn was stopped. Raise the cap from the command palette (Max tool calls) or ask to continue.",
+					engine.maxToolCalls.Load(),
+				)
+				if err := engine.session.Append(llm.Message{Role: llm.RoleUser, Content: note}); err != nil {
+					yield(nil, err)
+					return
+				}
+				yield(session.UserAppend{Text: note}, nil)
+				// Memory outlet: the turn was cut short by the
+				// tool-call budget, but the conversation still
+				// happened — consolidate it.
+				engine.extractTurn(content, msg)
+				engine.maybeLearn(fireMemoryNudge)
+				return
+			}
 
-                        // Declared-budget grace note (Phase 5): this round ran
-                        // on the turn's re-open. If the model did not extend
-                        // during it (ceiling still reached), say so before the
-                        // next round decides the turn — an in-round declaration
-                        // already answered itself via the tool reply, so no
-                        // note then.
-                        if budget.Grace && engine.turnBudget.stillSpent(toolRounds) {
-                                note := engine.budgetGraceNote(toolRounds)
-                                if err := engine.session.Append(llm.Message{Role: llm.RoleUser, Content: note}); err != nil {
-                                        yield(nil, err)
-                                        return
-                                }
-                                if !yield(session.UserAppend{Text: note}, nil) {
-                                        return
-                                }
-                        }
+			// Declared-budget grace note (Phase 5): this round ran
+			// on the turn's re-open. If the model did not extend
+			// during it (ceiling still reached), say so before the
+			// next round decides the turn — an in-round declaration
+			// already answered itself via the tool reply, so no
+			// note then.
+			if budget.Grace && engine.turnBudget.stillSpent(toolRounds) {
+				note := engine.budgetGraceNote(toolRounds)
+				if err := engine.session.Append(llm.Message{Role: llm.RoleUser, Content: note}); err != nil {
+					yield(nil, err)
+					return
+				}
+				if !yield(session.UserAppend{Text: note}, nil) {
+					return
+				}
+			}
 
-                        if ctx.Err() != nil {
-                                return
-                        }
-                }
-        }
+			if ctx.Err() != nil {
+				return
+			}
+		}
+	}
 }
 
 // runCompact prepares and persists a compaction entry.
@@ -1993,120 +1993,120 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
 //     (also bytes/4). Both operands must use the same ruler; mixing real
 //     tokens and bytes/4 broke the growth calculation (doc/history-issues.md #12).
 func (engine *Engine) runCompact(
-        ctx context.Context,
-        yield func(session.Event, error) bool,
-        usage int,
-        force bool,
-        window int,
+	ctx context.Context,
+	yield func(session.Event, error) bool,
+	usage int,
+	force bool,
+	window int,
 ) (did bool, err error) {
-        // One compaction at a time: the post-turn auto path and a surface's
-        // ForceCompact race otherwise (see compactMu).
-        engine.compactMu.Lock()
-        defer engine.compactMu.Unlock()
-        if window <= 0 {
-                engine.ensureWindow(ctx)
-                window = engine.ContextWindow()
-        }
-        settings := compaction.SettingsFor(window)
-        // Semantic boundary refinement (fail-open): when a decision model
-        // is configured, compaction asks it to move the cut to the nearest
-        // clean task boundary instead of the first positional one — a
-        // clean boundary also avoids the mid-turn turn-prefix summary, so
-        // a refined compaction is one summarizer call instead of two.
-        // Unconfigured or failing, the positional cut stands.
-        if jev.Configured() {
-                settings = settings.WithBoundaryClassifier(compaction.NewJevBoundaryClassifier())
-        }
-        if engine.client == nil {
-                return false, nil
-        }
-        // Two triggers, OR'd together:
-        //  1. Safety valve (ShouldCompact): context is within reverseTokens of the
-        //     window. This must fire regardless of growth so the context never
-        //     exceeds the window. Uses provider-reported real tokens.
-        //  2. Growth gate (ShouldCompactGated): context exceeds the floor fraction
-        //     AND has grown by at least GrowthThreshold since the last compaction.
-        //     Uses bytes/4 estimated tokens — the same ruler as the cut logic and
-        //     lastCompactEstimate. Mixing real tokens here (the old code) made the
-        //     growth check subtract bytes/4 from real tokens, producing nonsense.
-        // Window: the resolved runtime window (config → probe → assumed →
-        // learned), not the raw model config — a model without context_window
-        // resolves to the assumed default, and both triggers refuse to fire
-        // on window 0 (the "folding never runs on local models" bug).
-        estimatedUsage := 0
-        if !force {
-                estimatedUsage = compaction.EstimateContextTokens(engine.session.PathEntries())
-        }
-        // Provider-reported usage is the right ruler for the safety valve, but
-        // a provider that reports none (usage 0) must not leave the valve
-        // blind — the bytes/4 estimate stands in. It can underestimate (code,
-        // CJK text), so the valve may fire late, but late beats never: a
-        // blind valve is how a 64K session walks straight into a hard
-        // overflow with compaction never having fired.
-        safetyUsage := usage
-        if safetyUsage <= 0 {
-                safetyUsage = estimatedUsage
-        }
-        safety := !force && compaction.ShouldCompact(safetyUsage, window, settings)
-        gated := !force &&
-                compaction.ShouldCompactGated(estimatedUsage, window, engine.lastCompactEstimate, settings)
-        // Both are checked before PrepareCompact so a no-op does not burn work.
-        // force skips both triggers, so the guard must also require !force —
-        // otherwise the overflow-recovery path (force=true) would no-op here and
-        // burn its single retry on a second overflow.
-        if !force && !safety && !gated {
-                return false, nil
-        }
-        prep, err := compaction.PrepareCompact(ctx, engine.session.PathEntries(), settings)
-        if err != nil {
-                return false, err
-        }
-        if prep.FirstKeptEntryId == "" {
-                return false, nil
-        }
-        if force && len(prep.MessagesToSummarize) == 0 && len(prep.TurnPrefixMessages) == 0 {
-                return false, nil
-        }
-        // The window the settings derived from, so the summarizer's input
-        // cap (SerializeConversationCapped) can keep the summary call
-        // itself inside the window that triggered this compaction.
-        prep.ContextWindow = window
+	// One compaction at a time: the post-turn auto path and a surface's
+	// ForceCompact race otherwise (see compactMu).
+	engine.compactMu.Lock()
+	defer engine.compactMu.Unlock()
+	if window <= 0 {
+		engine.ensureWindow(ctx)
+		window = engine.ContextWindow()
+	}
+	settings := compaction.SettingsFor(window)
+	// Semantic boundary refinement (fail-open): when a decision model
+	// is configured, compaction asks it to move the cut to the nearest
+	// clean task boundary instead of the first positional one — a
+	// clean boundary also avoids the mid-turn turn-prefix summary, so
+	// a refined compaction is one summarizer call instead of two.
+	// Unconfigured or failing, the positional cut stands.
+	if jev.Configured() {
+		settings = settings.WithBoundaryClassifier(compaction.NewJevBoundaryClassifier())
+	}
+	if engine.client == nil {
+		return false, nil
+	}
+	// Two triggers, OR'd together:
+	//  1. Safety valve (ShouldCompact): context is within reverseTokens of the
+	//     window. This must fire regardless of growth so the context never
+	//     exceeds the window. Uses provider-reported real tokens.
+	//  2. Growth gate (ShouldCompactGated): context exceeds the floor fraction
+	//     AND has grown by at least GrowthThreshold since the last compaction.
+	//     Uses bytes/4 estimated tokens — the same ruler as the cut logic and
+	//     lastCompactEstimate. Mixing real tokens here (the old code) made the
+	//     growth check subtract bytes/4 from real tokens, producing nonsense.
+	// Window: the resolved runtime window (config → probe → assumed →
+	// learned), not the raw model config — a model without context_window
+	// resolves to the assumed default, and both triggers refuse to fire
+	// on window 0 (the "folding never runs on local models" bug).
+	estimatedUsage := 0
+	if !force {
+		estimatedUsage = compaction.EstimateContextTokens(engine.session.PathEntries())
+	}
+	// Provider-reported usage is the right ruler for the safety valve, but
+	// a provider that reports none (usage 0) must not leave the valve
+	// blind — the bytes/4 estimate stands in. It can underestimate (code,
+	// CJK text), so the valve may fire late, but late beats never: a
+	// blind valve is how a 64K session walks straight into a hard
+	// overflow with compaction never having fired.
+	safetyUsage := usage
+	if safetyUsage <= 0 {
+		safetyUsage = estimatedUsage
+	}
+	safety := !force && compaction.ShouldCompact(safetyUsage, window, settings)
+	gated := !force &&
+		compaction.ShouldCompactGated(estimatedUsage, window, engine.lastCompactEstimate, settings)
+	// Both are checked before PrepareCompact so a no-op does not burn work.
+	// force skips both triggers, so the guard must also require !force —
+	// otherwise the overflow-recovery path (force=true) would no-op here and
+	// burn its single retry on a second overflow.
+	if !force && !safety && !gated {
+		return false, nil
+	}
+	prep, err := compaction.PrepareCompact(ctx, engine.session.PathEntries(), settings)
+	if err != nil {
+		return false, err
+	}
+	if prep.FirstKeptEntryId == "" {
+		return false, nil
+	}
+	if force && len(prep.MessagesToSummarize) == 0 && len(prep.TurnPrefixMessages) == 0 {
+		return false, nil
+	}
+	// The window the settings derived from, so the summarizer's input
+	// cap (SerializeConversationCapped) can keep the summary call
+	// itself inside the window that triggered this compaction.
+	prep.ContextWindow = window
 
-        // Evidence record (Phase 4: evidence-driven recurrence). The ledger and
-        // the turn contract rendered as harness-written state, appended to the
-        // summary so the next recurrence round's context carries what is
-        // verified rather than a transcript-shaped memory of it. Rendered here,
-        // at fold time, so every compaction path (post-turn, overflow recovery,
-        // /compact) emits the same record. Empty for sessions with no evidence
-        // and no contract — plain chat compaction is unchanged.
-        prep.EvidenceState = engine.renderEvidenceRecord()
+	// Evidence record (Phase 4: evidence-driven recurrence). The ledger and
+	// the turn contract rendered as harness-written state, appended to the
+	// summary so the next recurrence round's context carries what is
+	// verified rather than a transcript-shaped memory of it. Rendered here,
+	// at fold time, so every compaction path (post-turn, overflow recovery,
+	// /compact) emits the same record. Empty for sessions with no evidence
+	// and no contract — plain chat compaction is unchanged.
+	prep.EvidenceState = engine.renderEvidenceRecord()
 
-        id := fmt.Sprintf("compaction-%d", time.Now().UnixNano())
-        if !yield(session.CompactionStarted{}, nil) {
-                return false, context.Canceled
-        }
+	id := fmt.Sprintf("compaction-%d", time.Now().UnixNano())
+	if !yield(session.CompactionStarted{}, nil) {
+		return false, context.Canceled
+	}
 
-        comp, err := compaction.Compact(ctx, *prep, engine.client)
-        if err != nil {
-                _ = yield(session.CompactionComplete{ID: id, Failed: true}, nil)
-                return false, err
-        }
-        if err := engine.session.AppendCompaction(comp); err != nil {
-                _ = yield(session.CompactionComplete{ID: id, Failed: true}, nil)
-                return false, err
-        }
-        // Episodic store (Bet 06): the compaction summary — which already
-        // embeds the harness evidence record — becomes a retrievable
-        // episode row in the vault, keyed by this project's scope.
-        recordEpisode(engine, comp.Summary)
-        // Track the post-compaction estimate so the next growth gate measures the
-        // consumed increment since this compression, not the absolute size.
-        engine.lastCompactEstimate = compaction.PostCompactionEstimate(settings)
-        if !yield(session.CompactionComplete{ID: id, TokensBefore: comp.TokensBefore}, nil) {
-                return false, context.Canceled
-        }
-        engine.extensions.EmitSessionCompact("auto")
-        return true, nil
+	comp, err := compaction.Compact(ctx, *prep, engine.client)
+	if err != nil {
+		_ = yield(session.CompactionComplete{ID: id, Failed: true}, nil)
+		return false, err
+	}
+	if err := engine.session.AppendCompaction(comp); err != nil {
+		_ = yield(session.CompactionComplete{ID: id, Failed: true}, nil)
+		return false, err
+	}
+	// Episodic store (Bet 06): the compaction summary — which already
+	// embeds the harness evidence record — becomes a retrievable
+	// episode row in the vault, keyed by this project's scope.
+	recordEpisode(engine, comp.Summary)
+	// Track the post-compaction estimate so the next growth gate measures the
+	// consumed increment since this compression, not the absolute size.
+	engine.lastCompactEstimate = compaction.PostCompactionEstimate(settings)
+	if !yield(session.CompactionComplete{ID: id, TokensBefore: comp.TokensBefore}, nil) {
+		return false, context.Canceled
+	}
+	engine.extensions.EmitSessionCompact("auto")
+	return true, nil
 }
 
 // ForceCompact runs a user-initiated compaction synchronously. It calls
@@ -2126,7 +2126,7 @@ func (engine *Engine) runCompact(
 // calls runCompact directly for its automatic post-turn and overflow paths;
 // ForceCompact just exposes the same machinery to outside callers.
 func (engine *Engine) ForceCompact(ctx context.Context, emit func(session.Event, error) bool) (bool, error) {
-        return engine.runCompact(ctx, emit, 0, true, 0)
+	return engine.runCompact(ctx, emit, 0, true, 0)
 }
 
 // streamTurn runs one assistant stream. On success it returns the final
@@ -2135,116 +2135,116 @@ func (engine *Engine) ForceCompact(ctx context.Context, emit func(session.Event,
 // so Loop can attempt overflow recovery. A nil event with nil err means
 // cancel or the consumer stopped receiving.
 func (engine *Engine) streamTurn(
-        ctx context.Context,
-        yield func(session.Event, error) bool,
-        messages []llm.Message,
+	ctx context.Context,
+	yield func(session.Event, error) bool,
+	messages []llm.Message,
 ) (llm.Message, session.Event, error) {
-        id := fmt.Sprintf("assistant-%d", time.Now().UnixNano())
-        var thinking, text string
-        var final llm.Message
-        gotDone := false
-        start := time.Now()
-        // Runaway watches (hermes #127234): a stream that keeps producing
-        // never reaches a completion check, so each channel (visible text,
-        // reasoning) is judged while it streams. The first check runs at
-        // stop-path scale — asked-for repeats stay below it — and every check
-        // reads only the tail, so the watch stays linear in output size.
-        textWatch := llm.NewRunawayWatch()
-        reasoningWatch := llm.NewRunawayWatch()
+	id := fmt.Sprintf("assistant-%d", time.Now().UnixNano())
+	var thinking, text string
+	var final llm.Message
+	gotDone := false
+	start := time.Now()
+	// Runaway watches (hermes #127234): a stream that keeps producing
+	// never reaches a completion check, so each channel (visible text,
+	// reasoning) is judged while it streams. The first check runs at
+	// stop-path scale — asked-for repeats stay below it — and every check
+	// reads only the tail, so the watch stays linear in output size.
+	textWatch := llm.NewRunawayWatch()
+	reasoningWatch := llm.NewRunawayWatch()
 
-        for event, err := range engine.client.Stream(ctx, messages) {
-                if err != nil {
-                        if thinking != "" || text != "" {
-                                _ = yield(emitMessage(id, session.StateError, session.StopNone, thinking, text, nil, llm.Usage{}), nil)
-                                // Delivered-partial contract: the text the consumer
-                                // already watched is the reply body. Return it so Loop
-                                // persists it instead of discarding it with the error.
-                                return llm.Message{
-                                        Role:             llm.RoleAssistant,
-                                        ReasoningContent: thinking,
-                                        Content:          text,
-                                }, nil, err
-                        }
-                        return llm.Message{}, nil, err
-                }
+	for event, err := range engine.client.Stream(ctx, messages) {
+		if err != nil {
+			if thinking != "" || text != "" {
+				_ = yield(emitMessage(id, session.StateError, session.StopNone, thinking, text, nil, llm.Usage{}), nil)
+				// Delivered-partial contract: the text the consumer
+				// already watched is the reply body. Return it so Loop
+				// persists it instead of discarding it with the error.
+				return llm.Message{
+					Role:             llm.RoleAssistant,
+					ReasoningContent: thinking,
+					Content:          text,
+				}, nil, err
+			}
+			return llm.Message{}, nil, err
+		}
 
-                switch event.Type {
-                case llm.StreamEventTypeError:
-                        errText := event.Err
-                        if errText == "" {
-                                errText = "stream error"
-                        }
-                        return llm.Message{}, nil, fmt.Errorf("%s", errText)
+		switch event.Type {
+		case llm.StreamEventTypeError:
+			errText := event.Err
+			if errText == "" {
+				errText = "stream error"
+			}
+			return llm.Message{}, nil, fmt.Errorf("%s", errText)
 
-                case llm.StreamEventTypeDelta:
-                        if event.Delta.ReasoningContent != "" {
-                                thinking += event.Delta.ReasoningContent
-                                if reasoningWatch.Feed(event.Delta.ReasoningContent) {
-                                        return engine.cutRepetition(id, yield)
-                                }
-                        }
-                        if event.Delta.Content != "" {
-                                text += event.Delta.Content
-                                if textWatch.Feed(event.Delta.Content) {
-                                        return engine.cutRepetition(id, yield)
-                                }
-                        }
-                        if !yield(
-                                emitMessage(id, session.StateStreaming, session.StopNone, thinking, text, nil, llm.Usage{}),
-                                nil,
-                        ) {
-                                return llm.Message{}, nil, nil
-                        }
+		case llm.StreamEventTypeDelta:
+			if event.Delta.ReasoningContent != "" {
+				thinking += event.Delta.ReasoningContent
+				if reasoningWatch.Feed(event.Delta.ReasoningContent) {
+					return engine.cutRepetition(id, yield)
+				}
+			}
+			if event.Delta.Content != "" {
+				text += event.Delta.Content
+				if textWatch.Feed(event.Delta.Content) {
+					return engine.cutRepetition(id, yield)
+				}
+			}
+			if !yield(
+				emitMessage(id, session.StateStreaming, session.StopNone, thinking, text, nil, llm.Usage{}),
+				nil,
+			) {
+				return llm.Message{}, nil, nil
+			}
 
-                case llm.StreamEventTypeDone:
-                        if event.Final == nil {
-                                return llm.Message{}, nil, errors.New("agent: stream finished with no assistant message")
-                        }
-                        final = *event.Final
-                        gotDone = true
-                        // Prefer fully accumulated message for the complete event.
-                        if final.ReasoningContent != "" {
-                                thinking = final.ReasoningContent
-                        }
-                        if final.Content != "" {
-                                text = final.Content
-                        }
-                }
-        }
+		case llm.StreamEventTypeDone:
+			if event.Final == nil {
+				return llm.Message{}, nil, errors.New("agent: stream finished with no assistant message")
+			}
+			final = *event.Final
+			gotDone = true
+			// Prefer fully accumulated message for the complete event.
+			if final.ReasoningContent != "" {
+				thinking = final.ReasoningContent
+			}
+			if final.Content != "" {
+				text = final.Content
+			}
+		}
+	}
 
-        if !gotDone {
-                if ctx.Err() != nil {
-                        _ = yield(emitMessage(id, session.StateCancelled, session.StopNone, thinking, text, nil, llm.Usage{}), nil)
-                        return llm.Message{}, nil, nil
-                }
-                return llm.Message{}, nil, errors.New("agent: stream closed without assistant output")
-        }
+	if !gotDone {
+		if ctx.Err() != nil {
+			_ = yield(emitMessage(id, session.StateCancelled, session.StopNone, thinking, text, nil, llm.Usage{}), nil)
+			return llm.Message{}, nil, nil
+		}
+		return llm.Message{}, nil, errors.New("agent: stream closed without assistant output")
+	}
 
-        // Stop-path repetition check (hermes #112764): a provider can end a
-        // degenerate loop with a clean finish, so a completed reply is judged
-        // too — at runaway scale only, so asked-for repetition (which stays in
-        // the low KB) is always delivered verbatim.
-        if len([]rune(text)) >= llm.RepetitionStopPathMinChars && llm.IsRunawayRepetition(text) {
-                return engine.cutRepetition(id, yield)
-        }
+	// Stop-path repetition check (hermes #112764): a provider can end a
+	// degenerate loop with a clean finish, so a completed reply is judged
+	// too — at runaway scale only, so asked-for repetition (which stays in
+	// the low KB) is always delivered verbatim.
+	if len([]rune(text)) >= llm.RepetitionStopPathMinChars && llm.IsRunawayRepetition(text) {
+		return engine.cutRepetition(id, yield)
+	}
 
-        reason := session.StopEndTurn
-        if len(final.ToolCalls) > 0 {
-                reason = session.StopToolUse
-        }
-        usage := session.TokenUsageFrom(final.Usage)
-        if elapsed := time.Since(start).Seconds(); elapsed > 0 && usage.CompletionTokens > 0 {
-                usage.TPS = float64(usage.CompletionTokens) / elapsed
-        }
-        complete := session.AssistantMessageUpdate{Message: session.ProjectAssistant(
-                id,
-                final,
-                func(name, args string) string { return engine.ToolDetail(name, args) },
-                session.StateComplete,
-                reason,
-                usage,
-        )}
-        return final, complete, nil
+	reason := session.StopEndTurn
+	if len(final.ToolCalls) > 0 {
+		reason = session.StopToolUse
+	}
+	usage := session.TokenUsageFrom(final.Usage)
+	if elapsed := time.Since(start).Seconds(); elapsed > 0 && usage.CompletionTokens > 0 {
+		usage.TPS = float64(usage.CompletionTokens) / elapsed
+	}
+	complete := session.AssistantMessageUpdate{Message: session.ProjectAssistant(
+		id,
+		final,
+		func(name, args string) string { return engine.ToolDetail(name, args) },
+		session.StateComplete,
+		reason,
+		usage,
+	)}
+	return final, complete, nil
 }
 
 // ToolDetail resolves a friendly one-line detail for a tool call's raw JSON
@@ -2253,68 +2253,68 @@ func (engine *Engine) streamTurn(
 // resumed sessions show the same detail (e.g. "read foo.go:10-20") instead of
 // raw JSON. Returns "" when the tool is unknown or has no detail formatter.
 func (engine *Engine) ToolDetail(name, args string) string {
-        if engine == nil || engine.executor == nil {
-                return ""
-        }
-        tool, ok := engine.executor.registry[name]
-        if !ok || tool.DetailFromArgs == nil {
-                return ""
-        }
-        return tool.DetailFromArgs(json.RawMessage(args))
+	if engine == nil || engine.executor == nil {
+		return ""
+	}
+	tool, ok := engine.executor.registry[name]
+	if !ok || tool.DetailFromArgs == nil {
+		return ""
+	}
+	return tool.DetailFromArgs(json.RawMessage(args))
 }
 
 func buildContent(thinking, text string, tools []session.ContentBlock) []session.ContentBlock {
-        var out []session.ContentBlock
-        if thinking != "" {
-                out = append(out, session.ContentBlock{Type: session.BlockThinking, Text: thinking})
-        }
-        if text != "" {
-                out = append(out, session.ContentBlock{Type: session.BlockText, Text: text})
-        }
-        out = append(out, tools...)
-        return out
+	var out []session.ContentBlock
+	if thinking != "" {
+		out = append(out, session.ContentBlock{Type: session.BlockThinking, Text: thinking})
+	}
+	if text != "" {
+		out = append(out, session.ContentBlock{Type: session.BlockText, Text: text})
+	}
+	out = append(out, tools...)
+	return out
 }
 
 func emitMessage(
-        id string,
-        state session.State,
-        reason session.StopReason,
-        thinking,
-        text string,
-        tools []session.ContentBlock,
-        usage llm.Usage,
+	id string,
+	state session.State,
+	reason session.StopReason,
+	thinking,
+	text string,
+	tools []session.ContentBlock,
+	usage llm.Usage,
 ) session.Event {
-        return session.AssistantMessageUpdate{Message: session.Message{
-                ID:         id,
-                State:      state,
-                StopReason: reason,
-                Content:    buildContent(thinking, text, tools),
-                Text:       text,
-                Usage:      session.TokenUsageFrom(usage),
-        }}
+	return session.AssistantMessageUpdate{Message: session.Message{
+		ID:         id,
+		State:      state,
+		StopReason: reason,
+		Content:    buildContent(thinking, text, tools),
+		Text:       text,
+		Usage:      session.TokenUsageFrom(usage),
+	}}
 }
 
 // pendingSkillsInstruction tells the model to read SKILL.md files for the
 // selected skills (reuse the read tool, no dedicated skill tool).
 func pendingSkillsInstruction(skillPath string, names []string) string {
-        if len(names) == 0 {
-                return ""
-        }
-        list, err := skills.LoadSkills(skillPath)
-        targets := make([]string, 0, len(names))
-        if err == nil {
-                for _, name := range names {
-                        if s := skills.Find(list, name); s != nil && s.SkillFilePath != "" {
-                                targets = append(targets, s.SkillFilePath)
-                                continue
-                        }
-                        targets = append(targets, name)
-                }
-        } else {
-                targets = append(targets, names...)
-        }
-        return fmt.Sprintf(
-                "You MUST read these skill files first with the read tool and follow them: %s. Do this immediately before responding.",
-                strings.Join(targets, ", "),
-        )
+	if len(names) == 0 {
+		return ""
+	}
+	list, err := skills.LoadSkills(skillPath)
+	targets := make([]string, 0, len(names))
+	if err == nil {
+		for _, name := range names {
+			if s := skills.Find(list, name); s != nil && s.SkillFilePath != "" {
+				targets = append(targets, s.SkillFilePath)
+				continue
+			}
+			targets = append(targets, name)
+		}
+	} else {
+		targets = append(targets, names...)
+	}
+	return fmt.Sprintf(
+		"You MUST read these skill files first with the read tool and follow them: %s. Do this immediately before responding.",
+		strings.Join(targets, ", "),
+	)
 }

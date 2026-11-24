@@ -371,7 +371,11 @@ func (t *TranscriptPane) HandleCopyKey(ctx *components.EventContext, e xui.KeyEv
 		text = t.list.LastCopyText()
 	}
 	if text == "" {
-		return true
+		// Nothing to copy. Report the chord UNHANDLED rather than swallowing it:
+		// the composer offers "Ctrl+C copies the selection" as a fallback for
+		// terminals that cannot distinguish the two chords, and an unconditional
+		// true here would eat every plain Ctrl+C and make quitting impossible.
+		return false
 	}
 	t.copyBlock(text)
 	ctx.ConsumeAndRedraw()
@@ -454,9 +458,19 @@ func (t *TranscriptPane) HandleMouse(ctx *components.EventContext, e xui.MouseEv
 			ctx.ConsumeAndRedraw()
 			return
 		}
+		// A click in the SPACING GAP belongs to the block above it. The probe
+		// walks the whole gap rather than one row: turn boundaries double the
+		// gap, so a ±1 nudge cannot bridge it and half the clicks in a spaced
+		// transcript would select nothing.
 		idx := t.list.IndexAtPoint(e.X, e.Y)
+		for dy := 1; idx < 0 && dy <= 4; dy++ {
+			if above := t.list.IndexAtPoint(e.X, e.Y-dy); above >= 0 {
+				idx = above
+			}
+		}
 		if idx >= 0 {
 			t.list.Selected = idx
+			t.dispatchBlockClick(ctx, idx, e)
 		}
 		t.sel.clear()
 		if focusComposer != nil {
@@ -530,4 +544,58 @@ func applyThemeToWidgets(entries []components.Widget, th components.Theme) {
 			b.Theme = th
 		}
 	}
+}
+
+// turnBoundaries marks the entries that open a conversational turn.
+//
+// Derived from the widget type rather than the projected item kind, so it stays
+// correct through patches: a user block IS the turn boundary, and everything the
+// assistant does in response (thinking, prose, tool rows) belongs to it. The
+// list uses this to double the gap above a turn, which is what makes a long
+// transcript group into readable units instead of one flat wall.
+func turnBoundaries(entries []components.Widget) []bool {
+	out := make([]bool, len(entries))
+	for i, w := range entries {
+		if w == nil {
+			continue
+		}
+		_, isUser := w.(*block.UserBlock)
+		out[i] = isUser
+	}
+	return out
+}
+
+// dispatchBlockClick forwards a release to the block at idx, in the block's own
+// coordinate space.
+//
+// Mouse events used to stop at the pane: they drove the wheel and drag-selection
+// and never reached the widgets, so every block's own click handling — a bash
+// block expanding on its title, an agent block's tree toggle — was dead in the
+// TUI. Selecting a long command without being able to expand it is half a
+// feature.
+func (t *TranscriptPane) dispatchBlockClick(ctx *components.EventContext, idx int, e xui.MouseEvent) {
+	if t == nil || idx < 0 || idx >= len(t.list.Entries) {
+		return
+	}
+	w := t.list.Entries[idx]
+	if w == nil {
+		return
+	}
+	origin, ok := t.list.EntryOrigin(idx)
+	if !ok {
+		return
+	}
+	// Only a click that lands ON the block is forwarded; one in the gap selected
+	// the block above, which is a selection, not a click on that block's chrome.
+	if e.Y < origin.Y || e.Y >= origin.Y+t.list.EntryHeight(idx) {
+		return
+	}
+	local := e
+	local.X -= origin.X
+	local.Y -= origin.Y
+	// Blocks treat the click as a PRESS (BashBlock.Handle ignores releases), so
+	// the release that ends the selection gesture is presented as one. Without
+	// this the dispatch was a no-op for every widget.
+	local.Action = xui.MousePress
+	w.Handle(ctx, local)
 }

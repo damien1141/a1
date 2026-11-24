@@ -142,7 +142,16 @@ type searchRouter struct {
 // the bot walls. Registered only when the betterwright CLI resolves,
 // so machines without the daemon keep the HTTP-only behavior.
 func newSearchRouter() *searchRouter {
-        fallbacks := []SearchEngine{newMergedWebEngine()}
+        var fallbacks []SearchEngine
+        // A configured SearXNG instance is the FIRST fallback: it is the one
+        // dependency-free path that survives datacenter IPs (it aggregates
+        // upstream engines server-side and serves no captcha for its own
+        // query API). Unconfigured -> not registered at all, so machines
+        // without an instance keep the exact pre-SearXNG fallback order.
+        if sx := newSearxngEngine(searxngURLFromConfig()); sx != nil {
+                fallbacks = append(fallbacks, sx)
+        }
+        fallbacks = append(fallbacks, newMergedWebEngine())
         // The BetterWright browser fallback rides behind the merged web
         // engine: a real browser session survives the bot walls that kill
         // DDG Lite on datacenter IPs (the merged engine propagates its

@@ -61,3 +61,8 @@ func (userBlock *UserBlock) Draw(ctx components.DrawContext) components.Surface 
 	}
 	return s
 }
+
+// StartsTurn reports that a user message opens a conversational turn. The
+// transcript double-spaces above it, so each exchange groups visually instead of
+// the whole transcript sitting on one flat rhythm.
+func (userBlock *UserBlock) StartsTurn() bool { return true }
